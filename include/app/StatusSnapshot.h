@@ -17,6 +17,7 @@ struct StatusSnapshot {
 
     bool voltageValid{false};
     float voltage{0.0f};
+    bool engineRunning{false};
 
     struct TempSensor {
         uint16_t id{0};        // 0 when unknown/unmapped

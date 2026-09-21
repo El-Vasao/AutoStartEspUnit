@@ -73,6 +73,9 @@ public:
     // Получить ссылку на клиент для MQTT
     Client& getClient() { return _stack.client; }
 
+    /// True while TCP connect/send/close/recover holds the shared AT bus.
+    bool tcpBusBusy() const { return _stack.tcp.isBusBusy(); }
+
 private:
     static constexpr size_t RESPONSE_BUF_SIZE = GSM::RESPONSE_BUFFER_SIZE;
     static constexpr size_t AT_CMD_BUF_SIZE = GSM::CMD_BUFFER_SIZE;
@@ -123,6 +126,8 @@ private:
     uint8_t _awaitLinesLeft{0};
     uint8_t _initCfgStep{0};
     uint8_t _gprsCfgStep{0};
+    /// GPRS_ATTACH: 0=probe SAPBR=2,1, 1=open SAPBR=1,1, 2=re-probe after open fail.
+    uint8_t _attachProbeStep{0};
     char _atCmdBuf[AT_CMD_BUF_SIZE]{}; ///< storage for currently queued AT command (AtSession uses non-owning pointers)
 
     // Bring-up health
@@ -138,6 +143,8 @@ private:
     /// Липкий до `stop()`: хоть раз успешно пройден шаг `AT`+`AT+CGMI` (SIMCOM) в этой GSM‑сессии.
     bool _verifiedModemContactSinceStop{false};
     uint32_t _firstAtFallbackStartMs{0};
+    /// Не раньше этого millis() слать следующий hypothesis AT (spaced backoff).
+    uint32_t _hypNextAttemptMs{0};
     /// Подрежим INIT (hypothesis AT/CGMI, baud search, IPR NV, resume CREG..., modem policy см. GSMController.Fsm.Init.cpp).
     GsmInitPhase _initPhase{GsmInitPhase::None};
     bool _baudSearchActive{false};
@@ -147,6 +154,8 @@ private:
     uint32_t _baudSearchDeadlineMs{0};
     uint32_t _baudCooldownUntilMs{0};
     bool _didIprNvProbeThisCycle{false};
+    /// Один best-effort `AT+CFUN=1,1` на цикл до baud search (или уже сделан UI/ERROR L4).
+    bool _didPreBaudSearchCfun{false};
     bool _resumeSapbrHadIp{false};
     GSMState _postResumeTarget{GSMState::REGISTERING};
     /// Счётчик повторов `AT+CGATT?` в INIT (SIM busy до CPIN READY).
@@ -177,6 +186,9 @@ private:
     bool gsmCgmiResponseManufacturerOk() const;
     bool gsmParseStoredIprBaud(uint32_t& baudOut) const;
     void gsmResetSessionAfterStop();
+    /// После soft-reboot модема: снять sticky verify, чтобы PreCfun/baud search снова были возможны.
+    void gsmNoteModemSoftReboot(bool cfunAlreadyDone);
+    void gsmOpenUart(uint32_t baud);
 
     void onRxLine(const char* line);
     void handleUrc(const char* line);

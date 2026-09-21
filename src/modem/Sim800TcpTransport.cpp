@@ -42,7 +42,17 @@ void Sim800TcpTransport::reset() {
     _connected = false;
     _connecting = false;
     _sendInProgress = false;
+    _modemTxLocked = false;
     _ipConfigDone = false;
+    _didInitialCipShut = false;
+    _closeQueued = false;
+    _recoverQueued = false;
+    _needsBearerReattach = false;
+    _stackRecoverCount = 0;
+    _connectStartMs = 0;
+    _sendWatchMs = 0;
+    _lastStackRecoverMs = 0;
+    _lastConnectAttemptMs = 0;
     _rawLineLen = 0;
     _promptLeak = 0;
     _port = 0;
@@ -58,15 +68,85 @@ void Sim800TcpTransport::reset() {
     _ipRead = 0;
 }
 
+void Sim800TcpTransport::noteConnectOk_() {
+    _stackRecoverCount = 0;
+    _needsBearerReattach = false;
+}
+
+void Sim800TcpTransport::clearTx_() {
+    _sendInProgress = false;
+    _sendWatchMs = 0;
+    _txLen = 0;
+    _txSent = 0;
+}
+
+void Sim800TcpTransport::endSendEpoch_() {
+    clearTx_();
+    _modemTxLocked = false;
+}
+
+void Sim800TcpTransport::forceStackRecover_(const char* reason) {
+    const uint32_t now = _lastNowMs ? _lastNowMs : millis();
+    if (_lastStackRecoverMs != 0 &&
+        (int32_t)(now - _lastStackRecoverMs) < (int32_t)Sim800Tcp::STACK_RECOVER_COOLDOWN_MS) {
+        return;
+    }
+    _lastStackRecoverMs = now;
+    _ipConfigDone = false;
+    _didInitialCipShut = false;
+    _closeQueued = false;
+    if (!_recoverQueued) {
+        if (_at.enqueueHigh({ "AT+CIPSHUT", 10000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
+            _recoverQueued = true;
+            logger.log("[Sim800Tcp] stack recover CIPSHUT (%s)\n", reason ? reason : "?");
+        } else {
+            logger.log("[Sim800Tcp] stack recover CIPSHUT enqueue failed (%s)\n", reason ? reason : "?");
+        }
+    }
+    if (_stackRecoverCount < 255) _stackRecoverCount++;
+    if (_stackRecoverCount >= Sim800Tcp::STACK_RECOVER_REATTACH_THRESHOLD) {
+        _needsBearerReattach = true;
+        logger.log("[Sim800Tcp] stack recover threshold -> bearer reattach\n");
+    }
+}
+
+void Sim800TcpTransport::abandonConnect(const char* reason) {
+    if (!_connecting && !_connected && !_sendInProgress && !_modemTxLocked) return;
+    logger.log("[Sim800Tcp] abandonConnect: %s\n", reason ? reason : "?");
+    _connecting = false;
+    _connected = false;
+    endSendEpoch_();
+    forceStackRecover_(reason ? reason : "abandon");
+}
+
 bool Sim800TcpTransport::connectStart(const char* host, uint16_t port) {
     if (!host || !host[0]) return false;
     if (_connecting || _connected) return false;
+    // Do not stack CIPSTART on top of CIPCLOSE/CIPSHUT, in-flight AT, or send-epoch.
+    if (_closeQueued || _recoverQueued) return false;
+    if (_modemTxLocked || _sendInProgress || _txLen != 0) return false;
+    if (_at.isBusy() || _at.hasResult()) return false;
+
+    const uint32_t now = millis();
+    if (_lastConnectAttemptMs != 0 &&
+        (int32_t)(now - _lastConnectAttemptMs) < (int32_t)Sim800Tcp::CONNECT_RETRY_COOLDOWN_MS) {
+        return false;
+    }
+
     strncpy(_host, host, sizeof(_host) - 1);
     _host[sizeof(_host) - 1] = '\0';
     _port = port;
     _connecting = true;
+    _connectStartMs = now;
+    _lastConnectAttemptMs = now;
+    clearTx_(); // never leak a previous CIPSEND payload onto a new TCP session
     logger.log("[Sim800Tcp] connectStart host=%s port=%u\n", _host, (unsigned)_port);
-    startConnect_();
+    if (!startConnect_()) {
+        _connecting = false;
+        _connectStartMs = 0;
+        logger.log("[Sim800Tcp] connectStart enqueue failed\n");
+        return false;
+    }
     return true;
 }
 
@@ -74,10 +154,10 @@ void Sim800TcpTransport::stop(const char* reason) {
     const bool wasConnectedOrConnecting = (_connected || _connecting);
     _connected = false;
     _connecting = false;
-    _sendInProgress = false;
-    _txLen = 0;
-    _txSent = 0;
+    clearTx_();
     _promptLeak = 0;
+    // Prevent CIPSTART storm on the next MQTT tick after close.
+    _lastConnectAttemptMs = _lastNowMs ? _lastNowMs : millis();
     if (reason && reason[0]) {
         logger.log("[Sim800Tcp] stop(): %s\n", reason);
     } else {
@@ -94,56 +174,68 @@ void Sim800TcpTransport::stop(const char* reason) {
     }
 }
 
-void Sim800TcpTransport::startConnect_() {
+bool Sim800TcpTransport::startConnect_() {
+    // Warm modem after ESP-only reboot may still hold a stale TCP session — clear once.
+    if (!_didInitialCipShut) {
+        if (!_at.enqueue({ "AT+CIPSHUT", 10000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
+            return false;
+        }
+        _didInitialCipShut = true;
+        logger.log("[Sim800Tcp] CIPSHUT (initial, warm-safe)\n");
+    }
+
     // One-time IP stack policy.
     // RX strategy: push mode (+IPD). Manual CIPRXGET is not reliable across SIM800C firmwares.
     // CIPMUX=0: single socket.
     if (!_ipConfigDone) {
-        (void)_at.enqueue({ "AT+CIPRXGET=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPRXGET0" });
-        (void)_at.enqueue({ "AT+CIPMUX=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPMUX0" });
+        if (!_at.enqueue({ "AT+CIPRXGET=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPRXGET0" })) {
+            return false;
+        }
+        if (!_at.enqueue({ "AT+CIPMUX=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPMUX0" })) {
+            return false;
+        }
         _ipConfigDone = true;
     }
 
     // CIPMUX=0: CIPSTART without link id.
     snprintf(_cmdStart, sizeof(_cmdStart), "AT+CIPSTART=\"TCP\",\"%s\",%u", _host, (unsigned)_port);
     // We will detect CONNECT OK via URC; here we only wait for OK/ERROR from command acceptance.
-    (void)_at.enqueue({ _cmdStart, Sim800Tcp::CIPSTART_ACCEPT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSTART" });
+    if (!_at.enqueue({ _cmdStart, Sim800Tcp::CIPSTART_ACCEPT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSTART" })) {
+        return false;
+    }
+    return true;
 }
 
 void Sim800TcpTransport::tick(uint32_t nowMs) {
     _lastNowMs = nowMs;
     _at.tick(nowMs);
-    // Drain AtSession completions so the queue can progress.
-    if (_at.hasResult()) {
-        const AtSession::Result r = _at.takeResult();
-        if (r.tag && strcmp(r.tag, "CIPCLOSE") == 0) {
-            _closeQueued = false;
-        }
-        if (r.tag && strcmp(r.tag, "CIPSTART") == 0) {
-            // Command acceptance; actual connect is signaled via URC CONNECT OK / CONNECT FAIL.
-            if (r.timedOut || r.error) {
-                logger.log("[Sim800Tcp] CIPSTART accept failed (timeout=%u error=%u)\n",
-                           (unsigned)r.timedOut, (unsigned)r.error);
-                _connecting = false;
-                _connected = false;
-            } else if (r.ok) {
-                if (kTcpWantVerbose) {
-                    logger.log("[Sim800Tcp] CIPSTART accepted (waiting URC)\n");
-                }
-            }
-        } else if (r.tag && strcmp(r.tag, "CIPSEND") == 0) {
-            if (r.gotPrompt) {
-                // CIPSEND=<len>: send exactly len bytes (no Ctrl+Z in len mode).
-                _at.uart().writeBytes(_tx, _txLen);
-            } else if (r.timedOut || r.error) {
-                _sendInProgress = false;
-                _txLen = 0;
-                _txSent = 0;
-            }
-        } else {
-            // CIPRXGET0/CIPMUX0/etc: just drain.
-        }
+
+    // Connect / send watchdogs (modem hang / stuck flags).
+    if (_connecting && _connectStartMs != 0 &&
+        (nowMs - _connectStartMs) >= Sim800Tcp::CONNECT_WATCHDOG_MS) {
+        logger.log("[Sim800Tcp] connect watchdog\n");
+        _connecting = false;
+        _connected = false;
+        _connectStartMs = 0;
+        endSendEpoch_();
+        forceStackRecover_("connect_wd");
     }
+    if (_sendInProgress && _sendWatchMs != 0 &&
+        (nowMs - _sendWatchMs) >= Sim800Tcp::SEND_WATCHDOG_MS) {
+        logger.log("[Sim800Tcp] send watchdog\n");
+        endSendEpoch_();
+        _connected = false;
+        _connecting = false;
+        forceStackRecover_("send_wd");
+    }
+
+    // SoftAP/write pump path: drain TCP-owned AtSession results without waiting for GSM update().
+    // Only steal the result while we own the bus so GSM await replies are not swallowed.
+    if (_at.hasResult() &&
+        (_connecting || _sendInProgress || _modemTxLocked || _closeQueued || _recoverQueued)) {
+        (void)consumeAtResult(_at.takeResult());
+    }
+
     // Sending is driven by prompt + write burst, but we intentionally keep it minimal now:
     // once connected, if tx buffer has data and no send in progress, start send.
     if (_connected && !_sendInProgress && _txLen > 0) {
@@ -151,46 +243,103 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
     }
 }
 
+bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
+    if (!r.tag) return false;
+    if (strcmp(r.tag, "CIPCLOSE") == 0) {
+        _closeQueued = false;
+        return true;
+    }
+    if (strcmp(r.tag, "CIPSHUT") == 0) {
+        _recoverQueued = false;
+        _modemTxLocked = false; // recover completed — release send-epoch lock
+        return true;
+    }
+    if (strcmp(r.tag, "CIPSTART") == 0) {
+        // Command acceptance; actual connect is signaled via URC CONNECT OK / CONNECT FAIL.
+        if (r.timedOut || r.error) {
+            logger.log("[Sim800Tcp] CIPSTART accept failed (timeout=%u error=%u)\n",
+                       (unsigned)r.timedOut, (unsigned)r.error);
+            _connecting = false;
+            _connected = false;
+            _lastConnectAttemptMs = _lastNowMs ? _lastNowMs : millis();
+        } else if (r.ok) {
+            if (kTcpWantVerbose) {
+                logger.log("[Sim800Tcp] CIPSTART accepted (waiting URC)\n");
+            }
+        }
+        return true;
+    }
+    if (strcmp(r.tag, "CIPSEND") == 0) {
+        if (r.gotPrompt) {
+            // CIPSEND=<len>: send exactly len bytes (no Ctrl+Z in len mode).
+            const uint16_t n = (_txLen <= TX_SIZE) ? _txLen : (uint16_t)TX_SIZE;
+            if (n) _at.uart().writeBytes(_tx, n);
+            _sendWatchMs = _lastNowMs ? _lastNowMs : millis(); // wait for SEND OK / SEND FAIL
+            // Keep _modemTxLocked + _sendInProgress until SEND OK (AtSession is Idle after '>').
+        } else if (r.timedOut || r.error) {
+            endSendEpoch_();
+        }
+        return true;
+    }
+    if (strcmp(r.tag, "CIPRXGET0") == 0 || strcmp(r.tag, "CIPMUX0") == 0 ||
+        strcmp(r.tag, "CIPMODE") == 0 || strcmp(r.tag, "CIPQSEND") == 0) {
+        return true; // drain TCP stack config replies
+    }
+    return false;
+}
+
 void Sim800TcpTransport::onLine(const char* line) {
     if (!line || !line[0]) return;
-    // Connection URCs
+    // Connection URCs — do not treat bare ERROR (shared UART with GSM AT).
     if (strstr(line, "CONNECT OK") != nullptr) {
         _lastConnectOkMs = _lastNowMs;
         logger.log("[Sim800Tcp] TCP connected\n");
         _connected = true;
         _connecting = false;
+        _connectStartMs = 0;
+        endSendEpoch_(); // new socket — drop any pre-connect staging
+        noteConnectOk_();
         return;
     }
     if (strstr(line, "ALREADY CONNECT") != nullptr) {
         logger.log("[Sim800Tcp] TCP already connected\n");
         _connected = true;
         _connecting = false;
+        _connectStartMs = 0;
+        endSendEpoch_();
+        noteConnectOk_();
         return;
     }
-    if (strcmp(line, "CLOSED") == 0 || strstr(line, "CLOSED") != nullptr) {
+    if (strcmp(line, "CLOSED") == 0) {
         const uint32_t dt = (_lastConnectOkMs != 0) ? (_lastNowMs - _lastConnectOkMs) : 0;
         logger.log("[Sim800Tcp] TCP closed (uptime=%ums)\n", (unsigned)dt);
+        const bool wasSending = _modemTxLocked || _sendInProgress;
         _connected = false;
         _connecting = false;
+        clearTx_();
+        // Keep bus locked if mid-send so CIPSTART cannot race until CIPSHUT finishes.
+        if (wasSending) {
+            _modemTxLocked = true;
+            forceStackRecover_("closed_mid_send");
+        }
+        _lastConnectAttemptMs = _lastNowMs ? _lastNowMs : millis();
         return;
     }
-    if (strstr(line, "CONNECT FAIL") != nullptr || strstr(line, "ERROR") == line) {
+    if (strstr(line, "CONNECT FAIL") != nullptr) {
         logger.log("[Sim800Tcp] TCP connect failed\n");
         _connected = false;
         _connecting = false;
+        _connectStartMs = 0;
+        endSendEpoch_();
+        _lastConnectAttemptMs = _lastNowMs ? _lastNowMs : millis();
         return;
     }
     if (strcmp(line, "SEND OK") == 0) {
-        // Completed send.
-        _sendInProgress = false;
-        _txLen = 0;
-        _txSent = 0;
+        endSendEpoch_();
         return;
     }
     if (strstr(line, "SEND FAIL") != nullptr) {
-        _sendInProgress = false;
-        _txLen = 0;
-        _txSent = 0;
+        endSendEpoch_();
         return;
     }
 }
@@ -384,10 +533,14 @@ void Sim800TcpTransport::startSend_() {
     // CIPMUX=0: CIPSEND without link id.
     snprintf(_cmdSend, sizeof(_cmdSend), "AT+CIPSEND=%u", (unsigned)_txLen);
     // Expect prompt; when got prompt, bytes will be written directly by Client adapter using write().
-    (void)_at.enqueue({ _cmdSend, 5000, atExpectMask(AtSession::Expect::Prompt), nullptr, "CIPSEND" });
+    if (!_at.enqueue({ _cmdSend, 5000, atExpectMask(AtSession::Expect::Prompt), nullptr, "CIPSEND" })) {
+        logger.log("[Sim800Tcp] CIPSEND enqueue failed\n");
+        return;
+    }
     _sendInProgress = true;
+    _modemTxLocked = true; // held until SEND OK / FAIL / watchdog / recover
+    _sendWatchMs = _lastNowMs ? _lastNowMs : millis(); // covers prompt wait; refreshed after '>'
     _txSent = 0;
-    // NOTE: actual data emission will be handled by Client adapter by writing bytes after prompt.
 }
 
 int Sim800ClientAdapter::connect(IPAddress ip, uint16_t port) {
@@ -397,32 +550,24 @@ int Sim800ClientAdapter::connect(IPAddress ip, uint16_t port) {
 }
 
 int Sim800ClientAdapter::connect(const char* host, uint16_t port) {
-    // Non-blocking FSM transport: pump UART while waiting for CONNECT OK URC.
-    if (!_t.isConnected() && !_t.isConnecting()) {
+    // Non-blocking: kick CIPSTART once, then return. MqttFsmClient polls connected() each tick.
+    // A wall-clock wait here starved SoftAP/AsyncWebServer and led to IWDT / memory corruption.
+    if (_t.isConnected()) return 1;
+    if (!_t.isConnecting()) {
         (void)_t.connectStart(host, port);
     }
-    const uint32_t t0 = millis();
-    while (!_t.isConnected()) {
-        pump_();
-        if (!_t.isConnecting()) break; // CONNECT FAIL/ERROR/CLOSED
-        if (millis() - t0 > Sim800Tcp::CONNECT_TIMEOUT_MS) break;
-    }
-    return _t.isConnected() ? 1 : 0;
+    return 0;
 }
 
 size_t Sim800ClientAdapter::write(const uint8_t* buf, size_t size) {
     pump_();
     const size_t n = _t.write(buf, size);
-    pump_();
-    // If we buffered data, give the modem a chance to enter send state promptly.
-    // This reduces the chance of long blocking higher up (e.g. MQTT handshake).
+    if (n == 0) return 0;
+    // Brief pump so CIPSEND can start; do not spin the full budget every write.
     const uint32_t t0 = millis();
-    while (n > 0 && _t.isConnected()) {
+    while (_t.isConnected() && _t.hasBufferedTx()) {
         pump_();
-        // Stop early if TX buffer drained (transport will clear it on SEND OK).
-        // We don't have a direct accessor; heuristic: if no longer connected/connecting, break.
-        if (!_t.isConnected()) break;
-        if (millis() - t0 > Sim800Tcp::WRITE_PUMP_BUDGET_MS) break; // micro-budget: keep loop responsive
+        if (millis() - t0 > Sim800Tcp::WRITE_PUMP_BUDGET_MS) break;
     }
     return n;
 }

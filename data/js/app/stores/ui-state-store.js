@@ -146,16 +146,17 @@
       setActiveTab(tab) {
         const next = String(tab || 'panel');
         if (!next) return;
+        const prev = this.activeTab;
         this.activeTab = next;
-        if (next === 'system') {
-          try {
-            const logs = Alpine.store('uiLogs');
-            if (logs) {
-              logs.visible = true;
-              logs.flushToView();
-            }
-          } catch (e) {}
-        }
+        try {
+          const logs = Alpine.store('uiLogs');
+          if (!logs) return;
+          if (next === 'system') {
+            logs.setVisible(true);
+          } else if (prev === 'system') {
+            logs.setVisible(false);
+          }
+        } catch (e) {}
       },
 
       goToSettings(target) {

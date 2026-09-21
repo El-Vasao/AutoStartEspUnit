@@ -2,6 +2,8 @@
 
 #include "common/Pins.h"
 
+#include <string.h>
+
 namespace {
 
 inline void comma(Print& p, bool* c) {
@@ -33,37 +35,22 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
     }
 
     comma(p, &c);
-    p.print("\"tempSensors\":[");
-    for (int i = 0; i < HardwareLimits::SENSORS; i++) {
-        if (i != 0) p.print(',');
-        p.print('{');
-        bool sc = false;
+    p.print("\"engineRunning\":");
+    p.print(s.engineRunning ? "true" : "false");
 
-        comma(p, &sc);
-        p.print("\"id\":");
-        if (s.tempSensors[i].id)
-            p.print(s.tempSensors[i].id);
-        else
-            p.print("null");
-
-        comma(p, &sc);
-        p.print("\"valid\":");
-        p.print(s.tempSensors[i].valid ? "true" : "false");
-
-        comma(p, &sc);
-        p.print("\"lastMs\":");
-        p.print(static_cast<unsigned long>(s.tempSensors[i].lastMs));
-
-        comma(p, &sc);
-        p.print("\"t\":");
-        if (s.tempSensors[i].valid)
-            p.print(s.tempSensors[i].t);
-        else
-            p.print("null");
-
-        p.print('}');
+    comma(p, &c);
+    p.print("\"inputsById\":{");
+    {
+        bool ik = false;
+        for (int i = 0; i < HardwareLimits::INPUTS; i++) {
+            comma(p, &ik);
+            char kb[16];
+            snprintf(kb, sizeof kb, "\"%u\":", (unsigned)Pin::INPUT_IDS[i]);
+            p.print(kb);
+            p.print(s.inputState[i] ? "true" : "false");
+        }
     }
-    p.print(']');
+    p.print('}');
 
     comma(p, &c);
     p.print("\"relaysById\":{");
@@ -75,6 +62,38 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
             snprintf(keybuf, sizeof keybuf, "\"%u\":", (unsigned)Pin::RELAY_IDS[i]);
             p.print(keybuf);
             p.print(s.relayState[i] ? "true" : "false");
+        }
+    }
+    p.print('}');
+
+    comma(p, &c);
+    p.print("\"tempSensorsById\":{");
+    {
+        bool sk = false;
+        for (int i = 0; i < HardwareLimits::SENSORS; i++) {
+            if (!s.tempSensors[i].id) continue;
+            comma(p, &sk);
+            char keybuf[16];
+            snprintf(keybuf, sizeof keybuf, "\"%u\":{", (unsigned)s.tempSensors[i].id);
+            p.print(keybuf);
+
+            bool sc = false;
+            comma(p, &sc);
+            p.print("\"valid\":");
+            p.print(s.tempSensors[i].valid ? "true" : "false");
+
+            comma(p, &sc);
+            p.print("\"lastMs\":");
+            p.print(static_cast<unsigned long>(s.tempSensors[i].lastMs));
+
+            comma(p, &sc);
+            p.print("\"t\":");
+            if (s.tempSensors[i].valid)
+                p.print(s.tempSensors[i].t);
+            else
+                p.print("null");
+
+            p.print('}');
         }
     }
     p.print('}');
@@ -128,22 +147,9 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
     p.print('}');
 
     comma(p, &c);
-    p.print("\"inputsById\":{");
-    {
-        bool ik = false;
-        for (int i = 0; i < HardwareLimits::INPUTS; i++) {
-            comma(p, &ik);
-            char kb[16];
-            snprintf(kb, sizeof kb, "\"%u\":", (unsigned)Pin::INPUT_IDS[i]);
-            p.print(kb);
-            p.print(s.inputState[i] ? "true" : "false");
-        }
-    }
-    p.print('}');
-
-    comma(p, &c);
     p.print("\"last_error\":\"");
-    if (s.lastError) {
+    // NONE maps to "OK" in ErrorManager; MQTT contract uses empty string for no error.
+    if (s.lastError && s.lastError[0] && strcmp(s.lastError, "OK") != 0) {
         for (const char* e = s.lastError; *e; e++) {
             switch (*e) {
                 case '\\':

@@ -5,6 +5,7 @@
 #include "mqtt/MQTTClient.h"
 #include "web/WebServer.h"
 #include "common/Logger.h"
+#include "common/Constants.h"
 #include "core/Core.h"
 
 /**
@@ -12,12 +13,9 @@
  * @brief Реализация glue‑логики сотового канала (GSM + MQTT) для Core.
  *
  * Принципы:
- * - Неблокирующее обслуживание: GSM всегда тикает в `service()`, MQTT — когда модем READY.
+ * - После бута — settle `GSM::POST_BOOT_SETTLE_MS` до первого `gsm.begin()`.
+ * - Неблокирующее обслуживание: GSM тикает в `service()`, MQTT — когда модем READY.
  * - В NORMAL: SoftAP up → service; SoftAP down / OTA pressure → suspend (см. Core.Modes).
- * - MQTT reconnect при service остаётся enabled (WDT — в transport budgets).
- *
- * Память:
- * - Без аллокаций heap (только указатели на уже существующие подсистемы).
  */
 
 void CellularCore::init(GSMController& gsm, MQTTClient& mqtt, WebServer& web) {
@@ -26,10 +24,31 @@ void CellularCore::init(GSMController& gsm, MQTTClient& mqtt, WebServer& web) {
     _web = &web;
     _lastReattachRequestMs = 0;
     _lastLoggedFailStreak = 0;
+    _bootSettlePending = true;
+    _bootSettleUntilMs = 0;
+    _lastSettleLogMs = 0;
 }
 
 void CellularCore::service() {
     if (!_gsm || !_mqtt || !_web) return;
+
+    if (_bootSettlePending) {
+        const uint32_t now = millis();
+        if (_bootSettleUntilMs == 0) {
+            _bootSettleUntilMs = now + GSM::POST_BOOT_SETTLE_MS;
+            logger.log("[Cellular] GSM post-boot settle %u ms\n", (unsigned)GSM::POST_BOOT_SETTLE_MS);
+        }
+        if ((int32_t)(now - _bootSettleUntilMs) < 0) {
+            if (_lastSettleLogMs == 0 || (now - _lastSettleLogMs) >= 5000UL) {
+                _lastSettleLogMs = now;
+                const uint32_t left = _bootSettleUntilMs - now;
+                logger.log("[Cellular] GSM settle remaining ~%u ms\n", (unsigned)left);
+            }
+            return;
+        }
+        _bootSettlePending = false;
+        logger.log("[Cellular] GSM settle done, starting modem\n");
+    }
 
     if (!_gsmStarted) {
         _gsm->begin();
@@ -47,14 +66,17 @@ void CellularCore::service() {
             _mqttStarted = true;
         }
         if (_mqttStarted) {
-            _mqtt->loop();
+            // Avoid hammering MQTT while modem TCP is mid-CIPSEND / connecting.
+            if (!_gsm->tcpBusBusy()) {
+                _mqtt->loop();
+            }
         }
 
         const uint8_t failStreak = _mqtt->getConsecutiveConnectFails();
         if (failStreak >= 3) {
             const uint32_t now = millis();
             const bool canRequest = (_lastReattachRequestMs == 0) || (now - _lastReattachRequestMs >= 5000UL);
-            if (canRequest) {
+            if (canRequest && !_gsm->tcpBusBusy()) {
                 _lastReattachRequestMs = now;
                 _gsm->requestReattach();
             }
@@ -84,7 +106,7 @@ void CellularCore::suspend() {
         _gsm->stop();
         _gsmStarted = false;
     }
+    // Keep _bootSettlePending false — only cold first start waits full settle.
     _lastReattachRequestMs = 0;
     _lastLoggedFailStreak = 0;
 }
-

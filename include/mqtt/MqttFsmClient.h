@@ -108,7 +108,7 @@ private:
 
     // TX staging buffer (single packet at a time).
     // Wire: 1 (fixed hdr) + up to 4 (remaining length) + 2 (topic len) + topicLen + payloadLen <= TX_MAX.
-    static constexpr uint16_t TX_MAX = 576;
+    static constexpr uint16_t TX_MAX = 1024;
     uint8_t _tx[TX_MAX]{};
     uint16_t _txLen{0};
     uint16_t _txOff{0};

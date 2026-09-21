@@ -33,7 +33,14 @@ GSMController::GSMController()
                  if (!ctx) return;
                  auto* self = static_cast<GSMController*>(ctx);
                  self->_stack.uart.pollRx();
+                 self->_stack.at.tick(millis());
                  self->_stack.tcp.tick(millis());
+                 if (self->_stack.at.hasResult()) {
+                     const AtSession::Result r = self->_stack.at.takeResult();
+                     if (!self->_stack.tcp.consumeAtResult(r)) {
+                         self->gsmAbsorbAtSessionResult(r);
+                     }
+                 }
                  yield();
              },
              this),
@@ -70,6 +77,9 @@ GSMController::GSMController()
 void GSMController::stop() {
     if (_state == GSMState::IDLE) return;
     logger.log("[GSMController] stop()\n");
+    _stack.tcp.stop("gsm_stop");
+    _stack.tcp.reset();
+    _stack.at.reset();
     _retryCount = 0;
     _signal = 0;
     _operator[0] = '\0';
@@ -174,6 +184,9 @@ void GSMController::changeState(GSMState newState) {
     if (newState == GSMState::INIT) {
         _initPhase = GsmInitPhase::HypSendAt;
         _initCfgStep = 0;
+    }
+    if (newState == GSMState::GPRS_ATTACH) {
+        _attachProbeStep = 0;
     }
     _gsmStallPrevFp = 0xffffffffu;
     _gsmStallFpSinceMs = millis();

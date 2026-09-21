@@ -80,41 +80,84 @@ void GSMController::handleGprsSetup() {
 
 void GSMController::handleGprsAttach() {
     const uint32_t now = millis();
-    if (_lastCommandTime == 0) {
-        // Open bearer profile 1.
-        sendAt("AT+SAPBR=1,1", nullptr, AwaitKind::OK, GSM::PDP_ACTIVATE_TIMEOUT_MS);
-        return;
-    }
 
-    if (_awaitError) {
-        _retryCount++;
-        resetAwait();
-        if (_retryCount >= GSM::MAX_RETRIES) {
-            changeState(GSMState::ERROR);
-            core.getErrorManager().set(ErrorCode::GSM_APN_FAIL);
-            logger.log("[GSMController] SAPBR open failed\n");
+    // Status-first: warm modem / reattach may already have an open bearer with IP.
+    // 0=probe SAPBR=2,1 → 1=open SAPBR=1,1 → 2=re-probe after open fail.
+    if (_lastCommandTime == 0) {
+        if (_attachProbeStep == 0 || _attachProbeStep == 2) {
+            sendAt("AT+SAPBR=2,1", nullptr, AwaitKind::IP, GSM::GET_IP_TIMEOUT_MS);
             return;
         }
         sendAt("AT+SAPBR=1,1", nullptr, AwaitKind::OK, GSM::PDP_ACTIVATE_TIMEOUT_MS);
         return;
     }
 
-    if (_awaitOk) {
+    if (_attachProbeStep == 0) {
+        if (_awaitGotIp) {
+            resetAwait();
+            clearResponse();
+            _retryCount = 0;
+            if (core.getErrorManager().get() == ErrorCode::GSM_APN_FAIL) {
+                core.getErrorManager().clear();
+            }
+            logger.log("[GSMController] SAPBR already up (warm), skip open\n");
+            changeState(GSMState::READY);
+            updateSignalQuality();
+            return;
+        }
+        if (_awaitOk || _awaitError || awaitTimedOut(now)) {
+            resetAwait();
+            clearResponse();
+            _attachProbeStep = 1;
+            _lastCommandTime = 0;
+            return;
+        }
+        return;
+    }
+
+    if (_attachProbeStep == 1) {
+        if (_awaitOk) {
+            clearResponse();
+            _retryCount = 0;
+            changeState(GSMState::GPRS_GETIP);
+            return;
+        }
+        if (_awaitError || awaitTimedOut(now)) {
+            // Open failed — often "already open"; re-check IP before ERROR.
+            resetAwait();
+            clearResponse();
+            _attachProbeStep = 2;
+            _lastCommandTime = 0;
+            return;
+        }
+        return;
+    }
+
+    // _attachProbeStep == 2: re-probe after open fail
+    if (_awaitGotIp) {
+        resetAwait();
         clearResponse();
         _retryCount = 0;
-        changeState(GSMState::GPRS_GETIP);
+        if (core.getErrorManager().get() == ErrorCode::GSM_APN_FAIL) {
+            core.getErrorManager().clear();
+        }
+        logger.log("[GSMController] SAPBR open failed but IP present (already up)\n");
+        changeState(GSMState::READY);
+        updateSignalQuality();
         return;
     }
-
-    if (awaitTimedOut(now)) {
+    if (_awaitOk || _awaitError || awaitTimedOut(now)) {
         _retryCount++;
+        resetAwait();
+        clearResponse();
         if (_retryCount >= GSM::MAX_RETRIES) {
             changeState(GSMState::ERROR);
             core.getErrorManager().set(ErrorCode::GSM_APN_FAIL);
             logger.log("[GSMController] SAPBR open failed\n");
             return;
         }
-        sendAt("AT+SAPBR=1,1", nullptr, AwaitKind::OK, GSM::PDP_ACTIVATE_TIMEOUT_MS);
+        _attachProbeStep = 1;
+        _lastCommandTime = 0;
     }
 }
 
@@ -166,4 +209,3 @@ void GSMController::handleGprsGetIp() {
         sendAt("AT+SAPBR=2,1", nullptr, AwaitKind::IP, GSM::GET_IP_TIMEOUT_MS);
     }
 }
-

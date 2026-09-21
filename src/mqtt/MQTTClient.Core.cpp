@@ -57,6 +57,7 @@ static void buildStatusSnapshotForMqtt(StatusSnapshot& s) {
 
     s.voltageValid = sensors.isVoltageValid();
     s.voltage = s.voltageValid ? sensors.getVoltage() : 0.0f;
+    s.engineRunning = core.isEngineRunning();
 
     const auto& cfg = config.getBase();
     for (int i = 0; i < HardwareLimits::SENSORS; i++) {
@@ -201,11 +202,12 @@ void MQTTClient::loop() {
     if (!_reconnectEnabled) return;
 
     const uint32_t now = millis();
+    // Reconnect only from Idle/Error when no MQTT TX is staged (single in-flight packet).
     if (!_fsm.isConnected() && (now - _lastReconnectAttempt > NetTiming::MQTT_RECONNECT_INTERVAL_MS)) {
-        _lastReconnectAttempt = now;
-        connect();
-    } else if (_fsm.isConnected()) {
-        // Keep the FSM running even when connected.
+        if (_fsm.state() == MqttFsmClient::State::Idle || _fsm.state() == MqttFsmClient::State::Error) {
+            _lastReconnectAttempt = now;
+            connect();
+        }
     }
 
     const auto& mqttCfg = config.getBase().mqtt;
@@ -227,9 +229,11 @@ void MQTTClient::loop() {
     if (_fsm.isConnected()) {
         if (!_mqttWasConnected) {
             _mqttWasConnected = true;
-            // Without this, first publish waits until millis() >= publish_interval (e.g. 30s or 1h after boot).
+            _connectFailStreak = 0;
             _lastStatusPublish = 0;
             _onlinePublishDue = mqttCfg.status_topic[0];
+            _awaitFirstStatus = true;
+            _firstStatusAfterMs = millis() + 1500u;
             core.logHeapSnapshot("mqtt_online");
         }
 
@@ -237,14 +241,20 @@ void MQTTClient::loop() {
         if (_onlinePublishDue && mqttCfg.status_topic[0]) {
             if (_fsm.publish(mqttCfg.status_topic, kOnlinePayload, sizeof(kOnlinePayload) - 1u, true)) {
                 _onlinePublishDue = false;
+                _firstStatusAfterMs = millis() + 1500u;
             }
-        }
-
-        const uint32_t interval_ms = mqttCfg.publish_interval_sec * 1000UL;
-        const bool due = (_lastStatusPublish == 0) || (millis() - _lastStatusPublish >= interval_ms);
-        if (due) {
-            if (publishStatus()) {
+        } else if (_awaitFirstStatus) {
+            if ((int32_t)(millis() - _firstStatusAfterMs) >= 0 && publishStatus()) {
+                _awaitFirstStatus = false;
                 _lastStatusPublish = millis();
+                core.cooperate();
+            }
+        } else {
+            const uint32_t interval_ms = mqttCfg.publish_interval_sec * 1000UL;
+            const bool due = (_lastStatusPublish == 0) || (millis() - _lastStatusPublish >= interval_ms);
+            if (due && publishStatus()) {
+                _lastStatusPublish = millis();
+                core.cooperate();
             }
         }
     } else {
@@ -252,6 +262,7 @@ void MQTTClient::loop() {
         _subscribed = false;
         _mqttWasConnected = false;
         _onlinePublishDue = false;
+        _awaitFirstStatus = false;
     }
 }
 
@@ -307,12 +318,14 @@ void MQTTClient::handlePublish(const char* topic, const uint8_t* payload, uint16
         const auto& mqttCfg = config.getBase().mqtt;
         size_t measured = 0;
         if (!_fsm.publishPrintedMeasured(mqttCfg.status_topic, encodeProgramListForPublish, nullptr,
-                                         JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, false, &measured)) {
-            if (measured == 0 || measured > JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES) {
+                                         JsonBytes::Mqtt::LIST_PROGRAMS_JSON_MAX, false, &measured)) {
+            if (measured > JsonBytes::Mqtt::LIST_PROGRAMS_JSON_MAX) {
                 logger.log("[MQTTClient] list_programs JSON too large for MQTT buffer (max %u, got %u)\n",
-                           (unsigned)JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, (unsigned)measured);
+                           (unsigned)JsonBytes::Mqtt::LIST_PROGRAMS_JSON_MAX, (unsigned)measured);
+            } else {
+                logger.log("[MQTTClient] list_programs publish failed (busy/not connected/wire); measured=%u\n",
+                           (unsigned)measured);
             }
-            logger.log("[MQTTClient] list_programs publish failed (FSM busy?)\n");
         }
         logger.log("[MQTTClient] list_programs done\n");
     } else {
@@ -329,9 +342,12 @@ bool MQTTClient::publishStatus() {
     const uint32_t t0 = millis();
     if (!_fsm.publishPrintedMeasured(mqttCfg.status_topic, encodeMqttStatusForPublish, &ctx,
                                      JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, false, &measured)) {
-        if (measured == 0 || measured > JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES) {
+        if (measured > JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES) {
             logger.log("[MQTTClient] publishStatus: status JSON too large for MQTT buffer (max %u, got %u)\n",
                        (unsigned)JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, (unsigned)measured);
+        } else {
+            logger.log("[MQTTClient] publishStatus failed (busy/not connected/wire); measured=%u max=%u\n",
+                       (unsigned)measured, (unsigned)JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES);
         }
         return false;
     }

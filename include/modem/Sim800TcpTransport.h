@@ -13,6 +13,8 @@ public:
 
     void reset();
     void tick(uint32_t nowMs);
+    /// Consume one AtSession result if it belongs to TCP (CIP*). Returns true if consumed.
+    bool consumeAtResult(const AtSession::Result& r);
 
     // Hooks from modem UART
     void onLine(const char* line);
@@ -20,16 +22,34 @@ public:
 
     bool isConnected() const { return _connected; }
     bool isConnecting() const { return _connecting; }
+    /// True while connect/send/close/recover owns the shared AT/UART bus.
+    bool isBusBusy() const {
+        return _connecting || _sendInProgress || _txLen != 0 || _modemTxLocked || _closeQueued ||
+               _recoverQueued || _at.isBusy();
+    }
 
     bool connectStart(const char* host, uint16_t port);
+    /// Clear stuck connect/send flags (e.g. Client::connect wall-clock timeout).
+    void abandonConnect(const char* reason = nullptr);
     void stop(const char* reason = nullptr);
 
     // Non-blocking write: buffers data, schedules CIPSEND.
     size_t write(const uint8_t* data, size_t len);
 
+    /// True while modem TX staging has bytes or CIPSEND is in flight (incl. post-'>' until SEND OK).
+    bool hasBufferedTx() const { return _txLen != 0 || _sendInProgress || _modemTxLocked; }
+
     int available() const;
     int read();
     int peek() const;
+
+    /// After repeated CIPSHUT recovers without CONNECT OK — GSM should reattach bearer.
+    bool needsBearerReattach() const { return _needsBearerReattach; }
+    bool consumeNeedsBearerReattach() {
+        if (!_needsBearerReattach) return false;
+        _needsBearerReattach = false;
+        return true;
+    }
 
 private:
     AtSession& _at;
@@ -37,10 +57,21 @@ private:
     bool _connected{false};
     bool _connecting{false};
     bool _sendInProgress{false};
+    /// Held from CIPSEND enqueue until SEND OK/FAIL/watchdog/recover done (survives AtSession Idle after '>').
+    bool _modemTxLocked{false};
     bool _ipConfigDone{false};
+    /// One-shot CIPSHUT before first CIPSTART after reset (warm modem / leftover socket).
+    bool _didInitialCipShut{false};
+    bool _closeQueued{false};
+    bool _recoverQueued{false};
+    bool _needsBearerReattach{false};
+    uint8_t _stackRecoverCount{0};
     uint32_t _lastNowMs{0};
     uint32_t _lastConnectOkMs{0};
-    bool _closeQueued{false};
+    uint32_t _connectStartMs{0};
+    uint32_t _sendWatchMs{0};
+    uint32_t _lastStackRecoverMs{0};
+    uint32_t _lastConnectAttemptMs{0};
 
     char _host[64]{};
     uint16_t _port{0};
@@ -76,8 +107,12 @@ private:
     uint8_t _promptLeak{0}; // 0=none, 1=saw '>', 2=saw CR after '>'
 
     void pushRx_(uint8_t b);
-    void startConnect_();
+    bool startConnect_();
     void startSend_();
+    void clearTx_();
+    void endSendEpoch_();
+    void forceStackRecover_(const char* reason);
+    void noteConnectOk_();
 };
 
 // Arduino Client adapter around Sim800TcpTransport
@@ -93,12 +128,7 @@ public:
     size_t write(uint8_t b) override { return write(&b, 1); }
     size_t write(const uint8_t* buf, size_t size) override;
     int available() override {
-        // Bounded pump to allow +IPD to be pulled in immediately after CIPSEND (e.g. MQTT CONNACK).
-        const uint32_t t0 = millis();
         pump_();
-        while (_t.available() == 0 && (millis() - t0) < 15UL) {
-            pump_();
-        }
         return _t.available();
     }
     int read() override {
@@ -128,4 +158,3 @@ private:
         if (_pump) _pump(_pumpCtx);
     }
 };
-

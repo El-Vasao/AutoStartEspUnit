@@ -1,6 +1,6 @@
 /**
  * @file GSMController.Bringup.cpp
- * @brief Bring-up: фиксированный `UART_BAUD`, без синхронного autobaud в `begin()`; NV UART через `AT+IPR?` в INIT.
+ * @brief Bring-up: `UART_BAUD` + post-boot quiet; без синхронного autobaud в `begin()`; NV UART через `AT+IPR?` в INIT.
  */
 #include "gsm/GSMController.h"
 
@@ -23,6 +23,7 @@ static void waitCooperative(uint32_t ms) {
 void GSMController::gsmResetSessionAfterStop() {
     _verifiedModemContactSinceStop = false;
     _firstAtFallbackStartMs = 0;
+    _hypNextAttemptMs = 0;
     _initPhase = GsmInitPhase::None;
     _baudSearchActive = false;
     _baudSearchRound = 0;
@@ -31,9 +32,28 @@ void GSMController::gsmResetSessionAfterStop() {
     _baudSearchDeadlineMs = 0;
     _baudCooldownUntilMs = 0;
     _didIprNvProbeThisCycle = false;
+    _didPreBaudSearchCfun = false;
     _resumeSapbrHadIp = false;
     _postResumeTarget = GSMState::REGISTERING;
     _initCgattBusyRetries = 0;
+}
+
+void GSMController::gsmNoteModemSoftReboot(bool cfunAlreadyDone) {
+    _verifiedModemContactSinceStop = false;
+    _firstAtFallbackStartMs = 0;
+    _hypNextAttemptMs = 0;
+    _baudSearchActive = false;
+    _baudSearchRound = 0;
+    _baudSearchBaudIdx = 0;
+    _baudSearchDeadlineMs = 0;
+    _baudCooldownUntilMs = 0;
+    _didIprNvProbeThisCycle = false;
+    _didPreBaudSearchCfun = cfunAlreadyDone;
+}
+
+void GSMController::gsmOpenUart(uint32_t baud) {
+    _stack.uart.begin(baud);
+    _baud = baud;
 }
 
 void GSMController::begin() {
@@ -50,14 +70,13 @@ void GSMController::begin() {
         gsmResetSessionAfterStop();
     }
 
-    _serial->begin(GSM::UART_BAUD);
-    _baud = GSM::UART_BAUD;
+    gsmOpenUart(GSM::UART_BAUD);
     waitCooperative(GSM::UART_SETTLE_MS);
     flushInput();
 
     if (!fromErrorRecovery) {
         _waitFirstStep = 0;
-        _waitFirstUntilMs = now + 5000UL;
+        _waitFirstUntilMs = now + GSM::POST_BOOT_QUIET_MS;
     } else {
         _waitFirstUntilMs = 0;
     }

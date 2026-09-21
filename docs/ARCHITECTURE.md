@@ -80,7 +80,7 @@ Heap headroom заметно выше, чем на ESP8266, но предска�
 Дополнение:
 - Для рантайм-исполнения программ — компактные шаги без строк (`CompiledStep`).
 - Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`).
-- MQTT: выделенные топики из конфигурации; payload caps согласованы с `MqttFsmClient::TX_MAX`.
+- MQTT: выделенные топики из конфигурации; payload caps (`STATUS_PAYLOAD_MAX_BYTES=900`) согласованы с `MqttFsmClient::TX_MAX=1024`. Нормативный JSON статуса — `docs/modules/mqtt.md` §3 (`engineRunning`, `inputsById` → `relaysById` → `tempSensorsById`).
 
 ## 3.0) MQTT contract (топики, сообщения, доставка)
 MQTT чувствителен к стабильности цикла (SIM800 + SoftAP).
@@ -93,9 +93,11 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
   - LWT `"offline"` на `status_topic`: QoS1 + retained
   - `"online"` при connect на `status_topic`: retained
   - периодический JSON-статус: best-effort, not-retained, раз в `publish_interval_sec`
+    (контракт полей: `docs/modules/mqtt.md` §3; без усечения полей)
 - **Anti-hang**: публикация JSON-статуса только по таймеру; чтение/запись в транспорт режутся лимитами `MqttFsmClient::Budgets`.
   Локальное время «измерить + застейджить» JSON ограничивают **логируемым** порогом
   (~10 мс в `MQTTClient::publishStatus`) и не приводят к принудительному `disconnect()` сами по себе.
+  SIM800: send-epoch до `SEND OK`, `POST_BOOT_SETTLE_MS` до `gsm.begin()`, `mqtt.loop` только когда `!tcpBusBusy()` (см. `docs/modules/gsm_modem.md`).
 
 ### Долгие операции и watchdog/cooperate
 Любые потенциально долгие операции (flash, большие сериализации, loop’ы по файлам):
@@ -144,10 +146,11 @@ Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удале
 
 ### Recovery levels (предсказуемость)
 При сбоях связь восстанавливаем по уровням (от дешёвого к дорогому):
-- L1: TCP reconnect (повтор `CIPSTART`, backoff)
+- L1: restart GSM FSM (`begin` после cooldown)
 - L2: reset IP stack: `CIPSHUT`
-- L3: bearer reset: `SAPBR=0,1` → `SAPBR=1,1`
-- L4: modem reset: `CFUN=1,1`
+- L3: bearer reset: `SAPBR=0,1`
+- L4: modem reset: `CFUN=1,1` (+ сброс sticky UART verify)
+- На READY отдельно: TCP reconnect / reattach с backoff (MQTT + `handleReady`)
 
 ### SSE logs: backpressure policy
 - При активной UI-сессии возможен log-storm (GSM churn + transport polling).

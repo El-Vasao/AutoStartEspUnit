@@ -67,6 +67,8 @@ private:
     bool _subscribed{false};
     bool _mqttWasConnected{false}; ///< edge-detect: prime first status publish after each (re)connect
     bool _onlinePublishDue{false}; ///< retained "online" on `status_topic` after each CONNECT
+    bool _awaitFirstStatus{false}; ///< one JSON status after online/settle on each session
+    uint32_t _firstStatusAfterMs{0}; ///< earliest millis() for `_awaitFirstStatus`
 
     /// NUL-terminated MQTT credentials (copied once in `begin()` from config).
     char _mqttClientId[TextBytes::Mqtt::CLIENT_ID]{};

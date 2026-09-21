@@ -220,8 +220,7 @@ bool MqttFsmClient::ensureTcp_() {
             setError_("tcp_no_host");
             return false;
         }
-        // Non-blocking connect: underlying GSM adapter may block internally if used directly;
-        // We still call connect() here, but budgets are enforced at higher layers by pumping UART elsewhere.
+        // Non-blocking connect kick (transport enforces CIPSTART cooldown / busy gates).
         (void)_net.connect(_cfg.host, _cfg.port);
         if (now - _tcpConnectStartMs > kTcpConnectTimeoutMs) {
             setError_("tcp_connect_timeout");
@@ -601,8 +600,8 @@ bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn 
         *measuredBytesOut = mj;
     }
     if (mj == 0 || mj > maxPayloadBytes) {
-        logger.log("[MqttFsm] publishJson: measurePrint=%u maxPayload=%u\n", (unsigned)mj,
-                   (unsigned)maxPayloadBytes);
+        logger.log("[MqttFsm] publishJson: measurePrint=%u maxPayload=%u%s\n", (unsigned)mj,
+                   (unsigned)maxPayloadBytes, mj == 0 ? " (empty encode)" : " (oversize)");
         return false;
     }
 

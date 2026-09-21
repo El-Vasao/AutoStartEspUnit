@@ -21,7 +21,8 @@ void GSMController::handleReady() {
             if (_awaitOk || _awaitError || awaitTimedOut(millis())) {
                 resetAwait();
                 sendAt("AT+CFUN=1,1", "CFUN", AwaitKind::NONE, 0);
-                _postLockQuietUntilMs = millis() + 20000UL;
+                gsmNoteModemSoftReboot(true);
+                _postLockQuietUntilMs = millis() + GSM::POST_CFUN_QUIET_MS;
                 _userRebootRequested = false;
                 _rebootStep = 0;
                 // Restart bring-up after reboot.
@@ -30,6 +31,12 @@ void GSMController::handleReady() {
             }
             return;
         }
+    }
+
+    // TCP stack recover exhausted — probe/reattach bearer (status-first in GPRS_ATTACH).
+    if (_stack.tcp.consumeNeedsBearerReattach()) {
+        logger.log("[GSMController] TCP stack recover exhausted, requesting reattach\n");
+        _reattachRequested = true;
     }
 
     if (_reattachRequested) {
@@ -87,14 +94,17 @@ void GSMController::handleReady() {
     }
 
     // Diagnostics should be sparse: do not constantly poke the modem.
+    // Never enqueue CSQ/COPS while TCP owns the AT bus (CIPSEND / CIPSTART / recover).
     const uint32_t now = millis();
-    if (now - _lastDiagMs >= GSM::READY_SIGNAL_INTERVAL_MS) {
-        _lastDiagMs = now;
-        updateSignalQuality();
-    }
-    if (now - _lastOperatorMs >= GSM::READY_OPERATOR_INTERVAL_MS) {
-        _lastOperatorMs = now;
-        readOperator();
+    if (!_stack.tcp.isBusBusy()) {
+        if (now - _lastDiagMs >= GSM::READY_SIGNAL_INTERVAL_MS) {
+            _lastDiagMs = now;
+            updateSignalQuality();
+        }
+        if (now - _lastOperatorMs >= GSM::READY_OPERATOR_INTERVAL_MS) {
+            _lastOperatorMs = now;
+            readOperator();
+        }
     }
     static uint32_t lastTcpStatsMs = 0;
     if (now - lastTcpStatsMs >= GSM::READY_TCP_STATS_INTERVAL_MS) {
@@ -126,49 +136,48 @@ void GSMController::handleError() {
     }
 
     if (_recoveryLevel == 0) {
-        // Level 0: simple restart
         _recoveryLevel = 1;
         ev(21, _recoveryLevel);
     }
 
+    // L1: cheap FSM restart.
     if (_recoveryLevel == 1) {
-        // Level 1: restart FSM
         logger.log("[GSMController] Recovering (level 1): restart FSM\n");
         _cooldownUntilMs = now + GSM::ERROR_RECOVERY_DELAY_MS;
+        _recoveryLevel = 2;
         _restartPending = true;
         return;
     }
 
+    // L2: reset TCP/IP stack (CIPSHUT), then restart FSM.
+    if (_recoveryLevel == 2) {
+        logger.log("[GSMController] Recovering (level 2): CIPSHUT\n");
+        _stack.tcp.stop("recover");
+        (void)_stack.at.enqueueHigh({ "AT+CIPSHUT", 10000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" });
+        _cooldownUntilMs = now + 5000UL;
+        _recoveryLevel = 3;
+        _restartPending = true;
+        ev(22);
+        return;
+    }
+
+    // L3: bearer reset (SAPBR close) + restart.
     if (_recoveryLevel == 3) {
-        // Level 3: bearer reset (SAPBR close/open) + restart.
         logger.log("[GSMController] Recovering (level 3): SAPBR reset\n");
         (void)_stack.at.enqueueHigh({ "AT+SAPBR=0,1", 8000, atExpectMask(AtSession::Expect::Ok), nullptr, "SAPBR0" });
         _cooldownUntilMs = now + 8000UL;
         _recoveryLevel = 4;
+        _restartPending = true;
         ev(23);
         return;
     }
 
-    // Level 4: CFUN reset, then restart.
+    // L4: CFUN reset, then restart.
     logger.log("[GSMController] Recovering (level 4): CFUN reset\n");
     (void)_stack.at.enqueueHigh({ "AT+CFUN=1,1", 1000, atExpectMask(AtSession::Expect::AnyLine), nullptr, "CFUN" });
-    // After CFUN modem will reboot and emit RDY; give it some time, then restart bring-up.
-    _cooldownUntilMs = now + 20000UL;
+    gsmNoteModemSoftReboot(true);
+    _cooldownUntilMs = now + GSM::POST_CFUN_QUIET_MS;
     _recoveryLevel = 1;
+    _restartPending = true;
     ev(24);
-    return;
-
-    // Level 2: reset TCP/IP stack (CIPSHUT), then restart FSM.
-    // This is much cheaper than tearing down SAPBR/CFUN and often fixes stuck RX/TCP states.
-    logger.log("[GSMController] Recovering (level 2): CIPSHUT\n");
-    _stack.tcp.stop("recover");
-    (void)_stack.at.enqueueHigh({ "AT+CIPSHUT", 10000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" });
-    _cooldownUntilMs = now + 5000UL;
-    _recoveryLevel = 3;
-    ev(22);
-    return;
-
-    // Level 3: bearer reset (SAPBR close/open) + restart FSM.
-    // (handled on next entry after cooldown via _recoveryLevel state)
 }
-

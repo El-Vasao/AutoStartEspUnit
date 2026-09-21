@@ -2,6 +2,8 @@
 
 #include <Arduino.h>
 
+#include "common/Constants.h"
+
 class GSMController;
 class MQTTClient;
 class WebServer;
@@ -36,7 +38,10 @@ private:
     WebServer* _web{nullptr};
     bool _gsmStarted{false};
     bool _mqttStarted{false};
+    /// One-shot settle after power-on / first service before gsm.begin().
+    bool _bootSettlePending{true};
+    uint32_t _bootSettleUntilMs{0};
+    uint32_t _lastSettleLogMs{0};
     uint32_t _lastReattachRequestMs{0};
     uint8_t _lastLoggedFailStreak{0};
 };
-

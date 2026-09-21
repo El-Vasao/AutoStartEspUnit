@@ -27,26 +27,43 @@
 
 - `INIT` может перейти сразу в `REGISTERING`, `GPRS_SETUP` или `READY` после resume-опроса (сеть и bearer уже в рабочем состоянии), иначе — цепочка `REGISTERING` → `GPRS_SETUP` → … → `READY` как ниже.
 - Типичный cold path после INIT: `REGISTERING` → `GPRS_SETUP` → `GPRS_ATTACH` → `GPRS_GETIP` → `READY`
+- **Warm modem (ребут только ESP):** contact (`AT`/`AT+CGMI`) + status probe (`CREG`/`CGATT`/`SAPBR=2,1`) — без `CFUN`, без повторного open bearer если IP уже есть. `GPRS_ATTACH` тоже status-first: сначала `SAPBR=2,1`, open `SAPBR=1,1` только если IP нет; при ERROR open — повторный probe (часто bearer уже открыт).
 - `ERROR` — восстановление с эскалацией (см. ниже)
 
 ### 2а) UART: гипотеза скорости и поиск baud
 
-Параметры и таймеры задаются только в [`include/common/Constants.h`](../../include/common/Constants.h), `namespace GSM` (например `UART_BAUD`, `BAUD_FALLBACK_AFTER_MS`, `BAUD_SEARCH_ROUND_COOLDOWN_MS`, `MODEM_ID_VERIFY_TIMEOUT_MS`, подстрока `MODEM_VERIFY_MANUFACTURER_SUBSTR` для `AT+CGMI`).
+Параметры и таймеры задаются только в [`include/common/Constants.h`](../../include/common/Constants.h), `namespace GSM` (например `UART_BAUD`, `POST_BOOT_QUIET_MS`, `PRE_CFUN_AFTER_MS`, `POST_CFUN_QUIET_MS`, `POST_CFUN_RETRY_MS`, `BAUD_SEARCH_ROUND_COOLDOWN_MS`, `MODEM_ID_VERIFY_TIMEOUT_MS`, подстрока `MODEM_VERIFY_MANUFACTURER_SUBSTR` для `AT+CGMI`).
 
-Краткая политика:
+Краткая политика (cold-path):
 
-- В `begin()` MCU сразу открывает **`GSM::UART_BAUD`**, без синхронного «autobaud-скана» в `begin()` (единичные шаги — в `handleInit()` / раундах).
-- Первый живой канал считается подтверждённым только после пары **`AT` → OK** и **`AT+CGMI`** с ожидаемым производителем (`SIMCOM` по умолчанию) и финальным `OK`.
-- Если за **`BAUD_FALLBACK_AFTER_MS`** с момента первой отправки `AT` на целевой скорости подтверждения всё ещё нет, включается **асинхронный поиск baud** по небольшой таблице кандидатов; между полными неудачными проходами — **`BAUD_SEARCH_ROUND_COOLDOWN_MS`**, один содержательный шаг за тик (`update`).
-- После успешного подтверждения выполняются **`AT+IPR?`**, при расхождении с текущей рабочей скоростью — **`AT+IPR=`** и **`AT&W`** (NV модема), **без** новых ключей в `config.json`; утечку спама `AT+IPR?` в одном цикле GSM снижает бит-сессии в контроллере.
-- Успешное подтверждение в рамках сессии **липнет** до `GSMController::stop()` (`_verifiedModemContactSinceStop`): при восстановлении после `ERROR` без `stop()` поиск baud снова не включается, повтор сканирования — только после «чистого» старта.
-- При старте раундов поиска в логе ожидается редкая строка вида `baud search round N start`; рутиновый **`AT+CFUN=1,1`** после каждого успешного канала не выполняется (CFUN остаётся в тяжёлом recovery, см. уровни ниже).
+1. В `begin()` MCU открывает UART на **`GSM::UART_BAUD`** с пинами `Pin::GSM_RX`/`GSM_TX` (через `ModemUart::begin`), без синхронного autobaud.
+2. Quiet **`POST_BOOT_QUIET_MS`**, затем hypothesis: **`AT` → OK** и **`AT+CGMI`** с производителем (`SIMCOM` по умолчанию). Между неудачными hypothesis-попытками — **`HYP_RETRY_GAP_MS`**.
+3. Если за **`PRE_CFUN_AFTER_MS`** контакта нет — один best-effort **`AT+CFUN=1,1`** на `UART_BAUD`, quiet **`POST_CFUN_QUIET_MS`**, повтор hypothesis (**`POST_CFUN_RETRY_MS`**). CFUN на чужом baud может не дойти — это ожидаемо.
+4. Если после PreCfun контакта всё ещё нет — **асинхронный baud search** по таблице кандидатов (старт со следующего после `UART_BAUD`); между полными неудачными проходами — **`BAUD_SEARCH_ROUND_COOLDOWN_MS`**, один содержательный шаг за тик (`update`).
+5. После успешного подтверждения — **`AT+IPR?`**, при расхождении с `UART_BAUD` — **`AT+IPR=`** и **`AT&W`** (NV), **без** ключей baud в `config.json`.
+
+Дополнительно:
+
+- Успешное подтверждение **липнет** до `stop()` (`_verifiedModemContactSinceStop`). После soft-reboot модема (PreCfun / UI / ERROR L4) sticky verify снимается (`gsmNoteModemSoftReboot`), чтобы PreCfun/search снова были возможны.
+- Рутиновый CFUN после каждого успешного канала **не** выполняется; CFUN — PreCfun (один раз за цикл) и тяжёлый recovery L4 / UI reboot.
 
 ### 3) SIM800 TCP (URC-first)
 
-- Завершение connect/close/send — по URC (`CONNECT OK` / `CONNECT FAIL`, `CLOSED`, `SEND OK` / `SEND FAIL`).
+- Завершение connect/close/send — по URC: точный `CLOSED`, `CONNECT OK` / `CONNECT FAIL`, `SEND OK` / `SEND FAIL`. Голый `ERROR` **не** рвёт TCP (его обрабатывает `AtSession`; иначе GSM AT на том же UART ломал бы сокет).
+- **Send-epoch:** с enqueue `CIPSEND` до `SEND OK`/`SEND FAIL`/watchdog держатся `_sendInProgress` + `_modemTxLocked` (даже когда `AtSession` уже Idle после `>`). `CIPSTART` и GSM diag (`CSQ`/`COPS`) запрещены, пока `isBusBusy()`.
+- Перед **первым** `CIPSTART` после `Sim800TcpTransport::reset()` — один `AT+CIPSHUT` (тёплый модем после ребута ESP). Cooldown `CONNECT_RETRY_COOLDOWN_MS` между попытками.
+- `Client::connect` — **неблокирующий** kick `CIPSTART` (без wall-clock wait); иначе SoftAP/IWDT.
+- Watchdogs: connect (`CONNECT_WATCHDOG_MS`) сбрасывает залипший `_connecting`; send (`SEND_WATCHDOG_MS`) после `CIPSEND`/`>` без `SEND OK` — end send-epoch + CIPSHUT recover.
+- После `STACK_RECOVER_REATTACH_THRESHOLD` CIPSHUT-recover без успешного `CONNECT OK` — `needsBearerReattach` → GSM `requestReattach` (status-first `SAPBR=2,1`).
+- Единый `takeResult`: TCP CIP* теги → `Sim800TcpTransport::consumeAtResult`, иначе GSM await absorb.
 - RX по умолчанию: **`+IPD`** и `AT+CIPRXGET=0` (push mode).
 - Payload внутри `+IPD` — **бинарный**; пока принимается тело IP-пакета, `ModemUart` переводится в `dataMode` (выключается line-framing для URC), чтобы сырой поток не ломал парсеры строк.
+
+### 3а) CellularCore glue
+
+- После первого `service()` — settle **`GSM::POST_BOOT_SETTLE_MS` (20 s)** до `gsm.begin()`.
+- `mqtt.loop()` и reattach не вызываются, пока `gsm.tcpBusBusy()`.
+- Hypothesis `AT`/`CGMI`: пауза **`HYP_RETRY_GAP_MS`** между повторами.
 
 ### 4) MQTT поверх `Client`
 
@@ -62,14 +79,14 @@ MQTT реализован **в прошивке** как неблокирующ�
 
 ## Recovery policy (уровни)
 
-От дешёвого к дорогому:
+От дешёвого к дорогому в `handleError` (ERROR FSM):
 
-- **L1**: TCP reconnect (повтор `CIPSTART`, backoff)
+- **L1**: restart FSM (`begin` после cooldown)
 - **L2**: сброс IP-стека (`CIPSHUT`)
-- **L3**: bearer reset (`SAPBR=0,1` → `SAPBR=1,1`)
-- **L4**: модемный reset (`CFUN=1,1`)
+- **L3**: bearer reset (`SAPBR=0,1`)
+- **L4**: модемный reset (`CFUN=1,1`), затем `gsmNoteModemSoftReboot`
 
-При reattach действует backoff (ступени до ~180 с, зависимость от CSQ и пр.) — см. реализацию `GSMController`.
+На READY отдельно: TCP reconnect (MQTT), reattach с backoff (ступени до ~180 с, зависимость от CSQ) — см. `handleReady` / `CellularCore`.
 
 ## Диагностика
 
@@ -104,7 +121,8 @@ MQTT реализован **в прошивке** как неблокирующ�
 
 **2) MQTT handshake**
 
-- TCP даёт `CONNECT OK`, затем успешный MQTT CONNECT (`CONNACK`).
+- После settle (`POST_BOOT_SETTLE_MS`) и GSM READY: TCP даёт `CONNECT OK`, затем успешный MQTT CONNECT (`CONNACK`).
+- Нет шторма `CIPSTART` во время `CIPSEND` / между `>` и `SEND OK`.
 - Ожидание логов: строка вида `[MQTTClient] Connected. subscribe=...` после подписки.
 - После успешного MQTT-сессии клиент может опубликовать retained `"online"` на `mqtt.status_topic` (см. [`mqtt.md`](mqtt.md)).
 
@@ -112,4 +130,5 @@ MQTT реализован **в прошивке** как неблокирующ�
 
 - SoftAP UI и GSM/MQTT сосуществуют на ESP32-C3.
 - Cellular suspend только при SoftAP down (NORMAL) или OTA upload pressure.
+- Полный JSON status уходит без Instruction fault / IWDT.
 - Ожидание: в панели виден живой `gsmState` во время загрузки UI (без `/ui/ready`).

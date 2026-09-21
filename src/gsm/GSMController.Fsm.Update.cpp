@@ -80,12 +80,17 @@ void GSMController::update() {
     _stack.uart.pollRx();
     _stack.at.tick(millis());
     const uint32_t now = millis();
-    if (_state == GSMState::READY || _stack.tcp.isConnected() || _stack.tcp.isConnecting()) {
+    if (_state == GSMState::READY || _stack.tcp.isConnected() || _stack.tcp.isConnecting() ||
+        _stack.tcp.isBusBusy()) {
         _stack.tcp.tick(now);
     }
 
+    // Single takeResult owner: TCP CIP* tags first, else GSM await absorb.
     if (_stack.at.hasResult()) {
-        gsmAbsorbAtSessionResult(_stack.at.takeResult());
+        const AtSession::Result r = _stack.at.takeResult();
+        if (!_stack.tcp.consumeAtResult(r)) {
+            gsmAbsorbAtSessionResult(r);
+        }
     }
 
     switch (_state) {

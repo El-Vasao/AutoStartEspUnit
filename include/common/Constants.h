@@ -283,13 +283,14 @@ namespace JsonBytes {
     }
 
     namespace Mqtt {
-        constexpr size_t STATUS_DOC_CAPACITY = 512;
         constexpr size_t CMD_DOC_CAPACITY = 384;
         constexpr size_t CMD_JSON_MAX = 256; ///< макс. размер входящей JSON-команды (payload) + '\0'
-        /// Лимит тела MQTT PUBLISH (JSON) при `MqttFsmClient::TX_MAX=576` и длине топика до `TextBytes::Mqtt::TOPIC-1`.
-        constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 480;
-        constexpr size_t STATUS_JSON_MAX = 512;
-        constexpr size_t LIST_PROGRAMS_JSON_MAX = 480;
+        /// Лимит тела MQTT PUBLISH (JSON) при `MqttFsmClient::TX_MAX=1024` и длине топика до `TextBytes::Mqtt::TOPIC-1`.
+        /// Wire: payload + 1 (fixed) + ≤4 (RL) + 2 (topic len) + topicLen ≤ TX_MAX.
+        constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 900;
+        constexpr size_t STATUS_JSON_MAX = STATUS_PAYLOAD_MAX_BYTES;
+        constexpr size_t STATUS_DOC_CAPACITY = STATUS_PAYLOAD_MAX_BYTES;
+        constexpr size_t LIST_PROGRAMS_JSON_MAX = 900;
         constexpr size_t LIST_PROGRAMS_DOC_CAPACITY = MAX_FILE_JSON_BYTES;
     }
 
@@ -393,8 +394,18 @@ namespace GSM {
     constexpr uint32_t UART_BAUD = 115200;
     /// Пауза после `Serial.begin` на старте и при возврате к гипотезе между раундами поиска скорости.
     constexpr uint32_t UART_SETTLE_MS = 80;
-    /// Старт отсчёта — с первой отправки `AT` на `UART_BAUD` в INIT (после quiet window). До истечения не включаем поиск альтернативных baud.
-    constexpr uint32_t BAUD_FALLBACK_AFTER_MS = 60000;
+    /// Quiet после `begin()` до первой hypothesis AT (модему нужно время после питания/рестарта ESP).
+    constexpr uint32_t POST_BOOT_QUIET_MS = 5000;
+    /// CellularCore: не трогать модем N мс после первого service() (питание/USB/SoftAP стабилизация).
+    constexpr uint32_t POST_BOOT_SETTLE_MS = 20000;
+    /// Пауза между повторными hypothesis `AT` / `AT+CGMI` (антиспам UART при нет ответа).
+    constexpr uint32_t HYP_RETRY_GAP_MS = 750;
+    /// После неудачной hypothesis на `UART_BAUD` — один best-effort `AT+CFUN=1,1` до baud search.
+    constexpr uint32_t PRE_CFUN_AFTER_MS = 20000;
+    /// Пауза после soft-reboot модема (`CFUN=1,1`) перед повторными AT.
+    constexpr uint32_t POST_CFUN_QUIET_MS = 20000;
+    /// Окно повторной hypothesis на `UART_BAUD` после PreCfun; затем baud search.
+    constexpr uint32_t POST_CFUN_RETRY_MS = 15000;
     /// Пауза между полными неудачными проходами таблицы скоростей (антиспам модема и loop).
     constexpr uint32_t BAUD_SEARCH_ROUND_COOLDOWN_MS = 30000;
     /// Задержка после `Serial.begin(rate)` на каждой пробе в режиме поиска baud.
@@ -446,6 +457,21 @@ namespace Sim800Tcp {
 
     // AT acceptance timeout for CIPSTART command (OK/ERROR), actual connect is via URC.
     constexpr uint32_t CIPSTART_ACCEPT_TIMEOUT_MS = 15000;
+
+    /// Transport-side connect watchdog (from connectStart); clears stuck `_connecting`.
+    constexpr uint32_t CONNECT_WATCHDOG_MS = CONNECT_TIMEOUT_MS;
+
+    /// After CIPSEND '>' / payload write: wait for SEND OK / SEND FAIL.
+    constexpr uint32_t SEND_WATCHDOG_MS = 15000;
+
+    /// Min gap between CIPSTART attempts (non-blocking Client::connect retries every MQTT tick).
+    constexpr uint32_t CONNECT_RETRY_COOLDOWN_MS = 3000;
+
+    /// Min gap between CIPSHUT recover attempts.
+    constexpr uint32_t STACK_RECOVER_COOLDOWN_MS = 5000;
+
+    /// Stack recovers without CONNECT OK before asking GSM for bearer reattach.
+    constexpr uint8_t STACK_RECOVER_REATTACH_THRESHOLD = 3;
 
     // Micro-budget for helping modem progress after write() (to avoid long stalls during MQTT handshake).
     constexpr uint32_t WRITE_PUMP_BUDGET_MS = 50;

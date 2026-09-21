@@ -31,11 +31,15 @@ MQTT-публикация статуса и подписка на команды
 
 ### Anti-hang
 - Вызывающий код гоняет `MQTTClient::loop()` кооперативно вместе с GSM; каждый `tick()` имеет байтовые лимиты RX/TX.
+- `CellularCore` не вызывает `mqtt.loop()`, пока `gsm.tcpBusBusy()` (send-epoch / CIPSTART / CIPSHUT).
+- После успешного status publish — `Core::cooperate()` для SoftAP fairness.
+- `Client::connect` неблокирующий; reconnect kick только из Idle/Error.
 - Публикация статуса не блокируется бесконечно; если локальное измерение+стейджинг JSON заняло **> ~10 ms**, это **логируется**, соединение **не разрывается** автоматически из-за этого порога.
 
 ### Reconnect и 2-phase connect (SIM800)
-- Сначала поднимается TCP (`Client.connected()` после `CONNECT OK` модема).
+- Сначала поднимается TCP (`Client.connected()` после `CONNECT OK` модема); `CIPSTART` с cooldown и без mid-send.
 - Затем MQTT CONNECT только поверх живого TCP.
+- После `"online"` — settle ~1.5 s до первого JSON status.
 
 Протокол MQTT в CONNECT: при необходимости совместимости с брокером можно включить режим имени **`MQIsdp` / MQTT 3.1** через compile-time (см. `MQTTClient.Core.cpp`): `-DMQTT_VERSION=MQTT_VERSION_3_1`.
 
@@ -45,7 +49,7 @@ MQTT-публикация статуса и подписка на команды
 ## Память
 - В callbacks нет динамических аллокаций под команды; размер входного JSON ограничен `JsonBytes::Mqtt::CMD_JSON_MAX`.
 - JSON статуса собирается потоково в TX-буфер FSM (`publishPrintedMeasured`), без большого постоянного payload в `.bss`.
-- `MqttFsmClient::TX_MAX` / `STATUS_PAYLOAD_MAX_BYTES` — caps для wire; на ESP32-C3 подняты относительно ESP8266-эры.
+- Wire caps: `MqttFsmClient::TX_MAX = 1024`, `JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES = 900` (и `LIST_PROGRAMS_JSON_MAX`). Поля статуса **не усекаются**; при `measured > max` publish fail + log.
 
 ## Сообщения
 
@@ -67,21 +71,49 @@ MQTT-публикация статуса и подписка на команды
 Подписчики, ожидающие только JSON, должны отличать payload по содержимому (или подписаться на несколько топиков, если измените конфигурацию).
 
 ### 3) StatusSnapshot (периодический JSON, выход, `mqtt.status_topic`)
-Формируется `emitMqttStatusJson()` в `src/mqtt/MqttStatusBuilder.cpp` — поле **`schema` не используется**.
+Формируется `emitMqttStatusJson()` в `src/mqtt/MqttStatusBuilder.cpp`. Поле **`schema` не используется**. QoS 0, **не** retained.
 
-Минимальный перечень полей текущей прошивки:
-| Поле | Тип | Смысл |
-|------|-----|--------|
-| `uptime` | number | секунды с апайма |
-| `mode` | string | строка режима из снимка |
-| `voltage` | number или `null` | напряжение, если известно |
-| `tempSensors` | array | элементы `{ id, valid, lastMs, t }` (см. `MqttStatusBuilder.cpp`) |
-| `relaysById` | object | ключ = id реле (строка-число), значение bool |
-| `current_program` | number | только если выполняется программа |
-| `last_program` | number | последняя активность |
-| `runtime` | object | `inputTriggersById`, `tempTriggersById` — ключи id триггеров, значение bool |
-| `inputsById` | object | ключ = id входа, значение bool |
-| `last_error` | string | экранированная строка ошибки (может быть пустой) |
+Порядок полей = порядок emit (нормативный контракт):
+
+| # | Поле | Тип | Смысл |
+|---|------|-----|--------|
+| 1 | `uptime` | number | секунды аптайма |
+| 2 | `mode` | string | имя режима (до 15 символов) |
+| 3 | `voltage` | number или `null` | напряжение |
+| 4 | `engineRunning` | bool | `Core::isEngineRunning()` (voltage hysteresis или digital input) |
+| 5 | `inputsById` | object | ключи `Pin::INPUT_IDS` (1001–1003), значение bool |
+| 6 | `relaysById` | object | ключи `Pin::RELAY_IDS` (2001–2005), значение bool |
+| 7 | `tempSensorsById` | object | ключ = id сенсора (`BaseConfig.sensors[].id`, дефолт 3001–3003); значение `{ valid, lastMs, t }`; несмапленные слоты не эмитятся |
+| 8 | `current_program` | number | только если программа выполняется |
+| 9 | `last_program` | number | всегда |
+| 10 | `runtime` | object | `inputTriggersById`, `tempTriggersById` — ключи id триггеров, значение bool |
+| 11 | `last_error` | string | экранированная строка; пустая если ошибок нет (`ErrorCode::NONE` не публикуется как `"OK"`) |
+
+Пример:
+
+```json
+{
+  "uptime": 12345,
+  "mode": "NORMAL",
+  "voltage": 12.4,
+  "engineRunning": true,
+  "inputsById": {"1001": false, "1002": true, "1003": false},
+  "relaysById": {"2001": false, "2002": true, "2003": false, "2004": false, "2005": false},
+  "tempSensorsById": {
+    "3001": {"valid": true, "lastMs": 1000, "t": 21.5},
+    "3003": {"valid": true, "lastMs": 2000, "t": 18.0}
+  },
+  "current_program": 2,
+  "last_program": 2,
+  "runtime": {
+    "inputTriggersById": {"10": true},
+    "tempTriggersById": {"20": false}
+  },
+  "last_error": ""
+}
+```
+
+Неймспейс id по умолчанию: входы `1xxx`, реле `2xxx`, сенсоры `3xxx`.
 
 ### 4) ProgramsList (ответ на `list_programs`, выход, `mqtt.status_topic`)
 Объект вида:

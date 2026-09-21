@@ -1,4 +1,4 @@
-// logs store (lazy render via intersect + explicit flush on System enter)
+// logs store (always keep text in sync; visible only gates autoscroll)
 (function () {
   const APP = (window.APP = window.APP || {});
   APP.stores = APP.stores || {};
@@ -16,6 +16,7 @@
       },
       flushToView() {
         this.text = this.entries.join('\n');
+        if (!this.visible) return;
         const el = this._getEl();
         if (el) {
           requestAnimationFrame(() => {
@@ -26,7 +27,6 @@
       setVisible(v) {
         const next = !!v;
         if (next === this.visible) {
-          // Re-entering System / intersect while already visible must still refresh text.
           if (next) this.flushToView();
           return;
         }
@@ -40,9 +40,9 @@
         this.entries.push(line);
         if (this.entries.length > 200) {
           this.entries.shift();
-          if (this.visible) this.text = this.entries.join('\n');
+          this.text = this.entries.join('\n');
         } else {
-          if (this.visible) this.text = this.text ? (this.text + '\n' + line) : String(line);
+          this.text = this.text ? (this.text + '\n' + line) : String(line);
         }
 
         if (this.visible && el && wasNearBottom) {

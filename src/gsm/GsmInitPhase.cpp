@@ -7,6 +7,8 @@ const char* gsmInitPhaseName(GsmInitPhase p) {
     case GsmInitPhase::HypAwaitAt: return "HypAwaitAt";
     case GsmInitPhase::HypSendCgmi: return "HypSendCgmi";
     case GsmInitPhase::HypAwaitCgmi: return "HypAwaitCgmi";
+    case GsmInitPhase::PreCfunSend: return "PreCfunSend";
+    case GsmInitPhase::PreCfunQuiet: return "PreCfunQuiet";
     case GsmInitPhase::BsCooldown: return "BsCooldown";
     case GsmInitPhase::BsSettle: return "BsSettle";
     case GsmInitPhase::BsSendAt: return "BsSendAt";

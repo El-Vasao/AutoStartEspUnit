@@ -119,7 +119,7 @@ void GSMController::handleUrc(const char* line) {
         ev(11);
         return;
     }
-    if (strcmp(line, "CLOSED") == 0 || strstr(line, "CLOSED") != nullptr) {
+    if (strcmp(line, "CLOSED") == 0) {
         _closedSeen = true;
         ev(12);
         return;

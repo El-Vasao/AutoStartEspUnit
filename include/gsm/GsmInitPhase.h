@@ -10,6 +10,10 @@ enum class GsmInitPhase : uint8_t {
     HypSendCgmi = 3,
     HypAwaitCgmi = 4,
 
+    /// Best-effort soft-reboot на UART_BAUD перед baud search.
+    PreCfunSend = 5,
+    PreCfunQuiet = 6,
+
     BsCooldown = 10,
     BsSettle = 11,
     BsSendAt = 12,
