@@ -11,11 +11,9 @@ using namespace web_internal;
 
 void WebServer::setupSseEndpointRoutes_() {
     events.onConnect([](AsyncEventSourceClient* client) {
-        // Do NOT noteHeavyUiTraffic here: that clears uiBrowserReady and suspends GSM on every
-        // EventSource (re)connect — after FE POST /ui/ready the modem would stay IDLE forever.
+        (void)client;
         webServer.refreshSseClientCount();
-        // SoftAP / F5: newest browser wins. Closing only the new client left a zombie SSE
-        // that blocked reconnect forever (UI stayed locked waiting for panel-ready).
+        // Cap reached: reset all so the newest browser can attach (avoids stuck zombies).
         if (webServer.sseClientCount > WebSseLimits::MAX_SSE_CLIENTS) {
             logger.logSerialOnly("[WebServer] SSE over cap: reset all clients (newest wins, have=%u lim=%u)\n",
                                  (unsigned)webServer.sseClientCount,
@@ -25,7 +23,6 @@ void WebServer::setupSseEndpointRoutes_() {
             webServer.lastObservedSseClients_ = 0;
             return;
         }
-        // Force next incremental tick to re-emit baseline (mode/hardware/…); do not rely on /bootstrap/live.
         WebServerRuntime::requestSseIncrementalBaseline(webServer);
         logger.logSerialOnly("[WebServer] SSE connected (clients=%u, uiSessions=%u)\n",
                              (unsigned)webServer.sseClientCount,

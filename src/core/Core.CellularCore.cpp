@@ -13,8 +13,7 @@
  *
  * Принципы:
  * - Неблокирующее обслуживание: GSM всегда тикает в `service()`, MQTT — когда модем READY.
- * - В NORMAL: SoftAP STA / heavy UI HTTP → cellular suspend; FE POST /ui/ready после
- *   checklist+settle → снова service. Пока SoftAP без UI-storm — MQTT допустим.
+ * - В NORMAL: SoftAP up → service; SoftAP down / OTA pressure → suspend (см. Core.Modes).
  * - MQTT reconnect при service остаётся enabled (WDT — в transport budgets).
  *
  * Память:

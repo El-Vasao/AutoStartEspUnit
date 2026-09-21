@@ -237,21 +237,12 @@ enum class CoreMode : uint8_t {
 };
 
 // ============================================================
-// Heap: пороги (ESP32-C3 — RAM gates essentially disabled)
+// Heap: пороги (ESP32-C3 — legacy frag auto-restart removed)
 // ============================================================
 namespace ValidationLimits {
     /// Legacy; auto-restart on frag removed for ESP32-C3.
     constexpr uint8_t HEAP_FRAG_THRESHOLD = 95;     ///< % (unused)
     constexpr uint32_t MIN_HEAP_BLOCK_SIZE = 4096;  ///< байт (unused for reboot)
-}
-
-namespace MemorySlo {
-    /// Thresholds kept very low so ESP32-C3 SoftAP/SSE paths never trip 503 gates.
-    constexpr uint32_t MIN_HEAP_BEFORE_HTTP_START = 4096;
-    constexpr uint32_t MIN_HEAP_FOR_BOOTSTRAP_LITE = 4096;
-    constexpr uint32_t MIN_HEAP_FOR_BOOTSTRAP_LIVE = 4096;
-    constexpr uint32_t MIN_HEAP_FOR_SSE_SEND = 4096;
-    constexpr uint32_t MIN_MAX_BLOCK_FOR_WEB_SEND = 4096;
 }
 
 // ============================================================
@@ -287,6 +278,8 @@ namespace JsonBytes {
         /// Прежний monolithic статус был ~782 B; худший блок — hardware с tempSensors; 800 + малая маржа.
         constexpr size_t SSE_STATUS_JSON_MAX = 832;
         constexpr size_t API_RESPONSE_JSON_MAX = 1024;
+        /// Cap for buffered API JSON (`sendJsonBuffered`), incl. merged `/bootstrap`.
+        constexpr size_t BOOTSTRAP_JSON_MAX = 4096;
         /// Устаревшее имя: бюджет под большой ответ тем же порядком, что `MAX_FILE_JSON_BYTES`.
         constexpr size_t DOC_CAPACITY = MAX_FILE_JSON_BYTES;
         constexpr size_t SSE_STATUS_DOC_CAPACITY = DOC_CAPACITY;
@@ -318,10 +311,6 @@ namespace NetTiming {
     constexpr uint32_t MQTT_RECONNECT_INTERVAL_MS = 5000;
     /// Ожидание CONNACK после CONNECT на GSM (секунды RTT + очередь оператора).
     constexpr uint32_t MQTT_FSM_CONNECT_TIMEOUT_MS = 30000;
-    /// How often to log "still deferred" while SoftAP UI init holds cellular off.
-    constexpr uint32_t CELLULAR_UI_BOOTSTRAP_DEFER_LOG_MS = 15000;
-    /// FE waits this long after checklist before POST /ui/ready (GSM/MQTT stay suspended).
-    constexpr uint32_t CELLULAR_AFTER_UI_QUIET_MS = 15000;
 }
 
 // ============================================================
@@ -332,11 +321,6 @@ namespace HttpPostJson {
     constexpr const char* TMP_PROGRAM = "/__http/prg.tmp";
     /// Единый лимит на размер POST-body и scratch-буферы.
     constexpr size_t MAX_BYTES = Limits::CONFIG_JSON_SIZE;
-}
-
-namespace PersistFlags {
-    /// Файл-маркер: при наличии устройство стартует в `SETUP_AP` (сброс/автодефолт).
-    constexpr const char* SETUP_REQUIRED = "/setup.flag";
 }
 
 namespace WebConfig {
@@ -367,7 +351,7 @@ namespace WebSseLimits {
     constexpr uint8_t MAX_SSE_CLIENTS = 4;
     /// Общий мягкий порог avgPacketsWaiting() перед send (SSE log и incremental статус одной очередью).
     /// Держать ниже SSE_MAX_QUEUED_MESSAGES (platformio.ini), иначе soft gate бесполезен.
-    constexpr size_t SSE_SOFT_QUEUE_MAX = 4;
+    constexpr size_t SSE_SOFT_QUEUE_MAX = 8;
     constexpr size_t STATUS_QUEUE_MAX = SSE_SOFT_QUEUE_MAX;
     constexpr size_t STATUS_FORCE_QUEUE_MAX = 8;
     /// Пред-OTA окно (идёт upload, но режим OTA ещё не активен): пороги ниже, чтобы освободить heap для Update.begin.
@@ -379,10 +363,8 @@ namespace WebSseLimits {
 // Web assets (LittleFS) — список обязательных файлов UI
 // ============================================================
 namespace WebAssets {
+    /// Logical URL paths; on LittleFS the bytes live only as `<path>.gz` (build.py axiom).
     static const char INDEX_HTML[] PROGMEM = "/index.html";
-
-    /// Обязательные файлы для “UI доступен” (FSManager учитывает возможные .gz варианты).
-    /// index.html + style.css + app.js — три gzip на ESP32-C3 SoftAP.
     static const char STYLE_CSS[] PROGMEM = "/style.css";
     static const char APP_JS[] PROGMEM = "/app.js";
     static const char* const REQUIRED[] PROGMEM = {

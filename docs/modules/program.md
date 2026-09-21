@@ -17,8 +17,8 @@
 
 ## Память
 - Рантайм-исполнение использует **компактные шаги без строк**: `CompiledStep`.
-- `CompiledStep[Limits::MAX_STEPS_PER_PROGRAM]` и `ActionId[]` хранятся в пуловых слоты `PoolManager`
-  (`ProgramExecSteps`, `ProgramExecActions`) чтобы избегать heap churn и уменьшить baseline RAM.
+- `CompiledStep[Limits::MAX_STEPS_PER_PROGRAM]` и `ActionId[]` — члены `ProgramExecutor`
+  (фиксированные массивы, без heap и без PoolManager).
 - Строковые поля шага (`action`, `comparison`, `sensor_name`) остаются только в JSON на диске и/или в UI,
   но **не хранятся в hot-path** выполнения.
 

@@ -62,9 +62,11 @@ private:
     uint8_t _lastProgramId;                ///< ID последней запущенной программы
     char _lastProgramName[TextBytes::Programs::NAME]; ///< Имя последней запущенной программы (для UI/статуса)
 
-    // Локальная копия шагов текущей программы (в PoolManager bytes slots).
-    CompiledStep* _localSteps;                            ///< CompiledStep[Limits::MAX_STEPS_PER_PROGRAM]
-    ActionId* _localActions;                             ///< ActionId[Limits::MAX_STEPS_PER_PROGRAM]
+    // Локальная копия шагов текущей программы (фиксированные массивы).
+    CompiledStep _localStepsArr[Limits::MAX_STEPS_PER_PROGRAM];
+    ActionId _localActionsArr[Limits::MAX_STEPS_PER_PROGRAM];
+    CompiledStep* _localSteps;                            ///< указатель на _localStepsArr пока программа бежит
+    ActionId* _localActions;                             ///< указатель на _localActionsArr пока программа бежит
     uint8_t _localStepCount;                          ///< количество шагов в локальной копии
 
     static ActionId compileAction(const char* action);

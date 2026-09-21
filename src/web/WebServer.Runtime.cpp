@@ -250,7 +250,6 @@ void WebServerRuntime::stop(WebServer& ws) {
     ws.lastObservedSseClients_ = 0;
     ws.sseDiagTailUntilMs_ = 0;
     ws.lastSseDiagMs_ = 0;
-    ws.clearHeavyUiTraffic();
     for (auto& session : ws.uiSessions_) {
         session = WebServer::UiSession{};
     }

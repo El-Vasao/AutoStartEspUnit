@@ -51,12 +51,6 @@ struct CorePrivate {
     bool pendingDeferredOtaFromWebUpload{false};
     /// true в окне upload->switchMode(OTA): используем для разгрузки GSM/MQTT и SSE/log давления.
     bool otaUploadPressureActive{false};
-    /// NORMAL: previous SoftAP station count (detect 0→1 for UI-init cellular suspend).
-    uint8_t prevSoftApSta{0};
-    /// NORMAL: millis when SoftAP UI cellular defer started (0 = not deferred).
-    uint32_t cellularUiDeferSinceMs{0};
-    /// Last "still deferred" diagnostic log (ms).
-    uint32_t cellularUiDeferLastLogMs{0};
     BootStage bootStage{BootStage::InitWiFiOff};
     CoreMode bootTargetMode{CoreMode::BOOT};
     bool bootConfigLoaded{false};

@@ -6,7 +6,6 @@
 #include "core/ErrorManager.h"
 #include "io/HwMap.h"
 #include "common/Logger.h"
-#include "common/PoolManager.h"
 #include "program/internal/ProgramExecutorInternal.h"
 
 using namespace program_executor_internal;
@@ -63,34 +62,13 @@ uint32_t ProgramExecutor::getTimerRemainingMs() const {
 bool ProgramExecutor::start(uint8_t programId) {
     stop();
 
-    const size_t stepsBytes = sizeof(CompiledStep) * Limits::MAX_STEPS_PER_PROGRAM;
-    const size_t actionsBytes = sizeof(ActionId) * Limits::MAX_STEPS_PER_PROGRAM;
-    if (!PoolManager::acquireBytes(PoolManager::BufferSlot::ProgramExecSteps, stepsBytes)) {
-        logger.log("[ProgramExecutor] OOM acquiring ProgramExecSteps (%u bytes)\n", (unsigned)stepsBytes);
-        return false;
-    }
-    if (!PoolManager::acquireBytes(PoolManager::BufferSlot::ProgramExecActions, actionsBytes)) {
-        logger.log("[ProgramExecutor] OOM acquiring ProgramExecActions (%u bytes)\n", (unsigned)actionsBytes);
-        PoolManager::releaseBytes(PoolManager::BufferSlot::ProgramExecSteps);
-        return false;
-    }
-    _localSteps = reinterpret_cast<CompiledStep*>(PoolManager::bytes(PoolManager::BufferSlot::ProgramExecSteps));
-    _localActions = reinterpret_cast<ActionId*>(PoolManager::bytes(PoolManager::BufferSlot::ProgramExecActions));
-    if (!_localSteps || !_localActions) {
-        PoolManager::releaseBytes(PoolManager::BufferSlot::ProgramExecActions);
-        PoolManager::releaseBytes(PoolManager::BufferSlot::ProgramExecSteps);
-        _localSteps = nullptr;
-        _localActions = nullptr;
-        return false;
-    }
-
+    _localSteps = _localStepsArr;
+    _localActions = _localActionsArr;
     _currentProgramName[0] = '\0';
     _localStepCount = 0;
     if (!config.loadProgramCompiled(programId, _localSteps, Limits::MAX_STEPS_PER_PROGRAM,
                                     &_localStepCount, _currentProgramName, sizeof(_currentProgramName))) {
         logger.log("[ProgramExecutor] Program %u not found or invalid\n", programId);
-        PoolManager::releaseBytes(PoolManager::BufferSlot::ProgramExecActions);
-        PoolManager::releaseBytes(PoolManager::BufferSlot::ProgramExecSteps);
         _localActions = nullptr;
         _localSteps = nullptr;
         _localStepCount = 0;
@@ -98,8 +76,6 @@ bool ProgramExecutor::start(uint8_t programId) {
     }
     if (_localStepCount == 0) {
         logger.log("[ProgramExecutor] Program %u is empty\n", programId);
-        PoolManager::releaseBytes(PoolManager::BufferSlot::ProgramExecActions);
-        PoolManager::releaseBytes(PoolManager::BufferSlot::ProgramExecSteps);
         _localActions = nullptr;
         _localSteps = nullptr;
         return false;
@@ -164,15 +140,9 @@ void ProgramExecutor::finish() {
     _running = false;
     _programId = 0;
     _currentProgramName[0] = '\0';
-
-    if (_localActions) {
-        PoolManager::releaseBytes(PoolManager::BufferSlot::ProgramExecActions);
-        _localActions = nullptr;
-    }
-    if (_localSteps) {
-        PoolManager::releaseBytes(PoolManager::BufferSlot::ProgramExecSteps);
-        _localSteps = nullptr;
-    }
+    _localActions = nullptr;
+    _localSteps = nullptr;
+    _localStepCount = 0;
 }
 
 void ProgramExecutor::abortWithError() {

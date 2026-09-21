@@ -597,7 +597,7 @@ static void broadcastResync(WebServer& ws, size_t maxQueueDepth) {
     (void)maxQueueDepth;
     if (!WebServerRuntime::sseActiveUiOk(ws)) return;
     if (WebServerRuntime::refreshSseClientCount(ws) == 0) return;
-    // Optional signal; FE must not fetch /bootstrap/live on this.
+    // Optional resync signal; FE waits for paced baseline events.
     if (sseTickMoreEventsSafe(ws) && !WebServerRuntime::sseQueueBackpressureAtLeast(ws, WebSseLimits::STATUS_QUEUE_MAX)) {
         WebServerRuntime::sseSendEvent(ws, "{}", "resync", millis());
     }

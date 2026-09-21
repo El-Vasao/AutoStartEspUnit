@@ -1,5 +1,4 @@
 #include "fs/FSManager.h"
-#include "common/PoolManager.h"
 #include "core/Core.h"
 #include "common/Constants.h"
 #include "common/EspHal.h"
@@ -161,7 +160,7 @@ bool FSManager::copyFileAtomic_(const char* srcPath, const char* destPath) {
     snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", destPath);
     tmpPath[sizeof(tmpPath) - 1] = '\0';
 
-    if (LittleFS.exists(tmpPath)) {
+    if (exists(tmpPath)) {
         LittleFS.remove(tmpPath);
     }
 
@@ -172,15 +171,7 @@ bool FSManager::copyFileAtomic_(const char* srcPath, const char* destPath) {
         return false;
     }
 
-    PoolManager::ScopedBytes scratch(PoolManager::BufferSlot::FsScratch, PoolLimits::FS_SCRATCH_BYTES);
-    if (!scratch) {
-        src.close();
-        dst.close();
-        LittleFS.remove(tmpPath);
-        errorCount++;
-        return false;
-    }
-    uint8_t* const chunk = scratch.data();
+    uint8_t chunk[PoolLimits::FS_SCRATCH_BYTES];
 
     size_t writtenTotal = 0;
     while (src.available()) {
@@ -206,7 +197,7 @@ bool FSManager::copyFileAtomic_(const char* srcPath, const char* destPath) {
         return false;
     }
 
-    if (LittleFS.exists(destPath)) {
+    if (exists(destPath)) {
         if (!LittleFS.remove(destPath)) {
             LittleFS.remove(tmpPath);
             errorCount++;
@@ -302,16 +293,17 @@ File FSManager::openWebFile(const char* path) {
         return File();
     }
 
-    if (m.gzipSupported) {
-        strlcpy(pathBuffer, path, sizeof(pathBuffer));
-        strlcat(pathBuffer, ".gz", sizeof(pathBuffer));
-
-        if (LittleFS.exists(pathBuffer)) {
-            return LittleFS.open(pathBuffer, "r");
-        }
+    // Axiom: UI statics on FS are only *.gz.
+    if (!m.gzipSupported) {
+        return File();
     }
 
-    return LittleFS.open(path, "r");
+    strlcpy(pathBuffer, path, sizeof(pathBuffer));
+    strlcat(pathBuffer, ".gz", sizeof(pathBuffer));
+    if (!exists(pathBuffer)) {
+        return File();
+    }
+    return LittleFS.open(pathBuffer, "r");
 }
 
 File FSManager::openWriteStream(const char* path, size_t expectedSize) {
@@ -348,7 +340,7 @@ File FSManager::openWriteStream(const char* path, size_t expectedSize) {
     strlcpy(pathBuffer, path, sizeof(pathBuffer));
     strlcat(pathBuffer, ".tmp", sizeof(pathBuffer));
 
-    if (LittleFS.exists(pathBuffer)) {
+    if (exists(pathBuffer)) {
         LittleFS.remove(pathBuffer);
     }
 
@@ -395,7 +387,7 @@ File FSManager::openDirectWrite(const char* path, size_t expectedMaxBytes) {
         }
     }
 
-    if (LittleFS.exists(path)) {
+    if (exists(path)) {
         LittleFS.remove(path);
     }
 
@@ -440,7 +432,7 @@ bool FSManager::closeWriteStream(File& f, const char* originalPath, bool commit)
     logger.log("[FSManager] closeWriteStream: temp=%s, target=%s\n", tempPath, targetPath ? targetPath : "");
 #endif
 
-    if (targetPath && LittleFS.exists(targetPath)) {
+    if (targetPath && exists(targetPath)) {
         if (!LittleFS.remove(targetPath)) {
             logger.log("[FSManager] closeWriteStream: failed to remove target %s\n", targetPath);
             LittleFS.remove(tempPath);

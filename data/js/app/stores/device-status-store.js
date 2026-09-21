@@ -229,8 +229,7 @@
         }
         if (data.hwMap && typeof data.hwMap === 'object') this.hwMap = data.hwMap;
         if (Array.isArray(data.temperatureSensorRoms)) this.temperatureSensorRoms = data.temperatureSensorRoms;
-        // Lite /bootstrap has no live snapshot — seed tiles/slots from hwCounts so settings/panel
-        // are not empty while waiting for SSE hardware (esp. tempSensors used to stay []).
+        // Seed tiles from hwCounts; apply live snapshot when present in the same /bootstrap.
         this._seedInventoryTiles();
         this.loaded = true;
         if (data.live && typeof data.live === 'object') this.patchFromSse('snapshot', data.live);
@@ -254,7 +253,6 @@
             }
           }
         }
-        // Incomplete snapshot must not wipe lite-bootstrap seeds (mode «—», empty tiles).
         if (data.mode) this.mode = data.mode;
         if (typeof data.uptime === 'number') this.uptime = data.uptime;
         if (Object.prototype.hasOwnProperty.call(data, 'programRunning')) this.programRunning = !!data.programRunning;

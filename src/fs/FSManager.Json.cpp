@@ -47,8 +47,8 @@ static bool commitTmpToPath_atomic_(const char* path, char* tmpPath, bool hadBac
     bakPath[sizeof(bakPath) - 1] = '\0';
 
     bool hadBackup = false;
-    if (LittleFS.exists(path)) {
-        if (LittleFS.exists(bakPath)) {
+    if (fileSystem.exists(path)) {
+        if (fileSystem.exists(bakPath)) {
             LittleFS.remove(bakPath);
         }
         hadBackup = LittleFS.rename(path, bakPath);
@@ -97,7 +97,7 @@ bool FSManager::writeJsonAtomicStream(const char* path, JsonStreamEncodeFn encod
     snprintf(tmpPath, sizeof(tmpPath), "%s.tmp", path);
     tmpPath[sizeof(tmpPath) - 1] = '\0';
 
-    if (LittleFS.exists(tmpPath)) {
+    if (fileSystem.exists(tmpPath)) {
         LittleFS.remove(tmpPath);
     }
 

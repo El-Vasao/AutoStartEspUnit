@@ -7,8 +7,8 @@
  * - Формирование компактных JSON ответов без лишней нагрузки на heap.
  *
  * Инварианты по памяти:
- * - Не делать `String`-конкатенаций в циклах (на ESP8266 это быстро фрагментирует heap).
- * - JSON body: `sendJsonStreaming` (count + filler), не `beginResponseStream`.
+ * - Не делать `String`-конкатенаций в циклах.
+ * - JSON body: `sendJsonBuffered` (один emit в буфер).
  *
  * Запрещено:
  * - Подключать внутренние заголовки web-подсистемы из других подсистем.
@@ -30,12 +30,9 @@ using namespace web_internal;
 
 namespace {
 volatile bool gOtaHttpUploadAwaitTimedOut = false;
-volatile bool gBootstrapLiteInFlight = false;
-volatile bool gBootstrapLiveInFlight = false;
-uint32_t gBootstrapLiveLastMs = 0;
-constexpr uint32_t kBootstrapLiveMinIntervalMs = 1200;
+volatile bool gBootstrapInFlight = false;
 
-void emitBootstrapLiteJson(Print& p) {
+void emitBootstrapJson(Print& p) {
     p.print("{\"version\":\"");
     p.print(core.getVersionString());
     p.print("\",\"uiLease\":{\"heartbeatMs\":");
@@ -85,19 +82,9 @@ void emitBootstrapLiteJson(Print& p) {
         p.print(romStr);
         p.print('\"');
     }
-    p.print("]}");
-}
-
-size_t fillBootstrapLiteJson(uint8_t* buffer, size_t maxLen, size_t index) {
-    SkippingPrint skip(index, buffer, maxLen);
-    emitBootstrapLiteJson(skip);
-    return skip.produced();
-}
-
-size_t fillBootstrapLiveJson(uint8_t* buffer, size_t maxLen, size_t index) {
-    SkippingPrint skip(index, buffer, maxLen);
-    WebServerRuntime::emitLiveSnapshotJson(skip);
-    return skip.produced();
+    p.print("],\"live\":");
+    WebServerRuntime::emitLiveSnapshotJson(p);
+    p.print('}');
 }
 } // namespace
 
@@ -123,57 +110,26 @@ static bool readIdEnabledBodyParams(AsyncWebServerRequest* request, uint32_t* id
 
 void WebServer::setupApiRoutes_() {
     server.on("/config/get", HTTP_GET, [](AsyncWebServerRequest* request) {
-        webServer.noteHeavyUiTraffic();
         if (rejectIfFlashBusy(request)) return;
         sendJsonFromFs(request, "/config.json", "no-cache, no-store, must-revalidate");
     });
 
     server.on("/bootstrap", HTTP_GET, [](AsyncWebServerRequest* request) {
-        webServer.noteHeavyUiTraffic();
-        if (gBootstrapLiteInFlight) {
+        if (gBootstrapInFlight) {
             request->send(429, kContentTypeJson, "{\"success\":false,\"error\":\"BOOTSTRAP_BUSY\"}");
             return;
         }
-        gBootstrapLiteInFlight = true;
+        gBootstrapInFlight = true;
         const uint32_t startedAt = millis();
-        if (!sendJsonStreaming(request, emitBootstrapLiteJson, fillBootstrapLiteJson)) {
-            gBootstrapLiteInFlight = false;
+        if (!sendJsonBuffered(request, emitBootstrapJson)) {
+            gBootstrapInFlight = false;
             return;
         }
         logger.log("[WebServer] /bootstrap done in %lu ms (heap free=%u max=%u)\n",
                    (unsigned long)(millis() - startedAt),
                    (unsigned)espHalFreeHeap(),
                    (unsigned)espHalMaxBlock());
-        gBootstrapLiteInFlight = false;
-    });
-
-    server.on("/bootstrap/live", HTTP_GET, [](AsyncWebServerRequest* request) {
-        webServer.noteHeavyUiTraffic();
-        const uint32_t now = millis();
-        if ((now - gBootstrapLiveLastMs) < kBootstrapLiveMinIntervalMs) {
-            request->send(429, kContentTypeJson, "{\"success\":false,\"error\":\"BOOTSTRAP_LIVE_COOLDOWN\"}");
-            return;
-        }
-        if (gBootstrapLiveInFlight) {
-            request->send(429, kContentTypeJson, "{\"success\":false,\"error\":\"BOOTSTRAP_LIVE_BUSY\"}");
-            return;
-        }
-        if (core.isOtaUploadPressureActive()) {
-            request->send(503, kContentTypeJson, "{\"success\":false,\"error\":\"OTA_UPLOAD_PRESSURE\"}");
-            return;
-        }
-        gBootstrapLiveInFlight = true;
-        const uint32_t startedAt = now;
-        if (!sendJsonStreaming(request, WebServerRuntime::emitLiveSnapshotJson, fillBootstrapLiveJson)) {
-            gBootstrapLiveInFlight = false;
-            return;
-        }
-        gBootstrapLiveLastMs = millis();
-        logger.log("[WebServer] /bootstrap/live done in %lu ms (heap free=%u max=%u)\n",
-                   (unsigned long)(millis() - startedAt),
-                   (unsigned)espHalFreeHeap(),
-                   (unsigned)espHalMaxBlock());
-        gBootstrapLiveInFlight = false;
+        gBootstrapInFlight = false;
     });
 
     server.on("/ui/session", HTTP_POST, [](AsyncWebServerRequest* request) {
@@ -214,21 +170,6 @@ void WebServer::setupApiRoutes_() {
             return;
         }
 
-        sendJsonSuccess(request);
-    });
-
-    // FE checklist + settle: allow GSM/MQTT while SoftAP UI is up. Not a heavy mark.
-    server.on("/ui/ready", HTTP_POST, [](AsyncWebServerRequest* request) {
-        uint32_t sessionId = 0;
-        if (!parseUint32Param(request, "id", &sessionId) || sessionId == 0) {
-            request->send(400, kContentTypeJson, "{\"success\":false,\"error\":\"INVALID_SESSION_ID\"}");
-            return;
-        }
-        if (!webServer.touchUiSession(sessionId, millis())) {
-            request->send(503, kContentTypeJson, "{\"success\":false,\"error\":\"UI_SESSION_REQUIRED\"}");
-            return;
-        }
-        webServer.setUiBrowserReady(true);
         sendJsonSuccess(request);
     });
 
@@ -409,7 +350,6 @@ void WebServer::setupApiRoutes_() {
     });
 
     server.on("/programs", HTTP_GET, [](AsyncWebServerRequest* request) {
-        webServer.noteHeavyUiTraffic();
         if (rejectIfFlashBusy(request)) return;
         sendJsonFromFs(request, "/programs/index.json", "no-cache, no-store, must-revalidate");
     });
@@ -433,7 +373,6 @@ void WebServer::setupApiRoutes_() {
     });
 
     server.on("/program", HTTP_GET, [](AsyncWebServerRequest* request) {
-        webServer.noteHeavyUiTraffic();
         if (rejectIfFlashBusy(request)) return;
         if (!request->hasParam("id")) {
             request->send(400, kContentTypeText, "Missing id");

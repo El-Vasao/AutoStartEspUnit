@@ -108,15 +108,8 @@ MQTT реализован **в прошивке** как неблокирующ�
 - Ожидание логов: строка вида `[MQTTClient] Connected. subscribe=...` после подписки.
 - После успешного MQTT-сессии клиент может опубликовать retained `"online"` на `mqtt.status_topic` (см. [`mqtt.md`](mqtt.md)).
 
-**3) UI при GSM churn**
+**3) UI при SoftAP**
 
-- Цель: отложить тяжёлый GSM/MQTT, пока SoftAP-UI в браузере не полностью инициализирован.
-- SoftAP STA associate и тяжёлые HTTP (`/`, assets, `/bootstrap*`, `/config/get`, programs) →
-  `noteHeavyUiTraffic` (clear ready + немедленный suspend). **SSE connect не heavy** — иначе
-  после `/ui/ready` каждый (re)connect сбрасывал ready и GSM оставался IDLE.
-- FE checklist (bootstrap + settings schema + config + program schema) → sleep
-  `CELLULAR_AFTER_UI_QUIET_MS` (15 s) → `POST /ui/ready` → `uiBrowserReady` → Core `service`.
-- Heartbeat `/ui/session` **не** heavy (иначе сбрасывал бы ready).
-- Reload `GET /` снова clear ready + suspend.
-- Пока SoftAP без UI-storm — MQTT на пустом AP допустим. SoftAP down / OTA pressure — suspend.
-- Ожидание: без OOM на first-load; после `/ui/ready` в панели виден живой `gsmState`.
+- SoftAP UI и GSM/MQTT сосуществуют на ESP32-C3.
+- Cellular suspend только при SoftAP down (NORMAL) или OTA upload pressure.
+- Ожидание: в панели виден живой `gsmState` во время загрузки UI (без `/ui/ready`).

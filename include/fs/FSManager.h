@@ -35,7 +35,7 @@ struct FileMetadata {
     FileAccess access;               ///< тип доступа
     uint32_t maxSize;                ///< максимальный размер (байт)
     bool cacheInRam;                 ///< подсказка для Config, не используется в FSManager
-    bool gzipSupported;              ///< поддерживается ли gzip (для веба)
+    bool gzipSupported;              ///< UI static: on FS only as path.gz (build.py axiom)
     uint16_t crc;                    ///< контрольная сумма (опционально)
 } __attribute__((packed));
 
@@ -59,7 +59,7 @@ struct FileMetadata {
  * - нельзя заполнять том “в ноль” — LittleFS деградирует при нехватке свободных блоков;
  * - операции ввода/вывода должны быть короткими или периодически “yield()/feedWatchdog()” в вызывающем коде.
  *
- * Backup/restore/healthCheck копируют и считают CRC потоково; copyFileAtomic_ использует PoolManager::FsScratch.
+ * Backup/restore/healthCheck копируют и считают CRC потоково; copyFileAtomic_ использует стековый scratch-буфер.
  */
 class FSManager {
 public:
@@ -99,7 +99,7 @@ public:
     bool deleteFile(const char* path);
 
     // Проверить существование файла
-    bool exists(const char* path);
+    bool exists(const char* path) const;
 
     // Проверить, что web-ассеты присутствуют (иначе WebServer отдаёт fallback из PROGMEM)
     bool hasRequiredWebAssets() const;
@@ -129,9 +129,7 @@ public:
     // Восстановить файл из резервной копии
     bool restore(const char* path);
 
-    // Открыть файл для веб-сервера (с поддержкой .gz).
-    // HTTP-раздача статики в WebServer идёт через fileSystem.exists + beginResponse(fileSystem.webFs(), …).
-    // Метод полезен, если понадобится централизовать политику «если есть .gz — отдаём его».
+    // Open UI static for web: FS holds only path.gz (logical `path` without suffix).
     File openWebFile(const char* path);
 
     // Дефрагментация (сборка мусора)
@@ -167,7 +165,7 @@ public:
     bool writeJsonAtomicStream(const char* path, JsonStreamEncodeFn encoder, void* ctx, size_t maxBytes = Limits::CONFIG_JSON_SIZE);
 
 private:
-    static constexpr size_t TEMP_BUFFER_SIZE = PoolLimits::FS_SCRATCH_BYTES; ///< размер чанка copyFileAtomic_ (буфер в PoolManager::FsScratch)
+    static constexpr size_t TEMP_BUFFER_SIZE = PoolLimits::FS_SCRATCH_BYTES; ///< размер чанка copyFileAtomic_
     static constexpr size_t MAX_PATH_LEN = 32;
 
     bool initialized;               ///< флаг успешной инициализации

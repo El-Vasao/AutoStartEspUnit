@@ -132,9 +132,6 @@ public:
     // Статус “двигатель работает” (для UI/логики)
     bool isEngineRunning() const;
 
-    /// Immediate GSM/MQTT suspend (SoftAP UI heavy traffic / STA join). Safe from web callbacks.
-    void suspendCellularForUiLoad();
-
 private:
     CorePrivate* _impl{nullptr};
 

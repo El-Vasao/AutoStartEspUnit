@@ -3,6 +3,8 @@
 #include "common/Logger.h"
 #include <WiFi.h>
 #include <pgmspace.h>
+#include <cstdio>
+#include <sys/stat.h>
 
 FSManager fileSystem;
 
@@ -103,20 +105,20 @@ bool FSManager::begin() {
         fsInfo.usedBytes = LittleFS.usedBytes();
         logger.log("[FSManager] LittleFS mounted, total: %u KB, used: %u KB\n",
                    fsInfo.totalBytes / 1024, fsInfo.usedBytes / 1024);
-        if (!LittleFS.exists("/programs")) {
+        if (!exists("/programs")) {
             LittleFS.mkdir("/programs");
 #ifdef SERIAL_DEBUG
             logger.log("[FSManager] Created /programs directory\n");
 #endif
         }
         // Создаём папки для библиотек, если их ещё нет (на всякий случай)
-        if (!LittleFS.exists("/js")) {
+        if (!exists("/js")) {
             LittleFS.mkdir("/js");
 #ifdef SERIAL_DEBUG
             logger.log("[FSManager] Created /js directory\n");
 #endif
         }
-        if (!LittleFS.exists("/css")) {
+        if (!exists("/css")) {
             LittleFS.mkdir("/css");
 #ifdef SERIAL_DEBUG
             logger.log("[FSManager] Created /css directory\n");
@@ -143,13 +145,13 @@ bool FSManager::begin() {
     initialized = true;
     fsInfo.totalBytes = LittleFS.totalBytes();
     fsInfo.usedBytes = LittleFS.usedBytes();
-    if (!LittleFS.exists("/programs")) {
+    if (!exists("/programs")) {
         LittleFS.mkdir("/programs");
     }
-    if (!LittleFS.exists("/js")) {
+    if (!exists("/js")) {
         LittleFS.mkdir("/js");
     }
-    if (!LittleFS.exists("/css")) {
+    if (!exists("/css")) {
         LittleFS.mkdir("/css");
     }
     logger.log("[FSManager] LittleFS mounted after format\n");
@@ -174,8 +176,15 @@ bool FSManager::format() {
     return result;
 }
 
-bool FSManager::exists(const char* path) {
-    return initialized && LittleFS.exists(path);
+bool FSManager::exists(const char* path) const {
+    if (!initialized || !path || path[0] != '/') return false;
+    // ESP32 Arduino exists() opens for read and logs E when missing
+    // (vfs_api: "does not exist, no permits for creation"). Use POSIX stat instead.
+    char full[BufferBytes::Fs::GZIP_PATH];
+    const int n = snprintf(full, sizeof(full), "/littlefs%s", path);
+    if (n <= 0 || (size_t)n >= sizeof(full)) return false;
+    struct stat st;
+    return (::stat(full, &st) == 0);
 }
 
 bool FSManager::rename(const char* oldPath, const char* newPath) {
@@ -212,7 +221,7 @@ bool FSManager::ensurePath(const char* path) {
     parent[len] = '\0';
 
     if (parent[0] == '\0') return true;
-    if (LittleFS.exists(parent)) return true;
+    if (exists(parent)) return true;
 
     // Рекурсивно убеждаемся, что есть родитель родителя.
     if (!ensurePath(parent)) return false;
@@ -231,8 +240,7 @@ bool FSManager::ensurePath(const char* path) {
 bool FSManager::hasRequiredWebAssets() const {
     if (!initialized) return false;
 
-    // Проверяем список из Constants.h (WebAssets::REQUIRED).
-    // Для файлов допускаем вариант, что на FS лежит .gz, чтобы не требовать распаковки при сборке.
+    // Axiom: UI shell assets on FS are only *.gz (logical names in WebAssets::REQUIRED).
     char path[BufferBytes::Fs::WEB_ASSET_PATH];
     char gzPath[BufferBytes::Fs::WEB_ASSET_GZIP_PATH];
 
@@ -243,14 +251,9 @@ bool FSManager::hasRequiredWebAssets() const {
         strlcpy(path, ptr, sizeof(path));
         if (path[0] == '\0') return false;
 
-        if (LittleFS.exists(path)) continue;
-
-        // Пробуем вариант с .gz
         strlcpy(gzPath, path, sizeof(gzPath));
         strlcat(gzPath, ".gz", sizeof(gzPath));
-        if (LittleFS.exists(gzPath)) continue;
-
-        return false;
+        if (!exists(gzPath)) return false;
     }
 
     return true;

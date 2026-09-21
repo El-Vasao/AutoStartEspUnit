@@ -1,4 +1,4 @@
-// SoftAP-safe SSE: one EventSource, no auto /bootstrap/live, heartbeat after panel-ready.
+// SSE client: one EventSource, session heartbeat for SoftAP idle timeout, panel-ready gate.
 (function () {
   const APP = (window.APP = window.APP || {});
   APP.sse = APP.sse || {};
@@ -11,7 +11,6 @@
     const timeouts = APP.api?.timeoutsMs || APP.contract?.api?.timeoutsMs || {};
     const log = APP.utils?.log;
 
-    // Re-init after spurious teardown (SoftAP F5 / bfcache) while document still alive.
     if (prev && !prev.running) {
       try {
         if (prev.reconnectTimer) clearTimeout(prev.reconnectTimer);
@@ -29,13 +28,12 @@
       reconnectTimer: null,
       heartbeatTimer: null,
       heartbeatInFlight: false,
-      backoffMs: 4000,
+      backoffMs: 2000,
       state: 'idle', // idle|connecting|connected|backoff|stale
       lastEventAt: 0,
       connectingSince: 0,
       heartbeatMs: 5000,
       staleTimer: null,
-      // SoftAP F5: reuse prior session id when present (avoid close/open race).
       uiSessionId: (function () {
         try {
           const raw = sessionStorage.getItem('uiSessionId');
@@ -84,6 +82,20 @@
       }
     }
 
+    function seedPanelFlagsFromStore() {
+      try {
+        const ds = Alpine?.store?.('deviceStatus');
+        if (!ds) return;
+        if (ds.mode && ds.mode !== '—') ctx.gotMode = true;
+        const nRelays = Number(ds.hwCounts?.relays) || 0;
+        const nInputs = Number(ds.hwCounts?.inputs) || 0;
+        if (Array.isArray(ds.relays) && (nRelays === 0 || ds.relays.length === nRelays) &&
+            Array.isArray(ds.inputs) && (nInputs === 0 || ds.inputs.length === nInputs)) {
+          ctx.gotHardware = true;
+        }
+      } catch (e) {}
+    }
+
     function notifyPanelReady() {
       if (!isPanelReady()) return;
       if (!ctx.heartbeatTimer) startHeartbeat();
@@ -103,16 +115,14 @@
       if (!ctx.eventsStarted || !ctx.running) return;
       if (ctx.source) return;
       setState('backoff');
-      // Until panel-ready: fast SoftAP reconnect (F5 zombie). After ready: gentler ≥4s.
-      const floor = isPanelReady() ? 4000 : 500;
-      const waitMs = Math.max(ctx.backoffMs, floor);
+      const waitMs = Math.max(ctx.backoffMs, 1000);
       ctx.reconnectTimer = setTimeout(() => {
         ctx.reconnectTimer = null;
         if (ctx.source) return;
         connectSSE();
       }, waitMs);
       const jitter = Math.floor(Math.random() * 400);
-      ctx.backoffMs = Math.min(Math.max(ctx.backoffMs, floor) * 2 + jitter, 12000);
+      ctx.backoffMs = Math.min(ctx.backoffMs * 2 + jitter, 12000);
     }
 
     function buildSessionBody(close) {
@@ -163,44 +173,9 @@
       }
     }
 
-    function waitForUiSessionRegistered() {
-      const url = endpoints.uiSession || '/ui/session';
-      const body = buildSessionBody(false);
-      const delay = ms => new Promise(cb => setTimeout(cb, ms));
-      const attemptMs = 3000;
-      return (async () => {
-        for (let i = 0; i < 6; i++) {
-          const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-          const t = controller ? setTimeout(() => {
-            try { controller.abort(); } catch (e) {}
-          }, attemptMs) : null;
-          try {
-            const deviceFetch = APP.api?.deviceFetch;
-            const opts = {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-              body: body.toString()
-            };
-            if (controller) opts.signal = controller.signal;
-            const res = deviceFetch
-              ? await deviceFetch(url, opts)
-              : await fetch(url, {
-                  ...opts,
-                  cache: 'no-store',
-                  headers: {
-                    ...opts.headers,
-                    'X-Requested-With': 'ElLineUI'
-                  }
-                });
-            if (res && res.ok) return;
-          } catch (e) {
-            // timeout / network — retry
-          } finally {
-            if (t) clearTimeout(t);
-          }
-          await delay(200 * (i + 1));
-        }
-      })();
+    /** Best-effort lease for SoftAP idle timeout; SSE does not require it. */
+    function touchUiSessionOnce() {
+      return postUiSession(false);
     }
 
     function startHeartbeat() {
@@ -257,7 +232,7 @@
       }
 
       ctx.source.onopen = () => {
-        ctx.backoffMs = 4000;
+        ctx.backoffMs = 2000;
         ctx.connectingSince = 0;
         setState('connected');
       };
@@ -274,7 +249,6 @@
       }
 
       ctx.source.addEventListener('resync', () => {
-        // Firmware paced baseline follows; do not HTTP /bootstrap/live.
         ctx.lastEventAt = Date.now();
         resetPanelFlags();
         setState('connected');
@@ -299,8 +273,7 @@
           scheduleReconnect();
           return;
         }
-        // Browser is auto-reconnecting the same EventSource — do NOT close or open a second one
-        // (MAX_SSE_CLIENTS=1 → reject → permanent flap).
+        // Let the browser finish its own reconnect; only replace after CLOSED or stuck CONNECTING.
         if (es.readyState === EventSource.CONNECTING) {
           if (!ctx.connectingSince) ctx.connectingSince = Date.now();
           if ((Date.now() - ctx.connectingSince) > 20000) {
@@ -317,9 +290,7 @@
           ctx.connectingSince = 0;
           resetPanelFlags();
           scheduleReconnect();
-          return;
         }
-        // OPEN + spurious error: ignore (do not close).
       };
     }
 
@@ -341,12 +312,9 @@
     }
 
     function stopAll(ev) {
-      // pagehide on F5: tear down EventSource/timers only. Keep uiSessionId so reload reuses
-      // the same SoftAP UI session (close+new races MAX_SSE_CLIENTS=1).
       if (ctx.stopped) return;
       ctx.stopped = true;
       stopHeartbeat();
-      // Do NOT postUiSession(true) / clear sessionStorage — session expires on FW timeout.
       try { if (ctx.source) ctx.source.close(); } catch (e) {}
       ctx.source = null;
       if (ctx.reconnectTimer) clearTimeout(ctx.reconnectTimer);
@@ -371,7 +339,6 @@
           const silentMs = Date.now() - (ctx.lastEventAt || 0);
           const net = Alpine?.store?.('net');
           if (net) net.staleMs = Math.max(0, silentMs);
-          // Only force-close when we had traffic then went silent while claiming connected.
           if (ctx.state === 'connected' && ctx.lastEventAt && silentMs > maxSilentMs) {
             setState('stale');
             try { ctx.source?.close?.(); } catch (e) {}
@@ -391,7 +358,6 @@
       } catch (e) {}
     }, { passive: true });
 
-    // Only pagehide — beforeunload+pagehide duplicated session close on every F5.
     window.addEventListener('pagehide', stopAll);
 
     startStaleDetector();
@@ -405,13 +371,11 @@
     };
 
     /**
-     * Session → one EventSource → wait mode+hardware → heartbeat (only when ready).
+     * Best-effort session touch → EventSource → wait mode+hardware → heartbeat.
      * @param {{ timeoutMs?: number }} [opts]
      * @returns {Promise<boolean>}
      */
     APP.sse.startEvents = async function startEvents(opts) {
-      // SoftAP F5: pagehide may tear EventSource while document reloads/stays.
-      // Revive and keep the same uiSessionId (touch on server); do not rotate id.
       if (!ctx.running) {
         if (document.visibilityState === 'hidden') return false;
         ctx.stopped = false;
@@ -431,24 +395,22 @@
         APP.uiSessionId = ctx.uiSessionId;
         try { sessionStorage.setItem('uiSessionId', String(ctx.uiSessionId)); } catch (e) {}
         resetPanelFlags();
-        log?.warn?.('[sse] revived after teardown (reuse session)', ctx.uiSessionId);
       }
+      seedPanelFlagsFromStore();
       if (ctx.eventsStarted && isPanelReady()) {
         startHeartbeat();
         return true;
       }
       ctx.eventsStarted = true;
-      try {
-        await waitForUiSessionRegistered();
-      } catch (e) {}
+      void touchUiSessionOnce();
       connectSSE();
+      notifyPanelReady();
       const panelTimeout = Number(opts?.timeoutMs)
         || Number(timeouts.sseInitDeadlineMs)
         || Number(timeouts.ssePanelReadyTimeoutMs)
         || 12000;
       const ready = await waitForPanelReady(panelTimeout);
       if (ready) startHeartbeat();
-      // On timeout: leave EventSource running (browser/our reconnect); no heartbeat until panel-ready.
       return ready;
     };
   };

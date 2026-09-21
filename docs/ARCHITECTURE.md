@@ -70,12 +70,12 @@ flowchart TD
 
 ### JSON
 Для web/api/sse и MQTT:
-- JSON-документы и payload-буферы берём из `PoolManager` слотов;
+- JSON эмитится в фиксированные/`char[]` буферы или потоково в Print (`sendJsonBuffered`, SAX parser);
 - ёмкости/лимиты фиксируем в `include/common/Constants.h` (`JsonBytes::*`), не раздуваем без необходимости.
 
 Дополнение (baseline RAM):
 - Для рантайм-исполнения программ используем компактные шаги без строк (`CompiledStep`) вместо `Step`.
-- Эндпоинт `/bootstrap` отдаётся потоково (response stream) без удержания постоянного `WebApiPayload` буфера.
+- Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`), без отдельного `/bootstrap/live`.
 - MQTT использует **выделенные топики из конфигурации** (`BaseConfig.mqtt.cmd_topic/status_topic`) и по возможности
   публикует JSON **без промежуточных больших payload-буферов в `.bss`**, чтобы не раздувать baseline RAM.
 
@@ -105,11 +105,8 @@ MQTT — это часть рантайм-коммуникаций и чувст
 
 - `NORMAL` / `NORMAL_SILENT`:
   - GSM/MQTT обслуживаются штатно, SSE incremental работает в обычных порогах очереди.
-  - Исключение в `NORMAL` при SoftAP UI init: STA associate и тяжёлый HTTP (не SSE connect) →
-    `noteHeavyUiTraffic` (немедленный cellular suspend). FE после checklist +
-    `CELLULAR_AFTER_UI_QUIET_MS` шлёт `POST /ui/ready` → `uiBrowserReady` → снова `service`.
-    Пока SoftAP без UI-storm (`lastHeavyUiMs==0`) MQTT на пустом AP допустим. SoftAP down —
-    clear marks; cellular не servится до silent / следующего цикла.
+  - В `NORMAL` при SoftAP up cellular **servится вместе с UI** (ESP32-C3). Suspend только
+    когда SoftAP down или при OTA upload pressure.
 - `pre-OTA` (окно `POST /upload` до фактического `switchMode(OTA_UPDATE)`):
   - активируется `otaUploadPressureActive`;
   - `CellularCore` временно приглушается (через `suspendCellularLink()` в handler NORMAL);

@@ -90,15 +90,6 @@ public:
     /// Used for AP timeout logic in NORMAL mode.
     uint32_t lastUiActivityMs() const { return lastUiActivityMs_; }
 
-    /// SoftAP UI first-load: mark heavy HTTP/SSE (clears browser-ready, immediate cellular suspend).
-    void noteHeavyUiTraffic();
-    /// SoftAP stop / mode change: clear heavy + ready marks.
-    void clearHeavyUiTraffic();
-    void clearUiBrowserReady();
-    void setUiBrowserReady(bool ready);
-    bool uiBrowserReady() const { return uiBrowserReady_; }
-    uint32_t lastHeavyUiMs() const { return lastHeavyUiMs_; }
-
     /**
      * @brief True when any flash operation is pending.
      *
@@ -142,10 +133,6 @@ private:
     uint16_t lastObservedSseClients_{0};
     uint32_t sseDiagTailUntilMs_{0};
     uint32_t lastUiActivityMs_{0};
-    /// Last SoftAP UI heavy request (or STA associate seed); 0 = no UI storm this SoftAP cycle.
-    uint32_t lastHeavyUiMs_{0};
-    /// FE confirmed SoftAP UI init complete (POST /ui/ready after checklist + settle).
-    bool uiBrowserReady_{false};
     UiSession uiSessions_[WebUi::MAX_UI_SESSIONS]{};
     CoreMode lastStartedMode_{CoreMode::NORMAL};
     uint32_t lastStopMs_{0};

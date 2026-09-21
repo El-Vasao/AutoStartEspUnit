@@ -17,7 +17,7 @@
 - В RAM всегда живёт `BaseConfig` (без `String`, только фиксированные `char[]`).
 - `Config::load()` заполняет `baseCache`, валидирует и нормализует.
 - `Config::save()` пишет текущий `baseCache` атомарно.
-- POST из web пишет tmp-файл, а “применение” делает `Config` (через PoolManager слоты), обычно в deferred фазе.
+- POST из web пишет tmp-файл, а “применение” делает `Config`, обычно в deferred фазе.
 
 ## Программы: загрузка для рантайма
 - Для экономии baseline RAM и уменьшения heap-рисков `Config` загружает программу для исполнения **сразу**
@@ -27,7 +27,7 @@
   - `CompiledStep[Limits::MAX_STEPS_PER_PROGRAM]` и количество шагов.
 
 ## Политика памяти (ESP8266)
-- JSON разбирается/сериализуется через `PoolManager` слоты, чтобы не плодить `DynamicJsonDocument`.
+- JSON разбирается SAX-парсером (`JsonStreamingParser`) в фиксированные `char[]`, без `DynamicJsonDocument`.
 - Лимиты строк и ёмкости JSON заданы в `include/common/Constants.h`.
 
 ## Типичные ошибки и “острые углы”

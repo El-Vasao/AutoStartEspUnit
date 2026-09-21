@@ -128,10 +128,6 @@ void Core::suspendCellularLink() {
     impl.cellular.suspend();
 }
 
-void Core::suspendCellularForUiLoad() {
-    suspendCellularLink();
-}
-
 void Core::setOtaUploadPressureActive(bool active, const char* reasonTag) {
     CorePrivate& impl = *_impl;
     if (impl.otaUploadPressureActive == active) return;
