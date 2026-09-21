@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Единый скрипт сборки AutoStart V10
+AutoStartEspUnit build helper (ESP32-C3).
+
+Wraps PlatformIO: Version.h, firmware build/upload, LittleFS (3 gzip assets), OTA pack.
 """
 
 import os
@@ -17,7 +19,6 @@ import urllib.request
 import urllib.error
 import re
 from pathlib import Path
-from datetime import datetime
 
 # ====================================================
 # КОНФИГУРАЦИЯ
@@ -31,9 +32,8 @@ PATHS = {
     "include": "include"
 }
 PIO_ENVS = {
-    "release": "esp32c3_release",
-    "debug": "esp32c3_debug",
-    "rtos": "esp32c3_release",  # legacy alias → release on ESP32-C3
+    "release": "esp32c3",
+    "debug": "esp32c3"
 }
 
 # ====================================================
@@ -112,96 +112,6 @@ def pio_cmd(args: str) -> str:
         return f"\"{exe}\" {args}"
     # Fallback: try Python module (may be absent depending on installation).
     return f"\"{sys.executable}\" -m platformio {args}"
-
-
-def collect_ram_footprint_report(env_name: str, build_type: str):
-    """
-    Generate RAM footprint report from ELF:
-    - size (text/data/bss)
-    - top RAM symbols (B/D)
-    - presence/absence of BearSSL secure client symbols
-    """
-    elf_path = Path(f".pio/build/{env_name}/firmware.elf")
-    if not elf_path.exists():
-        print(f"WARN: ELF not found for RAM report: {elf_path}")
-        return
-
-    os.makedirs(PATHS["dist"], exist_ok=True)
-
-    size_out = run_cmd_capture(f"xtensa-lx106-elf-size \"{elf_path}\"")
-    nm_out = run_cmd_capture(f"xtensa-lx106-elf-nm -S --size-sort -r -C \"{elf_path}\"")
-    nm_all = run_cmd_capture(f"xtensa-lx106-elf-nm -C \"{elf_path}\"")
-
-    size_lines = [ln.strip() for ln in size_out.splitlines() if ln.strip()]
-    text = data = bss = dec = 0
-    if len(size_lines) >= 2:
-        cols = size_lines[1].split()
-        if len(cols) >= 4:
-            text = int(cols[0])
-            data = int(cols[1])
-            bss = int(cols[2])
-            dec = int(cols[3])
-
-    top_ram = []
-    for ln in nm_out.splitlines():
-        parts = ln.split()
-        if len(parts) < 4:
-            continue
-        addr, sz_hex, sec = parts[0], parts[1], parts[2]
-        if sec not in ("B", "b", "D", "d"):
-            continue
-        name = " ".join(parts[3:])
-        try:
-            size_val = int(sz_hex, 16)
-        except ValueError:
-            continue
-        top_ram.append({"addr": addr, "size": size_val, "section": sec, "name": name})
-        if len(top_ram) >= 25:
-            break
-
-    secure_hits = []
-    for marker in ("BearSSL", "WiFiClientSecure", "CertStore"):
-        if marker in nm_all:
-            secure_hits.append(marker)
-
-    report = {
-        "build_type": build_type,
-        "env": env_name,
-        "elf": str(elf_path),
-        "size": {"text": text, "data": data, "bss": bss, "dec": dec},
-        "top_ram_symbols": top_ram,
-        "secure_symbols_detected": secure_hits,
-    }
-
-    json_path = Path(PATHS["dist"]) / f"ram-footprint-{build_type}.json"
-    md_path = Path(PATHS["dist"]) / f"ram-footprint-{build_type}.md"
-    json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    md_lines = [
-        f"# RAM footprint ({build_type})",
-        "",
-        f"- env: `{env_name}`",
-        f"- elf: `{elf_path}`",
-        f"- text: `{text}`",
-        f"- data: `{data}`",
-        f"- bss: `{bss}`",
-        f"- dec: `{dec}`",
-        "",
-        "## Top RAM symbols",
-        "",
-        "| size | section | name |",
-        "|-----:|:--------|:-----|",
-    ]
-    for s in top_ram:
-        md_lines.append(f"| {s['size']} | {s['section']} | `{s['name']}` |")
-    md_lines.extend([
-        "",
-        "## Secure client symbols",
-        "",
-        f"- detected: `{', '.join(secure_hits) if secure_hits else 'none'}`",
-    ])
-    md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
-    print_done(f"RAM footprint report: {json_path.name}, {md_path.name}")
 
 # ====================================================
 # OTA PACK (firmware + LittleFS assets)
@@ -375,20 +285,8 @@ def gzip_file(src_path: Path, dst_path: Path):
     with src_path.open("rb") as f_in, gzip.open(dst_path, "wb", compresslevel=9) as f_out:
         shutil.copyfileobj(f_in, f_out)
 
-# index.html is copied as-is (stylesheet /style.css). JS bundle → app.js (see build_fs_tree).
-INJECT_MARKER_CSS = "<!-- INJECT_APP_CSS -->"  # legacy; unused on ESP32-C3 3-gzip path
-
-
-def escape_inline_script(js: str) -> str:
-    """Экранирует </script> внутри встраиваемого JS, иначе HTML-парсер обрезает тег."""
-    return js.replace("</script>", "<\\/script>")
-
-
-def build_monolithic_index(files_dir: Path, out_path: Path) -> None:
-    """
-    Legacy helper: previously inlined style.css into index.html.
-    ESP32-C3 path copies index.html as-is and serves /style.css separately.
-    """
+def copy_index_html(files_dir: Path, out_path: Path) -> None:
+    """Copy data/index.html as-is (CSS is a separate /style.css asset)."""
     tpl_path = files_dir / "index.html"
     if not tpl_path.is_file():
         raise RuntimeError(f"Missing {tpl_path}")
@@ -450,20 +348,9 @@ def build_preloaded_schemas_js(files_dir: Path) -> bytes:
     return js.encode("utf-8")
 
 def find_pins_h() -> Path | None:
-    """
-    Pins.h location can differ between project layouts.
-    Try a few common locations and return the first existing one.
-    """
-    root = Path(__file__).resolve().parent
-    candidates = [
-        root / "include" / "io" / "Pins.h",
-        root / "include" / "common" / "Pins.h",
-        root / "include" / "Pins.h",
-    ]
-    for p in candidates:
-        if p.exists():
-            return p
-    return None
+    """Return include/common/Pins.h if present."""
+    p = Path(__file__).resolve().parent / "include" / "common" / "Pins.h"
+    return p if p.exists() else None
 
 
 def read_hw_limits_from_pins(pins_h: Path | None) -> dict:
@@ -553,7 +440,7 @@ def build_fs_tree(files_dir: Path, gzip_enabled: bool = True, include_config_jso
         if not bundle:
             shutil.rmtree(temp_dir, ignore_errors=True)
             raise RuntimeError("Пустой JS bundle — проверьте data/script.js и js/libs (build_script_bundle).")
-        build_monolithic_index(files_dir, temp_dir / "index.html")
+        copy_index_html(files_dir, temp_dir / "index.html")
         css_src = files_dir / "style.css"
         if not css_src.is_file():
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -657,6 +544,7 @@ def upload_filesystem(files_dir: str = "data", gzip_enabled: bool = True, cleanu
 
     Почему так: это самый совместимый путь без завязки на версии PlatformIO CLI.
     """
+    
     files_dir = Path(files_dir)
     if not files_dir.exists():
         print_error(f"Папка '{files_dir}' не найдена")
@@ -674,7 +562,9 @@ def upload_filesystem(files_dir: str = "data", gzip_enabled: bool = True, cleanu
             shutil.rmtree(files_dir, ignore_errors=True)
         shutil.copytree(temp_fs, files_dir, dirs_exist_ok=True)
 
-        run_cmd(pio_cmd("run -e esp32c3_release --target uploadfs"), "PlatformIO uploadfs (LittleFS)")
+        env_name = PIO_ENVS["release"]
+        run_cmd(pio_cmd(f"run -e {env_name} --target uploadfs"), "PlatformIO uploadfs (LittleFS)")
+
         print_done("Файловая система залита")
     finally:
         # восстановление исходной data/
@@ -695,38 +585,32 @@ def upload_filesystem(files_dir: str = "data", gzip_enabled: bool = True, cleanu
 # СПРАВКА
 # ====================================================
 def show_help():
-    print("""
-AutoStart V10 Builder v{0}
+    print(f"""
+AutoStartEspUnit builder v{VERSION} (ESP32-C3)
 
-ИСПОЛЬЗОВАНИЕ:
-  python build.py [КОМАНДА] [ОПЦИИ]
+USAGE:
+  python build.py [COMMAND] [OPTIONS]
 
-КОМАНДЫ:
-  release              Сборка прошивки (лог только в SSE/веб; Version.h без SERIAL_DEBUG; по умолчанию)
-  debug                Сборка с SERIAL_DEBUG в Version.h — зеркалирование логов в UART (см. Logger)
-  rtos                 Alias → esp32c3_release (legacy ESP8266 RTOS path removed)
-  fs                  Собрать bundle+gz и залить LittleFS (uploadfs), в т.ч. data/config.json если есть
+COMMANDS:
+  release             Build firmware (SSE/web logs only; no SERIAL_DEBUG)
+  debug               Build with SERIAL_DEBUG (UART shared with GSM — legacy)
+  fs                  Build 3-gzip UI tree and upload LittleFS (uploadfs)
 
-ОПЦИИ:
-  -u, --upload        Залить прошивку после сборки
-  -m, --monitor       Открыть монитор порта
-  -c, --clean         Очистить проект
-  -i, --info          Информация о системе
-  --keep-gz           Не удалять *.gz артефакты из data/ после операций
-  --no-ota            Не создавать OTA-файл (по умолчанию создаётся)
-  -h, --help          Показать эту справку
+OPTIONS:
+  -u, --upload        Upload firmware after build
+  -m, --monitor       Serial monitor
+  -c, --clean         Clean PlatformIO + generated Version.h / build-info
+  -i, --info          Tool versions
+  --keep-gz           Keep *.gz leftovers under data/
+  --no-ota            Skip OTA package in dist/
+  -h, --help          This help
 
-ПРИМЕРЫ:
-  python build.py              Справка
-  python build.py release      Сборка + лог PlatformIO
-  python build.py release -u   Сборка + заливка + лог
-  python build.py fs           Залить файловую систему (bundle+gz)
-  python build.py -m           Монитор порта
-  python build.py -c           Очистка
-  python build.py release --no-ota   Сборка без OTA-файла
-  python build.py debug -u           Debug-сборка и заливка (UART делит линию с GSM — осторожно)
-  python build.py rtos               Same as release (esp32c3_release)
-""".format(VERSION))
+EXAMPLES:
+  python build.py release -u
+  python build.py debug -u
+  python build.py fs
+  python build.py release --no-ota
+""")
 
 # ====================================================
 # ГЕНЕРАЦИЯ ВЕРСИИ
@@ -772,63 +656,64 @@ class VersionGen:
 # ПРОВЕРКА ПИНОВ
 # ====================================================
 def check_pins():
+    """Print C3 pad remap used by this firmware (same PCB as ESP-12)."""
     pins = {
-        "GSM_TX": 1, "GSM_RX": 3,
-        "BUTTON": 2, "ONEWIRE": 0
+        "GSM_TX": 21,
+        "GSM_RX": 20,
+        "ONEWIRE": 9,
+        "BUTTON": 10,
+        "VBAT_ADC": 1,
     }
     for name, pin in pins.items():
         print(f"  {name}: GPIO{pin}")
-    print("  UART0 занят SIM800")
+    print("  RELAY1..5: GPIO 3,19,18,8,2")
+    print("  UART0 shared: SIM800 + debug Serial (legacy)")
 
 # ====================================================
 # СБОРКА
 # ====================================================
 def build(upload=False, skip_ota=False, build_type="release"):
-    if build_type not in ("release", "debug", "rtos"):
+    if build_type not in ("release", "debug"):
         build_type = "release"
-    print(f"\n=== СБОРКА {build_type.upper()} ===")
+    print(f"\n=== BUILD {build_type.upper()} ===")
 
     VersionGen().save(build_type)
-    
-    print_step("Проверка пинов")
+
+    print_step("Pins (ESP32-C3)")
     check_pins()
-    
-    # Backward-compatible env (some external tooling may read it).
+
     os.environ["BUILD_TYPE"] = build_type
     env_name = PIO_ENVS.get(build_type, PIO_ENVS["release"])
 
-    run_cmd(pio_cmd(f"run -e {env_name}"), f"PlatformIO сборка ({env_name})")
-    collect_ram_footprint_report(env_name, build_type)
+    run_cmd(pio_cmd(f"run -e {env_name}"), f"PlatformIO build ({env_name})")
 
     src = f".pio/build/{env_name}/firmware.bin"
     if not os.path.exists(src):
-        print_error("Бинарник не найден")
-    
+        print_error("firmware.bin not found")
+
     with open(PATHS["build_info"]) as f:
         ver = json.load(f)["version"]
-    
+
     name = f"autostart-{ver}-{build_type}.bin"
     dst = os.path.join(PATHS["dist"], name)
     shutil.copy2(src, dst)
     size = os.path.getsize(dst)
-    
-    print_done(f"Бинарник: {name} ({size//1024} KB)")
-    
-    # ===== СОЗДАНИЕ OTA-ФАЙЛА =====
-    # RTOS target currently builds runtime skeleton only; OTA pack path is Arduino-specific.
-    if build_type != "rtos" and not skip_ota:
+
+    print_done(f"Binary: {name} ({size // 1024} KB)")
+
+    if not skip_ota:
         ota_name = f"autostart-{ver}-{build_type}-ota.bin"
         ota_path = os.path.join(PATHS["dist"], ota_name)
         files_dir = "data"
         if os.path.exists(files_dir):
-            print_step("Создание OTA-файла")
+            print_step("Packing OTA")
             pack_ota(dst, files_dir, ota_path, gzip_enabled=True)
         else:
-            print("  Папка data не найдена, OTA-файл не создан")
-    
+            print("  data/ missing — OTA pack skipped")
+
     if upload:
-        run_cmd(pio_cmd(f"run -e {env_name} --target upload"), "Заливка")
-        print_done("Заливка завершена")
+        run_cmd(pio_cmd(f"run -e {env_name} --target upload"), "Upload")
+        print_done("Upload done")
 
 # ====================================================
 # КОМАНДЫ
@@ -883,15 +768,10 @@ def main():
         return
 
     if "fs" in args or "uploadfs" in args:
-        # сейчас всегда готовим bundle+gz, как для OTA
         upload_filesystem("data", gzip_enabled=True, cleanup_gz=(not keep_gz))
         return
-    
-    if "rtos" in args:
-        build_type = "rtos"
-    else:
-        build_type = "debug" if "debug" in args else "release"
 
+    build_type = "debug" if "debug" in args else "release"
     upload = "-u" in args or "--upload" in args
     skip_ota = "--no-ota" in args
 

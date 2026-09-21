@@ -2,19 +2,21 @@
 
 Car remote auto-start firmware (SoftAP UI + SIM800 MQTT).
 
-**Current target:** ESP32-C3 (ESP-C3-12F drop-in on the same PCB as ESP-12E).
+**Target:** ESP32-C3 (ESP-C3-12F / DevKit; same PCB nets as ESP-12E).
 
 ## Branches
 
-- esp32 — active development (ESP32-C3)
-- main — stable; merge from esp32 after acceptance
-- esp8266-dead-end / tag esp8266-final — frozen ESP8266 archive (do not extend)
+- `esp32` — active (ESP32-C3)
+- `main` — stable after acceptance
+- `esp8266-dead-end` / tag `esp8266-final` — frozen archive
 
 ## Build
 
-    python build.py release
-    python build.py fs
+```bash
+python build.py release -u
+python build.py fs
+```
 
-See docs/ for architecture notes. ESP8266 RAM playbooks under docs/ are historical unless marked otherwise.
+See [`docs/ESP32C3.md`](docs/ESP32C3.md) and [`docs/build_and_flash.md`](docs/build_and_flash.md).
 
 Remote: https://github.com/El-Vasao/AutoStartEspUnit
