@@ -52,7 +52,7 @@ void Core::performPeriodicTasks(uint32_t now) {
 
     if (every(Timing::ERROR_REPORT_INTERVAL_MS, impl.lastStatsPrint)) {
         logHeapSnapshot(nullptr);
-        // ESP32-C3: no auto-restart on heap fragmentation (ESP8266-era HEAP_FRAG_THRESHOLD removed).
+        // ESP32-C3: heap frag auto-restart removed; snapshot is diagnostic only.
     }
 }
 

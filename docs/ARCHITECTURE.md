@@ -1,7 +1,9 @@
-# Архитектура и правила модульности (ESP8266)
+# Архитектура и правила модульности (ESP32-C3)
 
 Этот документ фиксирует *контракты и ограничения* для кодовой базы. Он нужен, чтобы рефактор не превращался в набор
 разрозненных правок и чтобы новые изменения не размывали границы модулей.
+
+Target: PlatformIO env `esp32c3` (~170 KB free heap after boot). Исторические заметки по ESP8266 — в `docs/archive/`.
 
 ## 1) Слои и направление зависимостей
 
@@ -27,13 +29,13 @@ flowchart TD
 - **`web` →** `core`, `config`, `fs` (через узкие контракты); **запрещено** тянуть web в `io/program/core-managers`.
 
 ### “Точка правды” для цикла
-Для устойчивости на ESP8266 важно, чтобы **весь** прогресс происходил в одном контролируемом месте:
+Весь прогресс — в одном контролируемом месте:
 - `setup()` вызывает `core.begin()`;
 - `loop()` вызывает `core.update()` и больше ничего.
 
 Так проще гарантировать:
-- регулярное обслуживание watchdog;
-- периодическое `yield()`/time slicing для WiFi/lwIP;
+- регулярное обслуживание watchdog / `Core::cooperate()`;
+- fairness FreeRTOS + lwIP при длинных FS/OTA циклах;
 - отсутствие пересечения flash-операций с логикой выполнения программ.
 
 ## 2) Public vs internal (границы заголовков)
@@ -55,7 +57,9 @@ flowchart TD
 - public header даёт минимальный API;
 - `.cpp` и `internal` хедеры включают всё остальное.
 
-## 3) Политика работы с памятью (ESP8266)
+## 3) Политика работы с памятью (ESP32-C3)
+
+Heap headroom заметно выше, чем на ESP8266, но предсказуемый RAM-профиль всё ещё важен (OTA `Update.begin`, SoftAP+SSE+GSM).
 
 ### Heap churn / `String`
 `String` допускается только там, где API Arduino/ESPAsyncWebServer принуждает к этому.
@@ -71,16 +75,15 @@ flowchart TD
 ### JSON
 Для web/api/sse и MQTT:
 - JSON эмитится в фиксированные/`char[]` буферы или потоково в Print (`sendJsonBuffered`, SAX parser);
-- ёмкости/лимиты фиксируем в `include/common/Constants.h` (`JsonBytes::*`), не раздуваем без необходимости.
+- ёмкости/лимиты фиксируем в `include/common/Constants.h` (`JsonBytes::*`).
 
-Дополнение (baseline RAM):
-- Для рантайм-исполнения программ используем компактные шаги без строк (`CompiledStep`) вместо `Step`.
-- Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`), без отдельного `/bootstrap/live`.
-- MQTT использует **выделенные топики из конфигурации** (`BaseConfig.mqtt.cmd_topic/status_topic`) и по возможности
-  публикует JSON **без промежуточных больших payload-буферов в `.bss`**, чтобы не раздувать baseline RAM.
+Дополнение:
+- Для рантайм-исполнения программ — компактные шаги без строк (`CompiledStep`).
+- Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`).
+- MQTT: выделенные топики из конфигурации; payload caps согласованы с `MqttFsmClient::TX_MAX`.
 
 ## 3.0) MQTT contract (топики, сообщения, доставка)
-MQTT — это часть рантайм-коммуникаций и чувствителен к стабильности цикла (ESP8266 + GSM).
+MQTT чувствителен к стабильности цикла (SIM800 + SoftAP).
 
 Фиксируем контракт:
 - **Идентификация устройства только по топику**: никаких `deviceId`/`unitId` в payload.
@@ -90,42 +93,36 @@ MQTT — это часть рантайм-коммуникаций и чувст
   - LWT `"offline"` на `status_topic`: QoS1 + retained
   - `"online"` при connect на `status_topic`: retained
   - периодический JSON-статус: best-effort, not-retained, раз в `publish_interval_sec`
-- **Anti-hang**: публикация JSON-статуса только по таймеру; чтение/запись в транспорт режутся лимитами `MqttFsmClient::Budgets`
-  (`src/mqtt/MqttFsmClient.cpp`). Локальное время «измерить + застейджить» JSON ограничивают **логируемым** порогом
+- **Anti-hang**: публикация JSON-статуса только по таймеру; чтение/запись в транспорт режутся лимитами `MqttFsmClient::Budgets`.
+  Локальное время «измерить + застейджить» JSON ограничивают **логируемым** порогом
   (~10 мс в `MQTTClient::publishStatus`) и не приводят к принудительному `disconnect()` сами по себе.
 
 ### Долгие операции и watchdog/cooperate
 Любые потенциально долгие операции (flash, большие сериализации, loop’ы по файлам):
-- должны содержать “time slicing”: `Core::cooperate()` / `ESP.wdtFeed()` (в зависимости от контекста);
+- должны содержать “time slicing”: `Core::cooperate()` / `espHalFeedWdt()` (= `yield()`);
 - не должны вызываться из enter/exit режимов без явного разбиения по времени.
 
 ## 3.3) Memory lifecycle contract по режимам
 
-Чтобы уменьшить OOM в OTA/GSM сценариях, вводим явный контракт по памяти между `Core`, `WebServer`, `CellularCore` и `ModeManager`.
+Контракт по памяти между `Core`, `WebServer`, `CellularCore` и `ModeManager`:
 
 - `NORMAL` / `NORMAL_SILENT`:
-  - GSM/MQTT обслуживаются штатно, SSE incremental работает в обычных порогах очереди.
-  - В `NORMAL` при SoftAP up cellular **servится вместе с UI** (ESP32-C3). Suspend только
-    когда SoftAP down или при OTA upload pressure.
-- `pre-OTA` (окно `POST /upload` до фактического `switchMode(OTA_UPDATE)`):
-  - активируется `otaUploadPressureActive`;
-  - `CellularCore` временно приглушается (через `suspendCellularLink()` в handler NORMAL);
-  - SSE/log канал работает в пониженных лимитах очереди (`WebSseLimits::OTA_PREP_*`), а вторичные лог-сообщения могут дропаться;
-  - собираются heap-снимки (`free/maxBlk/frag`) в точках upload start/finish/fail.
-- `OTA_UPDATE`:
-  - `otaUploadPressureActive` выключается;
-  - перед `Update.begin` закрывается SSE (`closeSseForOta()`), реле переводятся в safe state;
-  - GSM/MQTT остаются suspend до выхода из OTA.
+  - GSM/MQTT обслуживаются штатно (в NORMAL — при SoftAP up), SSE incremental в обычных soft queue.
+- `OTA_UPDATE` (в т.ч. во время stream-upload):
+  - программы stop, реле safe, cellular suspend;
+  - **SSE остаётся** (логи/статус под обычными soft gates);
+  - пакет льётся стримом в `Update` + FS tail, без полного `/update.bin` на LittleFS;
+  - после успешного `streamFinish` — reboot.
 
-Ключевая идея: в пред-OTA и OTA фазах приоритет у непрерывного блока heap для `Update.begin` и у предсказуемого RAM-профиля, а не у полноты логов/SSE.
+Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удалены** (ESP32-C3).
 
-Операционный чеклист и пороги SLO для реального железа зафиксированы в [`docs/RAM_STABILIZATION_PLAYBOOK.md`](RAM_STABILIZATION_PLAYBOOK.md).
+Полевой baseline: [`docs/ESP32C3.md`](ESP32C3.md). Детали stream OTA: [`docs/modules/ota.md`](modules/ota.md).
 
 ## 3.1) “Горячие” и “холодные” зоны
 
 **Hot-path** — всё, что выполняется часто и влияет на стабильность:
-- `Core::update()` и handlers режимов (`handleNormal`, `handleNormalSilent`, …)
-- `io/*::update()` (входы/реле/сенсоры)
+- `Core::update()` и handlers режимов
+- `io/*::update()`
 - `ProgramExecutor::update()`
 - FSM GSM/MQTT service в NORMAL режимах
 - web housekeeping (`WebServer::update()`) и периодическая отправка SSE статуса
@@ -134,10 +131,10 @@ MQTT — это часть рантайм-коммуникаций и чувст
 
 ## 3.2) Cellular (SIM800): AT/transport/logging contracts
 
-Поведение `begin()`/`INIT` (дефолтная скорость UART, условный поиск baud, `AT+IPR?` перед записью NV) описано в [`docs/modules/gsm_modem.md`](modules/gsm_modem.md) (раздел «UART: гипотеза скорости и поиск baud»); константы — только из `namespace GSM` в `Constants.h`.
+Поведение `begin()`/`INIT` описано в [`docs/modules/gsm_modem.md`](modules/gsm_modem.md); константы — только из `namespace GSM` в `Constants.h`.
 
 ### Единый AT pipeline
-- **Все AT-команды должны идти через `AtSession` + `ModemUart`**, а не напрямую через `Serial.flush()`.
+- **Все AT-команды должны идти через `AtSession` + `ModemUart`**.
 - Причина: единый контроль таймаутов/очередей + WDT-safety (yield/time slicing).
 
 ### SIM800 TCP transport (RX/TX)
@@ -152,17 +149,17 @@ MQTT — это часть рантайм-коммуникаций и чувст
 - L3: bearer reset: `SAPBR=0,1` → `SAPBR=1,1`
 - L4: modem reset: `CFUN=1,1`
 
-### SSE logs: anti-WDT policy
+### SSE logs: backpressure policy
 - При активной UI-сессии возможен log-storm (GSM churn + transport polling).
-- Политика: **лучше дропать логи, чем ловить WDT** (token bucket throttling в `Logger`).
+- Политика: **лучше дропать логи через soft/OTA SSE queue gates**, чем блокировать loop.
+  Встроенного token-bucket throttle в `Logger` больше нет — gate на стороне `WebServer`.
 
 ## 3.4) Decision gate: замена сетевого стека
 
-Полная замена `ESPAsyncWebServer`/`AsyncTCP` не делается “по умолчанию” при первом OOM.
+Полная замена `ESPAsyncWebServer` не делается “по умолчанию” при первом OOM.
 
 Разрешение на миграцию даётся только если:
-- OOM в `accept` повторяется после выполнения P0 мер и memory SLO из playbook;
-- AP/SSE лимиты и low-heap guards не стабилизируют первый web-клиент;
+- OOM в `accept` повторяется после OTA pressure / SSE queue limits;
 - команда согласовала риск регрессий API/SSE и длительный цикл валидации.
 
 ## 4) Политика доступа к LittleFS
@@ -177,16 +174,18 @@ MQTT — это часть рантайм-коммуникаций и чувст
 - централизованный учёт ошибок и атомарность;
 - единая политика deferred операций (чтобы не пересекать flash с выполнением программы).
 
+`FSManager::gc()` на ESP32 Arduino **не компактирует** том: reclaim известных orphan temp + refresh free-space. После вызова всегда проверяйте `getFreeSpace()`.
+
 ## 5) Комментарии (стиль “осмысленной документации”)
 
 Комментарии должны отвечать на вопросы:
 - **контракт**: что гарантирует функция/класс, что требует, что не делает;
 - **инварианты**: что должно оставаться истинным всегда (особенно в FSM и deferred-очередях);
-- **ограничения ESP8266**: почему выбран такой подход (heap, lwIP, WDT, LittleFS rename).
+- **ограничения платформы**: почему выбран такой подход (heap, SoftAP+GSM, LittleFS rename, SIM800).
 
 Удаляем:
-- дублирование очевидного (“инициализируем переменную”, “вызываем update”);
-- устаревшие/ложные утверждения (“описано в WebServer.cpp”, если файла уже нет).
+- дублирование очевидного;
+- устаревшие/ложные утверждения про ESP8266 soft WDT / `LittleFS.gc()` / Logger throttle, если поведения уже нет.
 
 ## 6) Паттерн “узкий контракт” между модулями
 
@@ -197,4 +196,3 @@ MQTT — это часть рантайм-коммуникаций и чувст
 Цель:
 - уменьшить compile fanout;
 - сделать зависимости видимыми и устойчивыми (без “случайных” транзитивных include’ов).
-

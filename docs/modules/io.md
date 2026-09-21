@@ -12,7 +12,7 @@
 - `include/io/SensorsController.h` + `src/io/SensorsController.Core.cpp`
 - hardware map: `include/common/Pins.h`
 
-## Инварианты ESP8266
+## Инварианты
 - `update()` должен быть быстрым и без heap аллокаций.
 - ISR (pulse counter) — без логов и тяжёлых операций, только инкремент счётчика.
 - Все структуры фиксированного размера (`HardwareLimits::*`).

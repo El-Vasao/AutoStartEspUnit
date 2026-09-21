@@ -119,7 +119,7 @@ static FlashCommitOp gLastFlashOp{FlashCommitOp::NONE};
 static bool gLastFlashPending{false};
 static bool gLastFlashOk{true};
 static uint32_t gLastFlashMillisVal{0};
-/// After SSE connect: emit clocks→mode→gsm→hardware one-per-tick (avoid AsyncSSE queue flood).
+/// After SSE connect: emit clocks→mode→gsm→hardware in one tick while soft queue allows.
 static uint8_t gBaselineStep{0}; // 0=idle/done, 1=clocks, 2=mode, 3=gsm, 4=hardware
 
 static void invalidateDedupState() {
@@ -135,7 +135,7 @@ static void invalidateDedupState() {
     gLastFlashMillisVal = 0;
 }
 
-/// New SSE client: clear dedup and pace baseline across ticks (no HTTP live required).
+/// New SSE client: clear dedup and request baseline burst (no HTTP live required).
 static void requestBaselineResync() {
     invalidateDedupState();
     gLastClkMsSent = 0;
@@ -597,7 +597,7 @@ static void broadcastResync(WebServer& ws, size_t maxQueueDepth) {
     (void)maxQueueDepth;
     if (!WebServerRuntime::sseActiveUiOk(ws)) return;
     if (WebServerRuntime::refreshSseClientCount(ws) == 0) return;
-    // Optional resync signal; FE waits for paced baseline events.
+    // Optional resync signal; FE waits for baseline events.
     if (sseTickMoreEventsSafe(ws) && !WebServerRuntime::sseQueueBackpressureAtLeast(ws, WebSseLimits::STATUS_QUEUE_MAX)) {
         WebServerRuntime::sseSendEvent(ws, "{}", "resync", millis());
     }
@@ -605,17 +605,16 @@ static void broadcastResync(WebServer& ws, size_t maxQueueDepth) {
 }
 
 static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
-    const bool otaPrepPressure = core.isOtaUploadPressureActive();
-    const size_t statusQueueMax = otaPrepPressure ? WebSseLimits::OTA_PREP_STATUS_QUEUE_MAX : WebSseLimits::STATUS_QUEUE_MAX;
+    const size_t statusQueueMax = WebSseLimits::STATUS_QUEUE_MAX;
     if (!WebServerRuntime::sseActiveUiOk(ws)) return;
     if (WebServerRuntime::refreshSseClientCount(ws) == 0) return;
     if (WebServerRuntime::sseQueueBackpressureAtLeast(ws, statusQueueMax)) return;
 
-    // Разгрузить lwIP/AsyncTCP перед пачкой `events.send` (снижает async_ws overflow на ESP8266).
+    // Разгрузить lwIP перед пачкой `events.send`.
     yield();
 
-    // Paced baseline after connect: at most one important event per tick.
-    if (gBaselineStep >= 1 && gBaselineStep <= 4) {
+    // Baseline after connect: emit clocks→mode→gsm→hardware in one tick while queue allows.
+    while (gBaselineStep >= 1 && gBaselineStep <= 4) {
         if (!sseTickMoreEventsSafe(ws)) return;
         if (gBaselineStep == 1) {
             gLastClkMsSent = now;
@@ -623,8 +622,10 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
             emitClocksPayload(cp);
             if (sendJsonEvent(ws, "clocks", cp, statusQueueMax)) {
                 gBaselineStep = 2;
+            } else {
+                return;
             }
-            return;
+            continue;
         }
         if (gBaselineStep == 2) {
             const char* curMode = core.getModeName();
@@ -639,8 +640,10 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
             if (sendJsonEvent(ws, "mode", mp, statusQueueMax)) {
                 strlcpy(gLastMode, curMode, sizeof(gLastMode));
                 gBaselineStep = 3;
+            } else {
+                return;
             }
-            return;
+            continue;
         }
         if (gBaselineStep == 3) {
             const char* curGsm = core.getGSM().getStateString();
@@ -655,8 +658,10 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
             if (sendJsonEvent(ws, "gsm", gp, statusQueueMax)) {
                 strlcpy(gLastGsm, curGsm, sizeof(gLastGsm));
                 gBaselineStep = 4;
+            } else {
+                return;
             }
-            return;
+            continue;
         }
         // step 4: hardware
         {
@@ -668,13 +673,16 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
                     WebServerRuntime::sseSendEvent(ws, gSsePayload, "hardware", millis());
                     gLastHardwareHash = h;
                     gBaselineStep = 0;
+                } else {
+                    return;
                 }
             } else {
                 gBaselineStep = 0; // skip if truncated; normal path may retry later
             }
         }
-        return;
     }
+
+    if (gBaselineStep != 0) return;
 
     // Clocks: ~1 Hz — лёгкий keepalive для EventSource stale detector.
     if (gLastClkMsSent == 0 || (uint32_t)(now - gLastClkMsSent) >= Timing::SSE_CLOCKS_INTERVAL_MS) {
@@ -731,11 +739,6 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
         if (sendJsonEvent(ws, "error", ep, statusQueueMax)) {
             strlcpy(gLastErr, curErr, sizeof(gLastErr));
         }
-    }
-
-    if (otaPrepPressure) {
-        // During upload->OTA transition prioritize light telemetry to preserve heap for Update.begin.
-        return;
     }
 
     {

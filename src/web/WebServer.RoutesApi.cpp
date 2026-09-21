@@ -181,63 +181,35 @@ void WebServer::setupApiRoutes_() {
         sendJsonSuccess(request);
     });
 
-    // OTA upload
+    // OTA upload — stream package into Update + FS (no /update.bin).
     struct UploadContext {
-        File file;
         size_t totalSize{0};
         bool errored{false};
+        bool active{false};
     };
     static UploadContext gUploadCtx;
-    static bool gUploadCtxUsed = false;
 
-    auto acquireUploadCtx = []() -> UploadContext* {
-        if (gUploadCtxUsed) return nullptr;
-        gUploadCtxUsed = true;
-        gUploadCtx = UploadContext{};
-        return &gUploadCtx;
-    };
-    auto releaseUploadCtx = [](UploadContext* ctx) {
-        if (!ctx) return;
-        if (ctx == &gUploadCtx) gUploadCtxUsed = false;
-    };
-
-    server.on("/upload", HTTP_POST, [](AsyncWebServerRequest* request) {},
-        [=](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
+    server.on("/upload", HTTP_POST,
+        [](AsyncWebServerRequest* request) {
+            // Response is sent from the upload handler on final/error.
+            (void)request;
+        },
+        [](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
             if (index == 0 && rejectIfFlashBusy(request)) {
                 return;
             }
             if (index != 0 && gOtaHttpUploadAwaitTimedOut) {
-                auto* timedCtx = static_cast<UploadContext*>(request->_tempObject);
-                if (timedCtx && timedCtx->file) {
-                    fileSystem.closeWriteStream(timedCtx->file, "/update.bin", false);
-                }
-                if (timedCtx) {
-                    releaseUploadCtx(timedCtx);
-                    request->_tempObject = nullptr;
-                }
                 gOtaHttpUploadAwaitTimedOut = false;
-                if (fileSystem.exists("/update.bin")) {
-                    fileSystem.deleteFile("/update.bin");
-                }
+                core.otaStreamAbort();
+                core.notifyOtaHttpUploadComplete(false);
+                gUploadCtx = UploadContext{};
                 request->send(408, kContentTypeText, "OTA upload timed out");
                 return;
             }
 
-            auto* ctx = static_cast<UploadContext*>(request->_tempObject);
-
             if (!index) {
                 gOtaHttpUploadAwaitTimedOut = false;
-                logger.log("[WebServer] Upload start: %s\n", filename.c_str());
-
-                // If we have leftover context, free it.
-                if (ctx) {
-                    if (ctx->file) {
-                        fileSystem.closeWriteStream(ctx->file, "/update.bin", false);
-                    }
-                    releaseUploadCtx(ctx);
-                    ctx = nullptr;
-                    request->_tempObject = nullptr;
-                }
+                logger.log("[WebServer] Stream OTA upload start: %s\n", filename.c_str());
 
                 if (fileSystem.exists("/update.bin")) {
                     fileSystem.deleteFile("/update.bin");
@@ -245,97 +217,83 @@ void WebServer::setupApiRoutes_() {
                 if (fileSystem.exists("/update.bin.tmp")) {
                     fileSystem.deleteFile("/update.bin.tmp");
                 }
+                fileSystem.gc();
 
                 size_t freeSpace = fileSystem.getFreeSpace();
-                logger.log("[WebServer] Free space before upload: %u bytes\n", (unsigned)freeSpace);
-                if (freeSpace < OTA::FILE_MAX_SIZE + FSystem::MIN_FREE_SPACE) {
-                    logger.log("[WebServer] Low space, running GC...\n");
-                    fileSystem.gc();
-                    freeSpace = fileSystem.getFreeSpace();
-                    if (freeSpace < OTA::FILE_MAX_SIZE + FSystem::MIN_FREE_SPACE) {
-                        logger.log("[WebServer] Still insufficient space\n");
-                        request->send(507, kContentTypeText, "Insufficient space");
-                        return;
-                    }
+                logger.log("[WebServer] Free space before stream OTA: %u bytes\n", (unsigned)freeSpace);
+                if (freeSpace < OTA::STREAM_FS_HEADROOM + FSystem::MIN_FREE_SPACE) {
+                    logger.log("[WebServer] Insufficient FS headroom for UI tail\n");
+                    request->send(507, kContentTypeText, "Insufficient space");
+                    return;
                 }
 
-                ctx = acquireUploadCtx();
-                if (!ctx) {
+                if (gUploadCtx.active) {
                     request->send(409, kContentTypeText, "Busy");
                     return;
                 }
-                ctx->totalSize = 0;
-                ctx->errored = false;
-                ctx->file = fileSystem.openWriteStream("/update.bin");
-                request->_tempObject = ctx;
-
-                if (!ctx->file) {
-                    logger.log("[WebServer] Failed to open /update.bin for writing\n");
-                    request->send(500, kContentTypeText, "Failed to open file");
-                    releaseUploadCtx(ctx);
-                    request->_tempObject = nullptr;
-                    return;
-                }
+                gUploadCtx = UploadContext{};
+                gUploadCtx.active = true;
                 core.onOtaHttpUploadStreamOpenedFromWeb();
             }
 
-            if (!ctx) {
+            if (!gUploadCtx.active) {
                 request->send(400, kContentTypeText, "Upload context missing");
                 return;
             }
-            if (ctx->errored) {
+            if (gUploadCtx.errored) {
                 return;
             }
 
             if (len > 0) {
-                if (ctx->file.write(data, len) != len) {
-                    logger.log("[WebServer] Write error during upload\n");
-                    fileSystem.closeWriteStream(ctx->file, "/update.bin", false);
-                    ctx->errored = true;
+                if (!core.otaStreamFeed(data, len)) {
+                    logger.log("[WebServer] Stream feed failed at %u bytes\n",
+                               (unsigned)(gUploadCtx.totalSize + len));
+                    gUploadCtx.errored = true;
+                    core.otaStreamAbort();
                     core.notifyOtaHttpUploadComplete(false);
-                    request->send(500, kContentTypeText, "Write error");
+                    gUploadCtx = UploadContext{};
+                    request->send(500, kContentTypeText, "Stream error");
                     return;
                 }
-                ctx->totalSize += len;
-                if (ctx->totalSize > OTA::FILE_MAX_SIZE) {
+                gUploadCtx.totalSize += len;
+                if (gUploadCtx.totalSize > OTA::FILE_MAX_SIZE) {
                     logger.log("[WebServer] Upload rejected: too large (%u > %u)\n",
-                               (unsigned)ctx->totalSize, (unsigned)OTA::FILE_MAX_SIZE);
-                    fileSystem.closeWriteStream(ctx->file, "/update.bin", false);
-                    ctx->errored = true;
+                               (unsigned)gUploadCtx.totalSize, (unsigned)OTA::FILE_MAX_SIZE);
+                    gUploadCtx.errored = true;
+                    core.otaStreamAbort();
                     core.notifyOtaHttpUploadComplete(false);
+                    gUploadCtx = UploadContext{};
                     request->send(413, kContentTypeText, "Payload too large");
-                    releaseUploadCtx(ctx);
-                    request->_tempObject = nullptr;
                     return;
                 }
             }
 
             if (final) {
-                logger.log("[WebServer] Upload finished, total size: %u\n", (unsigned)ctx->totalSize);
-                if (!fileSystem.closeWriteStream(ctx->file, "/update.bin", true)) {
-                    logger.log("[WebServer] Failed to finalize /update.bin\n");
+                logger.log("[WebServer] Stream upload finished, total size: %u\n",
+                           (unsigned)gUploadCtx.totalSize);
+                const bool ok = !gUploadCtx.errored && core.otaStreamFinish();
+                if (!ok) {
+                    core.otaStreamAbort();
                     core.notifyOtaHttpUploadComplete(false);
-                    request->send(500, kContentTypeText, "Failed to finalize file");
-                    releaseUploadCtx(ctx);
-                    request->_tempObject = nullptr;
+                    gUploadCtx = UploadContext{};
+                    request->send(500, kContentTypeText, "Stream finalize failed");
                     return;
                 }
                 core.notifyOtaHttpUploadComplete(true);
-                request->send(200, kContentTypeText, "Upload OK");
-                releaseUploadCtx(ctx);
-                request->_tempObject = nullptr;
+                gUploadCtx = UploadContext{};
+                request->send(200, kContentTypeJson, "{\"success\":true,\"rebooting\":true}");
             }
         });
 
     server.on("/ota/start", HTTP_POST, [](AsyncWebServerRequest* request) {
+        // Compatibility: stream OTA finishes on /upload; this is a no-op success if already in OTA.
         if (rejectIfFlashBusy(request)) return;
-        if (!fileSystem.exists("/update.bin")) {
-            request->send(400, kContentTypeJson, "{\"success\":false,\"message\":\"No update file found\"}");
+        if (core.getMode() == CoreMode::OTA_UPDATE) {
+            sendJsonSuccess(request);
             return;
         }
-        sendJsonSuccess(request);
-        core.startOTAUpdate();
-        webServer.broadcastStatusForce();
+        request->send(400, kContentTypeJson,
+                      "{\"success\":false,\"message\":\"Use POST /upload (stream OTA); no staged update.bin\"}");
     });
 
     server.on("/reboot", HTTP_POST, [](AsyncWebServerRequest* request) {

@@ -40,7 +40,6 @@ public:
     static void broadcastStatusForce(WebServer& ws);
     /// New EventSource client: invalidate SSE dedup so next tick sends mode/gsm/hardware/clocks.
     static void requestSseIncrementalBaseline(WebServer& ws);
-    static void closeSseForOta(WebServer& ws);
     static void sendStatus(WebServer& ws, size_t maxQueueDepth);
     static void tickSseIncremental(WebServer& ws, uint32_t nowMs);
 

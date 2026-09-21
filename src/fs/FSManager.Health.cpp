@@ -2,19 +2,49 @@
 #include "common/Logger.h"
 #include "common/Utils.h"
 #include "common/EspHal.h"
+#include "common/Constants.h"
 
 #include <WiFi.h>
+
+bool FSManager::refreshFsInfo() {
+    if (!initialized) return false;
+
+    espHalFeedWdt();
+    fsInfo.totalBytes = LittleFS.totalBytes();
+    fsInfo.usedBytes = LittleFS.usedBytes();
+    lastFsInfoRefresh = millis();
+    fsInfoRefreshCount++;
+    return true;
+}
+
+size_t FSManager::reclaimOrphans() {
+    if (!initialized) return 0;
+
+    // Known leftover temps from interrupted HTTP ingest / OTA staging.
+    // Do not walk all *.tmp — mid-write atomic temps must stay until rename.
+    static const char* const kOrphans[] = {
+        HttpPostJson::TMP_CONFIG,
+        HttpPostJson::TMP_PROGRAM,
+        "/update.bin.tmp",
+    };
+
+    size_t removed = 0;
+    for (const char* path : kOrphans) {
+        if (!exists(path)) continue;
+        if (deleteFile(path)) {
+            ++removed;
+            logger.log("[FSManager] Reclaimed orphan %s\n", path);
+        }
+    }
+    return removed;
+}
 
 bool FSManager::gc() {
     if (!initialized) return false;
 
-    // ESP32 Arduino LittleFS has no LittleFS.gc(); keep API for call sites.
-    espHalFeedWdt();
-    gcCount++;
-    lastGCTime = millis();
-    fsInfo.totalBytes = LittleFS.totalBytes();
-    fsInfo.usedBytes = LittleFS.usedBytes();
-    return true;
+    // ESP32 Arduino LittleFS has no LittleFS.gc(). Reclaim known orphans, then refresh free-space.
+    reclaimOrphans();
+    return refreshFsInfo();
 }
 
 bool FSManager::healthCheck() {
@@ -80,7 +110,7 @@ void FSManager::printStats() {
     logger.log("[FSManager] Free: %u KB\n", (fsInfo.totalBytes - fsInfo.usedBytes) / 1024);
     logger.log("[FSManager] Reads: %u\n", readCount);
     logger.log("[FSManager] Writes: %u\n", writeCount);
-    logger.log("[FSManager] GC runs: %u\n", gcCount);
+    logger.log("[FSManager] FS info refresh: %u\n", fsInfoRefreshCount);
     logger.log("[FSManager] Errors: %u\n", errorCount);
     logger.log("[FSManager] Recoveries: %u\n", recoveryCount);
     logger.log("[FSManager] === end stats ===\n");

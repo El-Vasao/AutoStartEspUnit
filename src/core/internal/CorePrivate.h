@@ -49,8 +49,6 @@ struct CorePrivate {
     bool pendingHardRestart{false};
     /// POST /upload открыл поток: тяжёлый `switchMode(OTA)` откладываем в `Core::update` после `webServer.update()`.
     bool pendingDeferredOtaFromWebUpload{false};
-    /// true в окне upload->switchMode(OTA): используем для разгрузки GSM/MQTT и SSE/log давления.
-    bool otaUploadPressureActive{false};
     BootStage bootStage{BootStage::InitWiFiOff};
     CoreMode bootTargetMode{CoreMode::BOOT};
     bool bootConfigLoaded{false};

@@ -53,9 +53,8 @@ static void drainDeferredOtaFromWebUpload_(CorePrivate& impl) {
         return;
     }
     logHeapTag_("before deferred OTA switch");
-    impl.otaHandler.prepareHttpUploadSession();
+    // Stream FSM already started in onOtaHttpUploadStreamOpenedFromWeb — do not reset it.
     impl.modeManager.switchMode(CoreMode::OTA_UPDATE);
-    impl.otaUploadPressureActive = false;
     logHeapTag_("after deferred OTA switch");
 }
 
@@ -75,7 +74,6 @@ bool Core::begin() {
     CorePrivate& impl = *_impl;
     impl.pendingHardRestart = false;
     impl.pendingDeferredOtaFromWebUpload = false;
-    impl.otaUploadPressureActive = false;
     impl.bootStage = CorePrivate::BootStage::InitWiFiOff;
     impl.bootTargetMode = CoreMode::BOOT;
     impl.bootConfigLoaded = false;
@@ -128,12 +126,16 @@ void Core::suspendCellularLink() {
     impl.cellular.suspend();
 }
 
-void Core::setOtaUploadPressureActive(bool active, const char* reasonTag) {
-    CorePrivate& impl = *_impl;
-    if (impl.otaUploadPressureActive == active) return;
-    impl.otaUploadPressureActive = active;
-    logger.log("[Core] OTA upload pressure %s (%s)\n", active ? "ON" : "OFF",
-               (reasonTag && reasonTag[0]) ? reasonTag : "n/a");
+bool Core::otaStreamFeed(const uint8_t* data, size_t len) {
+    return _impl->otaHandler.streamFeed(data, len);
+}
+
+bool Core::otaStreamFinish() {
+    return _impl->otaHandler.streamFinish();
+}
+
+void Core::otaStreamAbort() {
+    _impl->otaHandler.streamAbort();
 }
 
 void Core::update() {
@@ -217,9 +219,7 @@ void Core::update() {
     static uint32_t lastStatusBroadcast = 0;
     if (now - lastStatusBroadcast >= Timing::SSE_STATUS_INTERVAL_MS) {
         lastStatusBroadcast = now;
-        if (!impl.otaUploadPressureActive) {
-            sseBroadcastStatus();
-        }
+        sseBroadcastStatus();
     }
 }
 

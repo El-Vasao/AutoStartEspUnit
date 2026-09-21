@@ -48,12 +48,6 @@ uint8_t apMaxConnectionsForMode(CoreMode mode) {
             return APConfig::SETUP_MAX_CONNECTIONS;
     }
 }
-
-bool isOtaPriorityLog(const char* message) {
-    if (!message || !message[0]) return false;
-    return strstr(message, "[OTA") != nullptr || strstr(message, "[ModeManager]") != nullptr ||
-           strstr(message, "[Core] OTA") != nullptr;
-}
 } // namespace
 
 void WebServerRuntime::update(WebServer& ws) {
@@ -192,25 +186,6 @@ void WebServerRuntime::processSseDiagnostics(WebServer& ws) {
     ws.lastObservedSseClients_ = clients;
 }
 
-void WebServerRuntime::closeSseForOta(WebServer& ws) {
-    if (!ws.serverActive) return;
-    const uint16_t clients = refreshSseClientCount(ws);
-    const size_t queue = ws.events.avgPacketsWaiting();
-    logger.log("[WebServer] OTA: closing SSE (clients=%u queue=%u) heap free=%u maxBlk=%u frag=%u%%\n",
-               (unsigned)clients, (unsigned)queue, (unsigned)espHalFreeHeap(), (unsigned)espHalMaxBlock(),
-               (unsigned)0 /* heap frag N/A on ESP32 */);
-    for (auto& session : ws.uiSessions_) {
-        session = WebServer::UiSession{};
-    }
-    ws.activeUiSessionCount_ = 0;
-    ws.sseClientCount = 0;
-    ws.lastObservedSseClients_ = 0;
-    ws.sseDiagTailUntilMs_ = 0;
-    ws.events.close();
-    logger.log("[WebServer] OTA: SSE teardown done heap free=%u maxBlk=%u frag=%u%%\n",
-               (unsigned)espHalFreeHeap(), (unsigned)espHalMaxBlock(), (unsigned)0 /* heap frag N/A on ESP32 */);
-}
-
 void WebServerRuntime::start(WebServer& ws, CoreMode mode) {
     logger.log("[WebServer] start(CoreMode::%d)\n", (int)mode);
     ws.lastStartedMode_ = mode;
@@ -312,20 +287,14 @@ void WebServerRuntime::startWithParams(WebServer& ws, const char* ssid, const ch
 bool WebServerRuntime::sseSoftQueueAllowsSend(WebServer& ws, size_t maxAvgQueued) {
     if (ws.activeUiSessionCount_ == 0) return false;
     if (refreshSseClientCount(ws) == 0) return false;
-    const size_t limit = core.isOtaUploadPressureActive()
-        ? min(maxAvgQueued, WebSseLimits::OTA_PREP_STATUS_QUEUE_MAX)
-        : maxAvgQueued;
-    return ws.events.avgPacketsWaiting() < limit;
+    return ws.events.avgPacketsWaiting() < maxAvgQueued;
 }
 
 bool WebServerRuntime::sseLogChannelAllowsSend(WebServer& ws, size_t maxAvgQueued) {
     // Same gates as status path: no UI lease → no log SSE (avoids queue churn without a viewer).
     if (ws.activeUiSessionCount_ == 0) return false;
     if (refreshSseClientCount(ws) == 0) return false;
-    const size_t limit = core.isOtaUploadPressureActive()
-        ? min(maxAvgQueued, WebSseLimits::OTA_PREP_LOG_QUEUE_MAX)
-        : maxAvgQueued;
-    return ws.events.avgPacketsWaiting() < limit;
+    return ws.events.avgPacketsWaiting() < maxAvgQueued;
 }
 
 bool WebServerRuntime::sseActiveUiOk(const WebServer& ws) {
@@ -342,9 +311,6 @@ void WebServerRuntime::sseSendEvent(WebServer& ws, const char* payload, const ch
 
 void WebServerRuntime::broadcastLog(WebServer& ws, const char* message) {
     if (!message) return;
-    if (core.isOtaUploadPressureActive() && !isOtaPriorityLog(message)) {
-        return;
-    }
     static char s_lastLog[Logging::MAX_MESSAGE_LENGTH];
     static bool s_haveLast;
     if (s_haveLast && strcmp(s_lastLog, message) == 0) return;

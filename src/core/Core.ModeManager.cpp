@@ -8,6 +8,7 @@
 #include "common/Pins.h"
 #include "core/Core.h"
 #include "io/RelayController.h"
+#include "program/ProgramExecutor.h"
 #include "common/Version.h"
 #include "common/Logger.h"
 
@@ -169,16 +170,12 @@ void ModeManager::exitNormalSilent() {
 
 void ModeManager::enterOTAUpdate() {
     logger.log("[ModeManager] enterOTAUpdate\n");
-    // Memory lifecycle contract:
-    // 1) stop high-churn SSE queue before Update.begin;
-    // 2) relay outputs to safe state;
-    // 3) OTA state machine owns progress from this point.
-    core.setOtaUploadPressureActive(false, "mode_enter_ota");
+    // Unload domain work; keep SSE open for UI progress/logs during stream flash.
     core.logHeapSnapshot("mode_enter_ota");
-    core.getRelay().allOff();
-    if (_webServer) {
-        _webServer->closeSseForOta();
+    if (core.getProgramExecutor().isRunning()) {
+        core.getProgramExecutor().stop();
     }
+    core.getRelay().allOff();
     if (_ota) {
         _ota->begin();
     }
@@ -186,7 +183,6 @@ void ModeManager::enterOTAUpdate() {
 
 void ModeManager::exitOTAUpdate() {
     logger.log("[ModeManager] exitOTAUpdate\n");
-    core.setOtaUploadPressureActive(false, "mode_exit_ota");
     core.logHeapSnapshot("mode_exit_ota");
     if (_ota) {
         _ota->onModeExit();

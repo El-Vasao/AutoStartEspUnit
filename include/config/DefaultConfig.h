@@ -14,18 +14,18 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "ap_timeout_enabled": false
   },
   "gsm": {
-    "apn": "internet.mts.ru",
+    "apn": "internet.yota",
     "apn_user": "",
     "apn_pass": "",
     "owner_phone": "",
     "dtmf_password": ""
   },
   "mqtt": {
-    "broker": "mqtt.example.com",
+    "broker": "m5.wqtt.ru",
     "port": 1883,
     "client_id": "autostart-ABC123",
-    "user": "",
-    "pass": "",
+    "user": "u_1WJDYV",
+    "pass": "9chZ2EvV",
     "status_topic": "car/ABC123/status",
     "cmd_topic": "car/ABC123/cmd",
     "publish_interval_sec": 30

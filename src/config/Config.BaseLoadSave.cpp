@@ -120,10 +120,10 @@ void prepareFlashWriteLogGcAndWdt() {
     size_t freeSpace = fileSystem.getFreeSpace();
     logger.log("[Config] Free space: %u bytes\n", freeSpace);
     if (freeSpace < FSystem::MIN_FREE_SPACE) {
-        logger.log("[Config] Low free space, running GC...\n");
+        logger.log("[Config] Low free space, reclaiming orphans…\n");
         fileSystem.gc();
         freeSpace = fileSystem.getFreeSpace();
-        logger.log("[Config] Free space after GC: %u bytes\n", freeSpace);
+        logger.log("[Config] Free space after reclaim: %u bytes\n", freeSpace);
     }
     config.wdtPort().feedNow();
     espHalFeedWdt();

@@ -55,7 +55,7 @@ WebServer::WebServer()
 
 bool WebServer::isFlashBusy() const {
     // Важно: здесь учитываем и “глобальные” deferred FS операции, и локальные POST-потоки web.
-    // Это общий предохранитель от пересечения операций с flash/LittleFS на ESP8266.
+    // Это общий предохранитель от пересечения операций с flash/LittleFS.
     return flashCommit.isPending() || postedConfigJsonPending || postedProgramJsonPending;
 }
 
@@ -150,8 +150,6 @@ void WebServer::broadcastStatusForce() {
     if (sseMutedDuringBoot()) return;
     WebServerRuntime::broadcastStatusForce(*this);
 }
-
-void WebServer::closeSseForOta() { WebServerRuntime::closeSseForOta(*this); }
 
 void WebServer::sendStatus_(size_t maxQueueDepth) {
     if (sseMutedDuringBoot()) return;

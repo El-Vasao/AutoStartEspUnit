@@ -10,7 +10,7 @@
  *
  * Запрещено:
  * - Делать `String` операции внутри циклов опроса.
- * - Увеличивать статические буферы без явной необходимости (RAM ESP8266 ограничена).
+ * - Увеличивать статические буферы без явной необходимости.
  */
 #include "io/SensorsController.h"
 #include "config/Config.h"
@@ -111,7 +111,7 @@ void SensorsController::updateTemperatures() {
                 _sensorData[i].valid = false;
             }
             _sensorData[i].lastReadTime = now;
-            // yield() важен, чтобы не держать WiFi/WDT слишком долго в одном цикле (ESP8266).
+            // Short yield between sensors so SoftAP/lwIP stay responsive.
             yield();
         }
         _conversionInProgress = false;

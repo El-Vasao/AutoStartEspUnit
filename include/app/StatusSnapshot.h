@@ -6,7 +6,7 @@
 /**
  * POD snapshot of runtime state for transports (Web/MQTT/etc).
  *
- * Goals (ESP8266):
+ * Goals:
  * - fixed-size, no heap, safe to copy
  * - avoid pulling large module headers into transport code
  */

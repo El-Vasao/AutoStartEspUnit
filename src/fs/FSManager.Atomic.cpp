@@ -79,7 +79,7 @@ bool FSManager::atomicWrite(const char* path, const char* data, size_t len) {
     fsInfo.totalBytes = LittleFS.totalBytes();
     fsInfo.usedBytes = LittleFS.usedBytes();
     if (fsInfo.usedBytes + len + FSystem::GC_SPACE_MARGIN > fsInfo.totalBytes) {
-        logger.log("[FSManager] Low space before atomicWrite, GC…\n");
+        logger.log("[FSManager] Low space before atomicWrite, reclaim orphans…\n");
         gc();
         espHalFeedWdt();
     }
@@ -325,7 +325,7 @@ File FSManager::openWriteStream(const char* path, size_t expectedSize) {
     logger.log("[FSManager] openWriteStream: free=%u, expected=%u\n", (unsigned)freeSpace, (unsigned)expectedSize);
 #endif
     if (freeSpace < expectedSize + FSystem::STREAM_SPACE_MARGIN) {
-        logger.log("[FSManager] Low free space, running GC...\n");
+        logger.log("[FSManager] Low free space, reclaiming orphans…\n");
         gc();
         espHalFeedWdt();
         freeSpace = getFreeSpace();
@@ -377,7 +377,7 @@ File FSManager::openDirectWrite(const char* path, size_t expectedMaxBytes) {
 
     size_t freeSpace = getFreeSpace();
     if (freeSpace < expectedMaxBytes + FSystem::STREAM_SPACE_MARGIN) {
-        logger.log("[FSManager] openDirectWrite: low free space, GC…\n");
+        logger.log("[FSManager] openDirectWrite: low free space, reclaiming orphans…\n");
         gc();
         freeSpace = getFreeSpace();
         if (freeSpace < expectedMaxBytes + FSystem::STREAM_SPACE_MARGIN) {

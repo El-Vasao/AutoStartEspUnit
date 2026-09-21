@@ -9,7 +9,9 @@
         const Alpine = window.Alpine;
         const log = window.APP?.utils?.log;
         const timeouts = window.APP?.contract?.api?.timeoutsMs || {};
-        const phaseGapMs = Number(timeouts.initPhaseGapMs) || 400;
+        const phaseGapMs = Number.isFinite(Number(timeouts.initPhaseGapMs))
+          ? Number(timeouts.initPhaseGapMs)
+          : 0;
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         // Longer than checklist + sseInitDeadlineMs so normal SSE-wait UX is not cut short.
         const SAFETY_UNLOCK_MS = 20000;
@@ -68,17 +70,21 @@
             if (t) clearTimeout(t);
           }
         };
-        const phaseGap = async () => { await sleep(phaseGapMs); };
+        const phaseGap = async () => {
+          if (phaseGapMs > 0) await sleep(phaseGapMs);
+        };
 
         function startSseBackgroundOnly(bootstrapUiLease) {
           // Used when UI already unlocked/failed — still need EventSource for live updates.
           try { window.APP?.sse?.init?.(Alpine); } catch (e) { pushReason('sse_init_failed', e?.message || e); }
           try { if (bootstrapUiLease) window.APP?.sse?.configureHeartbeat?.(bootstrapUiLease); } catch (e) {}
-          const sseDelayMs = Number(timeouts.sseStartDelayMs) || 400;
+          const sseDelayMs = Number.isFinite(Number(timeouts.sseStartDelayMs))
+            ? Number(timeouts.sseStartDelayMs)
+            : 0;
           const deadlineMs = Number(timeouts.sseInitDeadlineMs) || 12000;
           (async () => {
             try {
-              await sleep(sseDelayMs);
+              if (sseDelayMs > 0) await sleep(sseDelayMs);
               if (typeof window.APP?.sse?.startEvents === 'function') {
                 const ok = await window.APP.sse.startEvents({ timeoutMs: deadlineMs });
                 if (!ok) pushReason('sse_panel_timeout', 'mode/hardware not received (background)');
@@ -255,10 +261,12 @@
         try { window.APP?.sse?.init?.(Alpine); } catch (e) { pushReason('sse_init_failed', e?.message || e); }
         try { if (bootstrapUiLease) window.APP?.sse?.configureHeartbeat?.(bootstrapUiLease); } catch (e) {}
 
-        const sseDelayMs = Number(timeouts.sseStartDelayMs) || 400;
+        const sseDelayMs = Number.isFinite(Number(timeouts.sseStartDelayMs))
+          ? Number(timeouts.sseStartDelayMs)
+          : 0;
         const deadlineMs = Number(timeouts.sseInitDeadlineMs) || 12000;
 
-        await sleep(sseDelayMs);
+        if (sseDelayMs > 0) await sleep(sseDelayMs);
         if (finished) return;
 
         setProgress(86, 'Ждём статус устройства…');

@@ -52,12 +52,13 @@ struct FileMetadata {
  * смонтированный том, но не используйте возвращаемый объект для `open`/`remove`; проверки и удаления по-прежнему
  * через `fileSystem`.
  *
- * Обеспечивает атомарную запись, бэкапы, сборку мусора и проверку целостности.
+ * Обеспечивает атомарную запись, бэкапы, reclaim orphans и проверку целостности.
  *
- * Ключевые принципы (ESP8266/LittleFS):
+ * Ключевые принципы (ESP32-C3 / LittleFS):
  * - запись должна быть атомарной (через temp + rename), т.к. питание могут “выдёрнуть” в любой момент;
  * - нельзя заполнять том “в ноль” — LittleFS деградирует при нехватке свободных блоков;
- * - операции ввода/вывода должны быть короткими или периодически “yield()/feedWatchdog()” в вызывающем коде.
+ * - операции ввода/вывода должны быть короткими или периодически “cooperate()/yield()” в вызывающем коде.
+ * - `gc()` на ESP32 Arduino не компактирует том: только orphan reclaim + refresh free-space.
  *
  * Backup/restore/healthCheck копируют и считают CRC потоково; copyFileAtomic_ использует стековый scratch-буфер.
  */
@@ -132,7 +133,13 @@ public:
     // Open UI static for web: FS holds only path.gz (logical `path` without suffix).
     File openWebFile(const char* path);
 
-    // Дефрагментация (сборка мусора)
+    /// Обновить снимок total/used (ESP32 LittleFS не даёт настоящий GC).
+    bool refreshFsInfo();
+
+    /// Удалить известные orphan temp (HTTP ingest / OTA staging leftovers).
+    size_t reclaimOrphans();
+
+    /// Orphan reclaim + refreshFsInfo. Не компактирует том — после вызова всегда проверяйте free space.
     bool gc();
 
     // Проверка целостности (восстановление из бэкапа при необходимости).
@@ -166,22 +173,21 @@ public:
 
 private:
     static constexpr size_t TEMP_BUFFER_SIZE = PoolLimits::FS_SCRATCH_BYTES; ///< размер чанка copyFileAtomic_
-    static constexpr size_t MAX_PATH_LEN = 32;
+    /// Must fit longest FS path + ".tmp" (e.g. /validation/settings.schema.json.tmp).
+    static constexpr size_t MAX_PATH_LEN = BufferBytes::Fs::TEMP_PATH;
 
     bool initialized;               ///< флаг успешной инициализации
     FsSpaceInfo fsInfo;             ///< информация о ФС
-    uint32_t lastGCTime;            ///< время последней сборки мусора
+    uint32_t lastFsInfoRefresh;     ///< время последнего refreshFsInfo/gc
 
     uint32_t readCount;             ///< количество успешных чтений
     uint32_t writeCount;            ///< количество успешных записей
-    uint32_t gcCount;               ///< количество запусков gc
+    uint32_t fsInfoRefreshCount;    ///< количество refreshFsInfo/gc
     uint32_t errorCount;            ///< количество ошибок
     uint32_t recoveryCount;          ///< количество восстановлений из бэкапа
     uint32_t lastHealthCheck;        ///< время последней проверки здоровья
 
-    // Ограничения по длине путей — сознательные: это “маленькое” устройство, и буфер пути живёт в объекте.
-    // Если начнёте хранить более длинные пути — увеличьте MAX_PATH_LEN и проверьте все snprintf/strlcpy.
-    char pathBuffer[MAX_PATH_LEN];   ///< буфер для путей
+    char pathBuffer[MAX_PATH_LEN];   ///< буфер для путей (incl. .tmp suffix)
 
     /// Потоковая копия src → dest (через dest.tmp + rename), чанки по scratch-буферу.
     bool copyFileAtomic_(const char* srcPath, const char* destPath);

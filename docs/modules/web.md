@@ -34,19 +34,20 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 
 ### SoftAP + cellular
 
-На ESP32-C3 SoftAP UI и GSM/MQTT **сосуществуют**. Cellular suspend только при:
+На ESP32-C3 SoftAP UI и GSM/MQTT **сосуществуют**. Cellular suspend при:
 
-- OTA upload pressure;
+- режиме `OTA_UPDATE` (stream flash);
 - SoftAP down в NORMAL (модем тихий, пока AP снова не поднят).
 
-Нет `noteHeavyUiTraffic` / `POST /ui/ready` / UI-storm defer.
+Нет `noteHeavyUiTraffic` / `POST /ui/ready` / UI-storm defer / pre-OTA pressure.
 
 Порядок FE:
 
 1. checklist HTTP (`/bootstrap` → schemas → `/config/get` → `/programs`);
-2. короткий `sseStartDelayMs`;
-3. best-effort `POST /ui/session` → EventSource `/events`;
-4. на SSE connect — paced baseline; unlock после `mode`+`hardware` (или уже из `bootstrap.live`).
+2. EventSource `/events` (без искусственных SoftAP gaps на ESP32-C3);
+3. best-effort `POST /ui/session` → live updates;
+4. на SSE connect — baseline burst (`clocks`→`mode`→`gsm`→`hardware` в одном тике под soft gate);
+   unlock после `mode`+`hardware` (или уже из `bootstrap.live`).
 
 ## UI visibility contract
 
@@ -79,15 +80,15 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 ## SSE
 
 - `log` — текст через `logger.log()` (при активной UI-сессии + подписчике);
-- incremental status — kinds (`clocks`/`hardware`/…); connect → paced baseline.
+- incremental status — kinds (`clocks`/`hardware`/…); connect → baseline burst (soft-gated).
 
 Лимиты:
 
 - `WebSseLimits::MAX_SSE_CLIENTS = 4`;
 - soft queue `SSE_SOFT_QUEUE_MAX = 8`, hard `SSE_MAX_QUEUED_MESSAGES` (`platformio.ini`);
-- период tick: `Timing::SSE_STATUS_INTERVAL_MS = 1000`.
+- период tick: `Timing::SSE_STATUS_INTERVAL_MS = 500`.
 
-При шторме логов: дроп по soft queue предпочтительнее WDT.
+При шторме логов: дроп по soft queue предпочтительнее зависания loop.
 
 ## Flash busy / deferred
 

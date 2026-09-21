@@ -25,35 +25,34 @@ CoreMode Core::getMode() const {
     return impl.modeManager.getCurrentMode();
 }
 
-bool Core::isOtaUploadPressureActive() const {
-    const CorePrivate& impl = *_impl;
-    return impl.otaUploadPressureActive;
-}
-
 void Core::startOTAUpdate() {
+    // Legacy /ota/start: stream OTA completes on upload final; keep as no-op enter if already streaming.
     CorePrivate& impl = *_impl;
-    impl.pendingDeferredOtaFromWebUpload = false;
-    setOtaUploadPressureActive(false, "ota_start");
     logHeapSnapshot("ota_start_requested");
-    impl.otaHandler.prepareImmediateFirmwareProcess();
-    impl.modeManager.switchMode(CoreMode::OTA_UPDATE);
+    if (impl.modeManager.getCurrentMode() == CoreMode::OTA_UPDATE) {
+        return;
+    }
+    if (impl.otaHandler.streamSucceeded()) {
+        impl.modeManager.switchMode(CoreMode::OTA_UPDATE);
+        return;
+    }
+    // No staged file path anymore — require an in-flight or completed stream session.
+    logger.log("[Core] /ota/start ignored: use POST /upload stream OTA\n");
 }
 
 void Core::onOtaHttpUploadStreamOpenedFromWeb() {
     CorePrivate& impl = *_impl;
-    setOtaUploadPressureActive(true, "ota_upload_open");
     logHeapSnapshot("ota_upload_open");
-    if (impl.modeManager.getCurrentMode() == CoreMode::OTA_UPDATE) {
-        impl.otaHandler.prepareHttpUploadSession();
-        return;
+    // Always (re)start stream FSM before chunks arrive; deferred mode switch must not reset it.
+    impl.otaHandler.prepareHttpUploadSession();
+    if (impl.modeManager.getCurrentMode() != CoreMode::OTA_UPDATE) {
+        impl.pendingDeferredOtaFromWebUpload = true;
     }
-    impl.pendingDeferredOtaFromWebUpload = true;
 }
 
 void Core::notifyOtaHttpUploadComplete(bool ok) {
     CorePrivate& impl = *_impl;
     impl.otaHandler.notifyHttpUploadComplete(ok);
-    setOtaUploadPressureActive(false, ok ? "ota_upload_ok" : "ota_upload_fail");
     logHeapSnapshot(ok ? "ota_upload_ok" : "ota_upload_fail");
 }
 
@@ -64,7 +63,6 @@ void Core::exitOtaToNormalMode() {
 }
 
 void Core::onOtaHttpUploadAwaitTimedOut() {
-    setOtaUploadPressureActive(false, "ota_upload_timeout");
     logHeapSnapshot("ota_upload_timeout");
     webServer.markOtaHttpUploadAwaitTimedOut();
     exitOtaToNormalMode();
@@ -212,11 +210,8 @@ void Core::handleNormal() {
     impl.triggerManager.update();
     impl.batterySaverManager.update();
     impl.thermostatManager.update();
-    // SoftAP + cellular coexist on ESP32-C3. Suspend only under OTA upload pressure
-    // or when SoftAP is down (NORMAL keeps modem quiet until AP is up again).
-    if (impl.otaUploadPressureActive) {
-        suspendCellularLink();
-    } else if (!webServer.isActive()) {
+    // SoftAP + cellular coexist on ESP32-C3. Suspend when SoftAP is down.
+    if (!webServer.isActive()) {
         suspendCellularLink();
     } else {
         serviceCellularLink();
@@ -247,18 +242,11 @@ void Core::handleNormalSilent() {
     impl.triggerManager.update();
     impl.batterySaverManager.update();
     impl.thermostatManager.update();
-    if (impl.otaUploadPressureActive) {
-        suspendCellularLink();
-    } else {
-        serviceCellularLink();
-    }
+    serviceCellularLink();
 }
 
 void Core::handleOTAUpdate() {
     CorePrivate& impl = *_impl;
-    if (impl.otaUploadPressureActive) {
-        setOtaUploadPressureActive(false, "ota_mode_entered");
-    }
     suspendCellularLink();
     impl.otaHandler.update();
 }

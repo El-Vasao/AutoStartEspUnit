@@ -35,12 +35,14 @@
       default: 8000,
       flashCommit: 12000,
       ota: 30000,
-      /** Gap after each device HTTP so SoftAP TCP can drain (serialized queue). */
-      deviceRequestGapMs: 150,
-      /** Extra pause between init phases (bootstrap → schemas → data → SSE). */
-      initPhaseGapMs: 400,
-      /** Brief pause before EventSource after checklist HTTP. */
-      sseStartDelayMs: 400,
+      /** Optional gap after device HTTP (ESP32-C3 SoftAP: usually 0). */
+      deviceRequestGapMs: 0,
+      /** Pause between init phases (bootstrap → schemas → data → SSE). */
+      initPhaseGapMs: 0,
+      /** Pause before EventSource after checklist HTTP. */
+      sseStartDelayMs: 0,
+      /** Max concurrent SoftAP HTTP (was 1 on ESP8266). */
+      deviceFetchMaxConcurrent: 2,
       /** Max wait for mode+hardware while UI stays locked; then degraded unlock. */
       sseInitDeadlineMs: 12000,
       /** Alias for startEvents wait (same budget). */

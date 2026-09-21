@@ -78,9 +78,6 @@ public:
     // Отправка статуса с повышенным приоритетом (например, смена режима/OTA).
     void broadcastStatusForce();
 
-    /// Закрыть SSE `/events` и сбросить UI-сессии; HTTP остаётся (OTA upload не ломаем).
-    void closeSseForOta();
-
     // Обновить и вернуть фактическое число SSE-клиентов.
     uint16_t refreshSseClientCount();
 

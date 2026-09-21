@@ -31,11 +31,11 @@
 `ModeManager` отвечает за enter/exit и включение подсистем (web/ota), а доменная логика и hot-path update’ы живут в
 `Core::handle*()`.
 
-## Важные инварианты (ESP8266)
+## Важные инварианты
 - `Core::update()` должен быть неблокирующим и вызываться часто.
 - Долгие операции обязаны делать time slicing:
-  - `Core::cooperate()` — для WiFi/lwIP и soft WDT
-  - `Core::feedWatchdog()` — для длительных операций, где `yield()` слишком частый
+  - `Core::cooperate()` — throttled `yield()` для FreeRTOS/lwIP fairness
+  - `Core::feedWatchdog()` — для длительных операций, где частый `yield()` вреден
 
 ## “Runtime knobs”
 `Core` предоставляет узкие методы для рантайм-управления менеджерами (например включить/выключить термостат/триггеры).

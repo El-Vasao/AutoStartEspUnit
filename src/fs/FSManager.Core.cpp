@@ -82,10 +82,10 @@ static const FileMetadata fileRegistry[] PROGMEM = {
 
 FSManager::FSManager() :
     initialized(false),
-    lastGCTime(0),
+    lastFsInfoRefresh(0),
     readCount(0),
     writeCount(0),
-    gcCount(0),
+    fsInfoRefreshCount(0),
     errorCount(0),
     recoveryCount(0),
     lastHealthCheck(0)

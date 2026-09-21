@@ -12,7 +12,7 @@
  * Принципы:
  * - аппаратные лимиты берём строго из `Pins.h` (см. `HardwareLimits::*`);
  * - строки в конфиге — фиксированные `char[]` (без `String`) → лимиты задаём в байтах, включая '\0';
- * - лимиты JSON/буферов держим небольшими ради предсказуемости RAM на ESP8266.
+ * - лимиты JSON/буферов держим предсказуемыми (ESP32-C3 heap ~170 KB free after boot).
  */
 
 // ============================================================
@@ -153,17 +153,17 @@ namespace Timing {
     constexpr uint32_t WATCHDOG_FEED_INTERVAL_MS = 1000;
     constexpr uint32_t FS_MAINTENANCE_INTERVAL_MS = 3600000; // 1 час
     constexpr uint32_t ERROR_REPORT_INTERVAL_MS = 30000;
-    /// Минимальная частота yield/delay(0) в длинных циклах (ESP8266 WiFi/lwIP + soft WDT).
+    /// Минимальная частота yield в длинных циклах (FreeRTOS fairness + lwIP).
     constexpr uint32_t COOPERATE_INTERVAL_MS = 20;
     /// Период «диффа» SSE: сравнение блоков железа/режима без обязательной отправки каждого.
-    /// 1000 ms: меньше churn/queue pressure на ESP8266 при открытом UI (было 500).
-    constexpr uint32_t SSE_STATUS_INTERVAL_MS = 1000;
+    /// 500 ms: ESP32-C3 SoftAP headroom (было 1000 на ESP8266 queue pressure).
+    constexpr uint32_t SSE_STATUS_INTERVAL_MS = 500;
     /// Период лёгкого события `clocks`: uptime и таймер программы для синхронизации UI.
     constexpr uint32_t SSE_CLOCKS_INTERVAL_MS = 1000;
 
     constexpr uint32_t OTA_WAIT_LOG_INTERVAL_MS = 5000;
-    /// HTTP upload → OTA: если за это время не пришёл «final» multipart, выходим в NORMAL и чистим `/update.bin`.
-    constexpr uint32_t OTA_HTTP_UPLOAD_IDLE_MS = 30000;
+    /// SoftAP stream OTA: idle without multipart final (large ~1.2 MB packages).
+    constexpr uint32_t OTA_HTTP_UPLOAD_IDLE_MS = 180000;
 
     constexpr uint32_t MILLIS_PER_DAY = 86400000UL;
 }
@@ -186,7 +186,12 @@ namespace FSystem {
 namespace OTA {
     constexpr uint32_t BUFFER_SIZE = 256;
     constexpr uint32_t HEADER_SIZE = 4;      ///< little-endian fwSize (4 байта)
-    constexpr size_t FILE_MAX_SIZE = 524288; ///< максимальный размер `/update.bin` на ФС
+    /// Max app image size = dual-OTA slot (`partitions.csv` app0/app1 = 0x140000).
+    constexpr uint32_t APP_IMAGE_MAX = 0x140000;
+    /// Cap for streamed OTA package (fw + FS tail); below LittleFS partition 0x170000.
+    constexpr size_t FILE_MAX_SIZE = 0x160000;
+    /// Free-space floor before stream: room for largest gzip UI asset + margin (not full package).
+    constexpr size_t STREAM_FS_HEADROOM = 262144;
 }
 
 // ============================================================
@@ -237,15 +242,6 @@ enum class CoreMode : uint8_t {
 };
 
 // ============================================================
-// Heap: пороги (ESP32-C3 — legacy frag auto-restart removed)
-// ============================================================
-namespace ValidationLimits {
-    /// Legacy; auto-restart on frag removed for ESP32-C3.
-    constexpr uint8_t HEAP_FRAG_THRESHOLD = 95;     ///< % (unused)
-    constexpr uint32_t MIN_HEAP_BLOCK_SIZE = 4096;  ///< байт (unused for reboot)
-}
-
-// ============================================================
 // Строковые константы (имена режимов и т.п.)
 // ============================================================
 namespace StateStrings {
@@ -287,13 +283,13 @@ namespace JsonBytes {
     }
 
     namespace Mqtt {
-        constexpr size_t STATUS_DOC_CAPACITY = 448;
+        constexpr size_t STATUS_DOC_CAPACITY = 512;
         constexpr size_t CMD_DOC_CAPACITY = 384;
         constexpr size_t CMD_JSON_MAX = 256; ///< макс. размер входящей JSON-команды (payload) + '\0'
-        /// Лимит тела MQTT PUBLISH (JSON) при `MqttFsmClient::TX_MAX=448` и длине топика до `TextBytes::Mqtt::TOPIC-1`.
-        constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 376;
-        constexpr size_t STATUS_JSON_MAX = 448;
-        constexpr size_t LIST_PROGRAMS_JSON_MAX = 420;
+        /// Лимит тела MQTT PUBLISH (JSON) при `MqttFsmClient::TX_MAX=576` и длине топика до `TextBytes::Mqtt::TOPIC-1`.
+        constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 480;
+        constexpr size_t STATUS_JSON_MAX = 512;
+        constexpr size_t LIST_PROGRAMS_JSON_MAX = 480;
         constexpr size_t LIST_PROGRAMS_DOC_CAPACITY = MAX_FILE_JSON_BYTES;
     }
 
@@ -354,9 +350,6 @@ namespace WebSseLimits {
     constexpr size_t SSE_SOFT_QUEUE_MAX = 8;
     constexpr size_t STATUS_QUEUE_MAX = SSE_SOFT_QUEUE_MAX;
     constexpr size_t STATUS_FORCE_QUEUE_MAX = 8;
-    /// Пред-OTA окно (идёт upload, но режим OTA ещё не активен): пороги ниже, чтобы освободить heap для Update.begin.
-    constexpr size_t OTA_PREP_STATUS_QUEUE_MAX = 4;
-    constexpr size_t OTA_PREP_LOG_QUEUE_MAX = 2;
 }
 
 // ============================================================
@@ -380,12 +373,10 @@ namespace WebAssets {
 // Задержки (delay) в “железных” переходах состояний
 // ============================================================
 namespace Delays {
-    constexpr uint32_t WIFI_DISCONNECT_SETTLE_MS = 50;
-    constexpr uint32_t WIFI_OFF_SETTLE_MS = 200;
-
-    constexpr uint32_t WEBSERVER_STOP_SETTLE_MS = 200;
-    constexpr uint32_t WEBSERVER_MODE_SWITCH_MS = 100;
-    constexpr uint32_t WEBSERVER_AP_START_SETTLE_MS = 50;
+    constexpr uint32_t WIFI_OFF_SETTLE_MS = 100;
+    constexpr uint32_t WEBSERVER_STOP_SETTLE_MS = 100;
+    constexpr uint32_t WEBSERVER_MODE_SWITCH_MS = 50;
+    constexpr uint32_t WEBSERVER_AP_START_SETTLE_MS = 30;
 
     constexpr uint32_t OTA_MODE_SWITCH_MS = 100;
     constexpr uint32_t REBOOT_HTTP_REPLY_MS = 100;
@@ -430,8 +421,6 @@ namespace GSM {
     constexpr uint32_t PDP_ACTIVATE_TIMEOUT_MS = 20000;
     constexpr uint32_t GET_IP_TIMEOUT_MS = 10000;
 
-    constexpr uint32_t READY_POLL_INTERVAL_MS = 10000;
-    // READY diagnostics should be rare: do not constantly poke the modem.
     constexpr uint32_t READY_SIGNAL_INTERVAL_MS = 300000;   // 5 min
     constexpr uint32_t READY_OPERATOR_INTERVAL_MS = 900000; // 15 min
     constexpr uint32_t READY_TCP_STATS_INTERVAL_MS = 60000; // 1 min

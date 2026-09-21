@@ -78,11 +78,15 @@ public:
     // Сброс к заводским настройкам (удаление конфига)
     void factoryReset();
 
-    // Переключение в режим OTA-обновления (`/update.bin` уже готов, см. `POST /ota/start`).
+    // Stream OTA: POST /upload feeds Update + FS tail (no /update.bin).
     void startOTAUpdate();
 
-    /// `POST /upload` после `openWriteStream`: лёгкий путь из AsyncTCP (режим/бродкаст — в `Core::update`).
+    /// `POST /upload` started: prepare stream + deferred switch to OTA_UPDATE.
     void onOtaHttpUploadStreamOpenedFromWeb();
+
+    bool otaStreamFeed(const uint8_t* data, size_t len);
+    bool otaStreamFinish();
+    void otaStreamAbort();
 
     /// Итог HTTP upload: при `ok==false` ядро вернётся в NORMAL без ребута.
     void notifyOtaHttpUploadComplete(bool ok);
@@ -91,11 +95,6 @@ public:
 
     /// Таймаут ожидания `final` у multipart upload — помечает веб и выходит в NORMAL.
     void onOtaHttpUploadAwaitTimedOut();
-
-    /// Пред-OTA окно: upload уже идёт, но `CoreMode::OTA_UPDATE` ещё не активирован.
-    bool isOtaUploadPressureActive() const;
-    /// Internal lifecycle hook: enable/disable pre-OTA pressure mode.
-    void setOtaUploadPressureActive(bool active, const char* reasonTag);
 
     // Подкармливание watchdog (должно вызываться в длительных операциях)
     void feedWatchdog();

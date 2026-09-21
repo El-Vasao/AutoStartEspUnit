@@ -6,40 +6,56 @@
   const endpoints = APP.contract?.api?.endpoints || {};
   const timeoutsMs = APP.contract?.api?.timeoutsMs || {};
 
-  // SoftAP ESP8266: at most one device HTTP at a time (browser otherwise opens ~6 TCP).
-  let deviceFetchChain = Promise.resolve();
+  // SoftAP ESP32-C3: allow a small number of concurrent HTTP (ESP8266 used 1).
+  const maxConcurrent = Math.max(1, Number(timeoutsMs.deviceFetchMaxConcurrent) || 2);
   let deviceFetchInFlight = 0;
+  const deviceFetchWaiters = [];
+
+  function acquireDeviceFetchSlot() {
+    return new Promise((resolve) => {
+      const tryAcquire = () => {
+        if (deviceFetchInFlight < maxConcurrent) {
+          deviceFetchInFlight += 1;
+          resolve();
+          return;
+        }
+        deviceFetchWaiters.push(tryAcquire);
+      };
+      tryAcquire();
+    });
+  }
+
+  function releaseDeviceFetchSlot() {
+    deviceFetchInFlight = Math.max(0, deviceFetchInFlight - 1);
+    const next = deviceFetchWaiters.shift();
+    if (next) next();
+  }
 
   /**
-   * Serialize all SoftAP HTTP through one queue. Optional gap after each request
-   * lets lwIP drain before the next accept/send.
+   * SoftAP HTTP with bounded concurrency. Optional gap after each request
+   * (usually 0 on ESP32-C3).
    */
   api.deviceFetch = function deviceFetch(url, options = {}) {
-    const gapMs = options.deviceGapMs ?? timeoutsMs.deviceRequestGapMs ?? 120;
+    const gapMs = options.deviceGapMs ?? timeoutsMs.deviceRequestGapMs ?? 0;
     const { deviceGapMs: _gapIgnored, ...fetchOpts } = options;
-    const run = async () => {
-      deviceFetchInFlight += 1;
+    return (async () => {
+      await acquireDeviceFetchSlot();
       try {
         const headers = Object.assign(
           {
             'X-Requested-With': 'ElLineUI',
-            // Hint; server also sends Connection: close.
             Connection: 'close'
           },
           fetchOpts.headers || {}
         );
         return await fetch(url, { cache: 'no-store', ...fetchOpts, headers });
       } finally {
-        deviceFetchInFlight -= 1;
+        releaseDeviceFetchSlot();
         if (gapMs > 0 && typeof sleep === 'function') {
           try { await sleep(gapMs); } catch (e) {}
         }
       }
-    };
-    const next = deviceFetchChain.then(run, run);
-    // Keep chain alive even if a caller forgets to catch.
-    deviceFetchChain = next.catch(() => {});
-    return next;
+    })();
   };
 
   api.deviceFetchInFlight = function () { return deviceFetchInFlight; };

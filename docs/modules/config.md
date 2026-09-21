@@ -26,7 +26,7 @@
   - имя программы (для UI/логов),
   - `CompiledStep[Limits::MAX_STEPS_PER_PROGRAM]` и количество шагов.
 
-## Политика памяти (ESP8266)
+## Политика памяти
 - JSON разбирается SAX-парсером (`JsonStreamingParser`) в фиксированные `char[]`, без `DynamicJsonDocument`.
 - Лимиты строк и ёмкости JSON заданы в `include/common/Constants.h`.
 
