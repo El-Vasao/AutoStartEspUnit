@@ -43,6 +43,11 @@ public:
         uint16_t maxReadBytesPerTick{128};
         uint16_t maxWriteBytesPerTick{128};
         uint16_t maxParseFramesPerTick{4};
+        /// Wall-clock cap for write+read pumps in one tick (Interrupt WDT safety).
+        uint16_t maxMsPerTick{20};
+        /// Optional: after pumpWrite, skip RX if transport TX/CIPSEND still owns the bus.
+        bool (*shouldDeferRead)(void* ctx){nullptr};
+        void* shouldDeferReadCtx{nullptr};
     };
 
     // Callback for incoming publish QoS0.
@@ -61,6 +66,7 @@ public:
 
     State state() const { return _state; }
     bool isConnected() const { return _state == State::Connected; }
+    bool isDisconnectPending() const { return _disconnectRequested; }
 
     // Subscribe QoS0. Allowed in Connected state; queued otherwise.
     bool subscribe(const char* topic);
@@ -124,8 +130,9 @@ private:
 
     bool ensureTcp_();
     void maybeSendPing_(uint32_t now);
-    void pumpWrite_(uint16_t maxBytes);
-    void pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames);
+    void pumpWrite_(uint16_t maxBytes, uint32_t deadlineMs);
+    void pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uint32_t deadlineMs);
+    static bool pastDeadline_(uint32_t deadlineMs);
 
     // Packet builders (write into _tx)
     bool buildConnect_();

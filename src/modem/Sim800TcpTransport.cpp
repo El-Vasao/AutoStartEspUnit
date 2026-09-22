@@ -53,6 +53,7 @@ void Sim800TcpTransport::reset() {
     _sendWatchMs = 0;
     _lastStackRecoverMs = 0;
     _lastConnectAttemptMs = 0;
+    _postSendQuietUntilMs = 0;
     _rawLineLen = 0;
     _promptLeak = 0;
     _port = 0;
@@ -62,7 +63,7 @@ void Sim800TcpTransport::reset() {
     _rxHead = 0;
     _rxCount = 0;
     _txLen = 0;
-    _txSent = 0;
+    _sendLen = 0;
     _ipState = IpState::Idle;
     _ipLen = 0;
     _ipRead = 0;
@@ -77,7 +78,41 @@ void Sim800TcpTransport::clearTx_() {
     _sendInProgress = false;
     _sendWatchMs = 0;
     _txLen = 0;
-    _txSent = 0;
+    _sendLen = 0;
+}
+
+void Sim800TcpTransport::clearRx_() {
+    _rxHead = 0;
+    _rxCount = 0;
+    _rawLineLen = 0;
+    _promptLeak = 0;
+    if (_ipState == IpState::ReadData) {
+        _at.uart().setDataMode(false);
+    }
+    _ipState = IpState::Idle;
+    _ipLen = 0;
+    _ipRead = 0;
+}
+
+bool Sim800TcpTransport::inPostSendQuiet_(uint32_t now) const {
+    if (_postSendQuietUntilMs == 0) return false;
+    return (int32_t)(now - _postSendQuietUntilMs) < 0;
+}
+
+bool Sim800TcpTransport::shouldDeferMqttRead() const {
+    if (hasBufferedTx()) return true;
+    return inPostSendQuiet_(nowMs_());
+}
+
+bool Sim800TcpTransport::discardingTcpPayload_() const {
+    // Only while CIPSEND owns the UART. Do NOT discard during post-send quiet —
+    // CONNACK often arrives in that window and must reach the MQTT RX ring.
+    return _sendInProgress || _modemTxLocked;
+}
+
+void Sim800TcpTransport::beginPostSendQuiet_() {
+    // Defer MQTT parse briefly (SoftAP fairness); keep buffered TCP bytes.
+    _postSendQuietUntilMs = nowMs_() + Sim800Tcp::POST_SEND_QUIET_MS;
 }
 
 void Sim800TcpTransport::endSendEpoch_() {
@@ -140,7 +175,7 @@ bool Sim800TcpTransport::connectStart(const char* host, uint16_t port) {
     _connectStartMs = now;
     _lastConnectAttemptMs = now;
     clearTx_(); // never leak a previous CIPSEND payload onto a new TCP session
-    logger.log("[Sim800Tcp] connectStart host=%s port=%u\n", _host, (unsigned)_port);
+    logger.logSerialOnly("[Sim800Tcp] connectStart host=%s port=%u\n", _host, (unsigned)_port);
     if (!startConnect_()) {
         _connecting = false;
         _connectStartMs = 0;
@@ -156,16 +191,14 @@ void Sim800TcpTransport::stop(const char* reason) {
     _connecting = false;
     clearTx_();
     _promptLeak = 0;
-    // Prevent CIPSTART storm on the next MQTT tick after close.
-    _lastConnectAttemptMs = _lastNowMs ? _lastNowMs : millis();
+    // Cooldown so the next MQTT tick does not CIPSTART-storm.
+    _lastConnectAttemptMs = nowMs_();
     if (reason && reason[0]) {
         logger.log("[Sim800Tcp] stop(): %s\n", reason);
     } else {
-        logger.log("[Sim800Tcp] stop()\n");
+        logger.logSerialOnly("[Sim800Tcp] stop()\n");
     }
-    // Best-effort close.
-    // IMPORTANT: If modem already emitted URC CLOSED (or connect failed), sending CIPCLOSE/CIP* often yields
-    // `+CME ERROR: operation not allowed` and just adds noise. Only try CIPCLOSE when we *think* a socket exists.
+    // Only CIPCLOSE if we still believe a socket exists (CLOSED URC already tore it down).
     if (wasConnectedOrConnecting && !_closeQueued) {
         _closeQueued = true;
         // CIPMUX=0 (single connection): CIPCLOSE without link id.
@@ -229,15 +262,13 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
         forceStackRecover_("send_wd");
     }
 
-    // SoftAP/write pump path: drain TCP-owned AtSession results without waiting for GSM update().
-    // Only steal the result while we own the bus so GSM await replies are not swallowed.
+    // SoftAP/write pump: drain TCP-owned AtSession results while we own the bus.
     if (_at.hasResult() &&
         (_connecting || _sendInProgress || _modemTxLocked || _closeQueued || _recoverQueued)) {
         (void)consumeAtResult(_at.takeResult());
     }
 
-    // Sending is driven by prompt + write burst, but we intentionally keep it minimal now:
-    // once connected, if tx buffer has data and no send in progress, start send.
+    // Start CIPSEND when connected and TX staged.
     if (_connected && !_sendInProgress && _txLen > 0) {
         startSend_();
     }
@@ -271,8 +302,8 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
     }
     if (strcmp(r.tag, "CIPSEND") == 0) {
         if (r.gotPrompt) {
-            // CIPSEND=<len>: send exactly len bytes (no Ctrl+Z in len mode).
-            const uint16_t n = (_txLen <= TX_SIZE) ? _txLen : (uint16_t)TX_SIZE;
+            // CIPSEND=<len>: send exactly the length frozen at startSend_ (no Ctrl+Z in len mode).
+            const uint16_t n = (_sendLen <= _txLen) ? _sendLen : _txLen;
             if (n) _at.uart().writeBytes(_tx, n);
             _sendWatchMs = _lastNowMs ? _lastNowMs : millis(); // wait for SEND OK / SEND FAIL
             // Keep _modemTxLocked + _sendInProgress until SEND OK (AtSession is Idle after '>').
@@ -326,27 +357,36 @@ void Sim800TcpTransport::onLine(const char* line) {
         return;
     }
     if (strstr(line, "CONNECT FAIL") != nullptr) {
-        logger.log("[Sim800Tcp] TCP connect failed\n");
+        static uint32_t s_lastFailLogMs = 0;
+        const uint32_t now = nowMs_();
+        if (s_lastFailLogMs == 0 ||
+            (int32_t)(now - s_lastFailLogMs) >= (int32_t)Sim800Tcp::CONNECT_RETRY_COOLDOWN_MS) {
+            s_lastFailLogMs = now;
+            logger.log("[Sim800Tcp] TCP connect failed\n");
+        } else {
+            logger.logSerialOnly("[Sim800Tcp] TCP connect failed\n");
+        }
         _connected = false;
         _connecting = false;
         _connectStartMs = 0;
         endSendEpoch_();
-        _lastConnectAttemptMs = _lastNowMs ? _lastNowMs : millis();
+        _lastConnectAttemptMs = now;
         return;
     }
     if (strcmp(line, "SEND OK") == 0) {
         endSendEpoch_();
+        beginPostSendQuiet_();
         return;
     }
     if (strstr(line, "SEND FAIL") != nullptr) {
         endSendEpoch_();
+        beginPostSendQuiet_();
         return;
     }
 }
 
 void Sim800TcpTransport::onByte(char c) {
-    // Parse +IPD,<len>:<data> if present (some configs/firmwares output it),
-    // otherwise accept raw pushed bytes (CIPRXGET=0) while filtering modem control lines.
+    // +IPD framing when present; else CIPRXGET=0 raw push with control-line filter.
     switch (_ipState) {
         case IpState::Idle:
             if (c == '+') _ipState = IpState::MatchI;
@@ -403,13 +443,12 @@ void Sim800TcpTransport::onByte(char c) {
     // If we're in +IPD data mode, raw sniffing must not run (payload may be binary).
     if (_ipState == IpState::ReadData) return;
 
-    // Raw push mode handling (CIPRXGET=0): accept binary stream, but drop CRLF-terminated control lines.
-    // Critical: MQTT CONNACK starts with 0x20 (ASCII space). Our older heuristic treated 0x20 as "printable text"
-    // and buffered it until '\n', which effectively swallowed CONNACK forever.
+    // CIPRXGET=0: binary stream with CRLF control-line filter.
+    // Do not treat 0x20 as text start — MQTT CONNACK begins with that byte.
     const uint8_t ub = (uint8_t)c;
     const bool printable = (ub == '\r' || ub == '\n' || ub == '\t' || (ub >= 0x20 && ub <= 0x7E));
 
-    // Resolve leaked CIPSEND '>' (see _promptLeak in header): do this before printable/binary split.
+    // Strip leaked CIPSEND '>' before printable/binary split.
     if (_connected && _promptLeak != 0) {
         if (_promptLeak == 1) {
             if (ub == '\r') {
@@ -447,8 +486,7 @@ void Sim800TcpTransport::onByte(char c) {
         return;
     }
 
-    // If we're at the beginning of a "line" and connected, only buffer bytes that plausibly start modem text.
-    // Everything else is treated as TCP payload immediately (MQTT frames, HTTP bodies, JSON, etc.).
+    // Line start while connected: only buffer plausible modem-text starts; else TCP payload.
     if (_connected && _rawLineLen == 0) {
         if (ub == '\r' || ub == '\n') {
             return;
@@ -491,6 +529,8 @@ void Sim800TcpTransport::onByte(char c) {
 }
 
 void Sim800TcpTransport::pushRx_(uint8_t b) {
+    // Drop TCP bytes during CIPSEND / post-send quiet (modem junk must not fill MQTT RX).
+    if (discardingTcpPayload_()) return;
     if (_rxCount >= RX_SIZE) {
         // drop oldest
         _rxHead = (uint16_t)((_rxHead + 1) % RX_SIZE);
@@ -520,6 +560,8 @@ int Sim800TcpTransport::peek() const {
 
 size_t Sim800TcpTransport::write(const uint8_t* data, size_t len) {
     if (!data || len == 0) return 0;
+    // Refuse append while a CIPSEND epoch owns the TX buffer (length was frozen in AT+CIPSEND=N).
+    if (_sendInProgress || _modemTxLocked) return 0;
     const size_t room = TX_SIZE - _txLen;
     const size_t n = (len < room) ? len : room;
     memcpy(_tx + _txLen, data, n);
@@ -530,17 +572,18 @@ size_t Sim800TcpTransport::write(const uint8_t* data, size_t len) {
 void Sim800TcpTransport::startSend_() {
     if (_sendInProgress) return;
     if (_txLen == 0) return;
+    _sendLen = _txLen;
     // CIPMUX=0: CIPSEND without link id.
-    snprintf(_cmdSend, sizeof(_cmdSend), "AT+CIPSEND=%u", (unsigned)_txLen);
-    // Expect prompt; when got prompt, bytes will be written directly by Client adapter using write().
+    snprintf(_cmdSend, sizeof(_cmdSend), "AT+CIPSEND=%u", (unsigned)_sendLen);
+    // Expect prompt; when got prompt, bytes will be written using frozen _sendLen.
     if (!_at.enqueue({ _cmdSend, 5000, atExpectMask(AtSession::Expect::Prompt), nullptr, "CIPSEND" })) {
         logger.log("[Sim800Tcp] CIPSEND enqueue failed\n");
+        _sendLen = 0;
         return;
     }
     _sendInProgress = true;
     _modemTxLocked = true; // held until SEND OK / FAIL / watchdog / recover
     _sendWatchMs = _lastNowMs ? _lastNowMs : millis(); // covers prompt wait; refreshed after '>'
-    _txSent = 0;
 }
 
 int Sim800ClientAdapter::connect(IPAddress ip, uint16_t port) {
@@ -550,8 +593,7 @@ int Sim800ClientAdapter::connect(IPAddress ip, uint16_t port) {
 }
 
 int Sim800ClientAdapter::connect(const char* host, uint16_t port) {
-    // Non-blocking: kick CIPSTART once, then return. MqttFsmClient polls connected() each tick.
-    // A wall-clock wait here starved SoftAP/AsyncWebServer and led to IWDT / memory corruption.
+    // Non-blocking: kick CIPSTART once; FSM polls connected() each tick.
     if (_t.isConnected()) return 1;
     if (!_t.isConnecting()) {
         (void)_t.connectStart(host, port);
@@ -563,12 +605,8 @@ size_t Sim800ClientAdapter::write(const uint8_t* buf, size_t size) {
     pump_();
     const size_t n = _t.write(buf, size);
     if (n == 0) return 0;
-    // Brief pump so CIPSEND can start; do not spin the full budget every write.
-    const uint32_t t0 = millis();
-    while (_t.isConnected() && _t.hasBufferedTx()) {
-        pump_();
-        if (millis() - t0 > Sim800Tcp::WRITE_PUMP_BUDGET_MS) break;
-    }
+    // One pump to enqueue CIPSEND; do not wait for SEND OK.
+    pump_();
     return n;
 }
 

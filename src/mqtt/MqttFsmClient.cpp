@@ -49,6 +49,7 @@ private:
 
 } // namespace
 
+// Layered with Sim800Tcp::CONNECT_WATCHDOG_MS (15s): transport recovers modem sooner; FSM gives up later.
 static constexpr uint32_t kTcpConnectTimeoutMs = 45000;
 static constexpr uint32_t kMqttConnectTimeoutMs = NetTiming::MQTT_FSM_CONNECT_TIMEOUT_MS;
 
@@ -115,12 +116,25 @@ bool MqttFsmClient::publish(const char* topic, const uint8_t* payload, uint16_t 
 void MqttFsmClient::tick(const Budgets& b) {
     _budgets = b;
     const uint32_t now = millis();
+    const uint32_t deadlineMs =
+        (b.maxMsPerTick > 0) ? (now + (uint32_t)b.maxMsPerTick) : 0;
+
+    auto doWrite = [&]() { pumpWrite_(b.maxWriteBytesPerTick, deadlineMs); };
+    auto doRead = [&]() {
+        if (b.shouldDeferRead && b.shouldDeferRead(b.shouldDeferReadCtx)) {
+            return;
+        }
+        pumpReadAndParse_(b.maxReadBytesPerTick, b.maxParseFramesPerTick, deadlineMs);
+    };
 
     if (_disconnectRequested) {
-        if (_state == State::Connected && _txLen == 0) {
+        // Drain any staged PUBLISH (e.g. retained offline) before DISCONNECT+TCP stop.
+        doWrite();
+        if (_txLen != 0) return;
+        if (_state == State::Connected) {
             (void)buildDisconnect_();
+            doWrite();
         }
-        pumpWrite_(b.maxWriteBytesPerTick);
         _net.stop();
         resetSession_();
         _state = State::Idle;
@@ -131,8 +145,8 @@ void MqttFsmClient::tick(const Budgets& b) {
     if (!_connectRequested) {
         // Passive mode: still pump reads to keep buffers drained if something is connected.
         if (_net.connected()) {
-            pumpReadAndParse_(b.maxReadBytesPerTick, b.maxParseFramesPerTick);
-            pumpWrite_(b.maxWriteBytesPerTick);
+            doRead();
+            doWrite();
         }
         return;
     }
@@ -157,8 +171,8 @@ void MqttFsmClient::tick(const Budgets& b) {
                 _mqttHandshakeStartMs = millis();
             }
         }
-        pumpWrite_(b.maxWriteBytesPerTick);
-        pumpReadAndParse_(b.maxReadBytesPerTick, b.maxParseFramesPerTick);
+        doWrite();
+        doRead();
 
         // MQTT handshake timeout is measured from first entry into MqttConnecting (or from CONNECT enqueue).
         const uint32_t hs0 = (_mqttHandshakeStartMs != 0) ? _mqttHandshakeStartMs : _tcpConnectStartMs;
@@ -178,8 +192,10 @@ void MqttFsmClient::tick(const Budgets& b) {
         }
 
         maybeSendPing_(now);
-        pumpWrite_(b.maxWriteBytesPerTick);
-        pumpReadAndParse_(b.maxReadBytesPerTick, b.maxParseFramesPerTick);
+        doWrite();
+        doRead();
+        // Cmd handler may stage a reply during doRead — flush it this tick.
+        doWrite();
 
         // If underlying transport dropped, go back to connect.
         if (!_net.connected()) {
@@ -192,16 +208,13 @@ void MqttFsmClient::tick(const Budgets& b) {
 bool MqttFsmClient::ensureTcp_() {
     const uint32_t now = millis();
     if (_state == State::Idle) {
-        // If TCP is already up (some transports report connected immediately after URC),
-        // do NOT force-stop it here: that would generate CIPCLOSE right after SEND OK.
         if (_net.connected()) {
             _tcpConnectStartMs = now;
             _mqttHandshakeStartMs = 0;
             _state = State::MqttConnecting;
             return true;
         }
-        // Socket already down: do not call stop() here — Sim800TcpTransport::stop() would only log noise
-        // (wasConnectedOrConnecting is false) after setError_/CLOSED and confused operators with double "stop()".
+        // Do not stop() here: transport already closed after setError_/CLOSED.
         resetSession_();
         _tcpConnectStartMs = now;
         _mqttHandshakeStartMs = 0;
@@ -220,7 +233,7 @@ bool MqttFsmClient::ensureTcp_() {
             setError_("tcp_no_host");
             return false;
         }
-        // Non-blocking connect kick (transport enforces CIPSTART cooldown / busy gates).
+        // Non-blocking connect kick (transport enforces CIPSTART cooldown).
         (void)_net.connect(_cfg.host, _cfg.port);
         if (now - _tcpConnectStartMs > kTcpConnectTimeoutMs) {
             setError_("tcp_connect_timeout");
@@ -250,7 +263,11 @@ void MqttFsmClient::maybeSendPing_(uint32_t now) {
     }
 }
 
-void MqttFsmClient::pumpWrite_(uint16_t maxBytes) {
+bool MqttFsmClient::pastDeadline_(uint32_t deadlineMs) {
+    return deadlineMs != 0 && (int32_t)(millis() - deadlineMs) >= 0;
+}
+
+void MqttFsmClient::pumpWrite_(uint16_t maxBytes, uint32_t deadlineMs) {
     if (_txLen == 0) return;
     uint16_t remaining = (uint16_t)(_txLen - _txOff);
     if (remaining == 0) {
@@ -260,6 +277,7 @@ void MqttFsmClient::pumpWrite_(uint16_t maxBytes) {
     }
     uint16_t budget = maxBytes;
     while (budget && remaining) {
+        if (pastDeadline_(deadlineMs)) break;
         const uint16_t chunk = (remaining < budget) ? remaining : budget;
         const size_t w = _net.write(_tx + _txOff, chunk);
         if (w == 0) break;
@@ -274,21 +292,27 @@ void MqttFsmClient::pumpWrite_(uint16_t maxBytes) {
     }
 }
 
-void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames) {
-    uint16_t budget = maxBytes;
-    while (budget) {
-        const int a = _net.available();
-        if (a <= 0) break;
-        const int c = _net.read();
-        if (c < 0) break;
-        if (_rxLen < sizeof(_rx)) {
-            _rx[_rxLen++] = (uint8_t)c;
+void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uint32_t deadlineMs) {
+    if (maxBytes && !pastDeadline_(deadlineMs)) {
+        const int avail = _net.available();
+        if (avail > 0) {
+            uint16_t room = (_rxLen < sizeof(_rx)) ? (uint16_t)(sizeof(_rx) - _rxLen) : 0;
+            uint16_t want = maxBytes;
+            if ((uint16_t)avail < want) want = (uint16_t)avail;
+            if (room < want) want = room;
+            if (want > 0) {
+                // Bulk read pumps the modem once via Client::read(buf,n).
+                const int n = _net.read(_rx + _rxLen, want);
+                if (n > 0) {
+                    _rxLen = (uint16_t)(_rxLen + (uint16_t)n);
+                }
+            }
         }
-        budget--;
     }
 
     uint16_t frames = 0;
     while (frames < maxFrames) {
+        if (pastDeadline_(deadlineMs)) break;
         if (!parseOneFrame_()) break;
         frames++;
     }
@@ -297,6 +321,12 @@ void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames) {
 bool MqttFsmClient::parseOneFrame_() {
     if (_rxLen < 2) return false;
     const uint8_t typeFlags = _rx[0];
+    const uint8_t pktTypeEarly = (uint8_t)(typeFlags >> 4);
+    // Reject non-MQTT control types (modem junk must not enter the parser).
+    if (pktTypeEarly < 1 || pktTypeEarly > 14) {
+        _rxLen = 0;
+        return false;
+    }
 
     uint32_t remLen = 0;
     uint8_t used = 0;
@@ -314,9 +344,10 @@ bool MqttFsmClient::parseOneFrame_() {
     const uint16_t totalLen = (uint16_t)totalLen32;
     if (_rxLen < totalLen) return false; // need more bytes
 
+
     _lastRxMs = millis();
 
-    const uint8_t pktType = (uint8_t)(typeFlags >> 4);
+    const uint8_t pktType = pktTypeEarly;
     const uint8_t flags = (uint8_t)(typeFlags & 0x0F);
     const uint8_t* p = _rx + headerLen;
 

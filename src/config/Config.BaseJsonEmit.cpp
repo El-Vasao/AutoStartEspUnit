@@ -118,8 +118,7 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
     comma(o, &c), o.print("\"client_id\":"), writeEscaped(o, cfg.mqtt.client_id);
     comma(o, &c), o.print("\"user\":"), writeEscaped(o, cfg.mqtt.user);
     comma(o, &c), o.print("\"pass\":"), writeEscaped(o, cfg.mqtt.pass);
-    comma(o, &c), o.print("\"status_topic\":"), writeEscaped(o, cfg.mqtt.status_topic);
-    comma(o, &c), o.print("\"cmd_topic\":"), writeEscaped(o, cfg.mqtt.cmd_topic);
+    comma(o, &c), o.print("\"topic_prefix\":"), writeEscaped(o, cfg.mqtt.topic_prefix);
     comma(o, &c), o.print("\"publish_interval_sec\":"), o.print(cfg.mqtt.publish_interval_sec);
     o.print('}');
 

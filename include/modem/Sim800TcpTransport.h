@@ -39,6 +39,9 @@ public:
     /// True while modem TX staging has bytes or CIPSEND is in flight (incl. post-'>' until SEND OK).
     bool hasBufferedTx() const { return _txLen != 0 || _sendInProgress || _modemTxLocked; }
 
+    /// Skip MQTT RX while TX/CIPSEND owns the bus or during post-send quiet.
+    bool shouldDeferMqttRead() const;
+
     int available() const;
     int read();
     int peek() const;
@@ -72,23 +75,26 @@ private:
     uint32_t _sendWatchMs{0};
     uint32_t _lastStackRecoverMs{0};
     uint32_t _lastConnectAttemptMs{0};
+    /// After SEND OK/FAIL, defer MQTT RX until this millis() (0 = inactive).
+    uint32_t _postSendQuietUntilMs{0};
 
     char _host[64]{};
     uint16_t _port{0};
     char _cmdStart[128]{};
     char _cmdSend[32]{};
 
-    // RX ring buffer (compact; rely on frequent pumpRead in MQTT loop)
+    // RX ring (push mode); drop into MQTT only outside send-epoch / post-send quiet.
     static constexpr uint16_t RX_SIZE = 320;
     uint8_t _rx[RX_SIZE]{};
     uint16_t _rxHead{0};
     uint16_t _rxCount{0};
 
-    // TX staging buffer (single packet)
-    static constexpr uint16_t TX_SIZE = 224;
+    // TX staging: one CIPSEND epoch, sized for one full MQTT packet.
+    static constexpr uint16_t TX_SIZE = 1024;
     uint8_t _tx[TX_SIZE]{};
     uint16_t _txLen{0};
-    uint16_t _txSent{0};
+    /// Length frozen into AT+CIPSEND=N at startSend_ (must match bytes written on '>').
+    uint16_t _sendLen{0};
 
     // +IPD parser state (byte-level)
     enum class IpState : uint8_t { Idle, MatchI, MatchP, MatchD, MatchComma, ReadLen, ReadData };
@@ -96,17 +102,20 @@ private:
     uint16_t _ipLen{0};
     uint16_t _ipRead{0};
 
-    // Raw push RX framing (CIPRXGET=0): modem may output network bytes directly, interleaved with text URCs/echo.
-    // We sniff short CRLF-terminated text lines and drop known modem control lines, while passing binary through.
+    // Raw push framing: sniff short CRLF control lines; pass binary through.
     static constexpr uint8_t RAW_LINE_BUF_SIZE = 64;
     char _rawLineBuf[RAW_LINE_BUF_SIZE]{};
     uint8_t _rawLineLen{0};
 
-    // CIPSEND prompt '>' is consumed by AtSession for command completion but still arrives on the shared UART RX path.
-    // Strip optional \r\n after it so the byte never enters the TCP/MQTT stream or the raw line sniffer.
+    // Strip leaked CIPSEND '>' (+ optional CR/LF) so it never enters the MQTT stream.
     uint8_t _promptLeak{0}; // 0=none, 1=saw '>', 2=saw CR after '>'
 
+    uint32_t nowMs_() const { return _lastNowMs ? _lastNowMs : millis(); }
+    bool inPostSendQuiet_(uint32_t now) const;
+    void beginPostSendQuiet_();
     void pushRx_(uint8_t b);
+    bool discardingTcpPayload_() const;
+    void clearRx_();
     bool startConnect_();
     void startSend_();
     void clearTx_();

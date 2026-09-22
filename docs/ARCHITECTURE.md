@@ -87,12 +87,12 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
 
 Фиксируем контракт:
 - **Идентификация устройства только по топику**: никаких `deviceId`/`unitId` в payload.
-- **Топики берутся из конфигурации**: `BaseConfig.mqtt.cmd_topic` и `BaseConfig.mqtt.status_topic`.
-  Эти топики должны быть **выделенными под устройство** (не общими для группы).
+- **Топики**: пользователь задаёт только `BaseConfig.mqtt.topic_prefix`; суффиксы фиксированы:
+  `/avail` (presence), `/status` (JSON), `/cmd` (команды), `/reply` (ответы).
 - **Delivery по умолчанию**:
-  - LWT `"offline"` на `status_topic`: QoS1 + retained
-  - `"online"` при connect на `status_topic`: retained
-  - периодический JSON-статус: best-effort, not-retained, раз в `publish_interval_sec`
+  - LWT `"offline"` на `{prefix}/avail`: QoS1 + retained
+  - `"online"` при connect на `{prefix}/avail`: retained (независимо от JSON)
+  - периодический JSON на `{prefix}/status`: best-effort, not-retained, раз в `publish_interval_sec`
     (контракт полей: `docs/modules/mqtt.md` §3; без усечения полей)
 - **Anti-hang**: публикация JSON-статуса только по таймеру; чтение/запись в транспорт режутся лимитами `MqttFsmClient::Budgets`.
   Локальное время «измерить + застейджить» JSON ограничивают **логируемым** порогом

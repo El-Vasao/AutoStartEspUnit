@@ -27,6 +27,11 @@ void CellularCore::init(GSMController& gsm, MQTTClient& mqtt, WebServer& web) {
     _bootSettlePending = true;
     _bootSettleUntilMs = 0;
     _lastSettleLogMs = 0;
+    _mqtt->setDeferMqttRx(
+        [](void* ctx) -> bool {
+            return static_cast<GSMController*>(ctx)->shouldDeferMqttRead();
+        },
+        _gsm);
 }
 
 void CellularCore::service() {
@@ -99,7 +104,19 @@ void CellularCore::service() {
 void CellularCore::suspend() {
     if (!_gsm || !_mqtt || !_web) return;
     if (_mqttStarted) {
+        // Stop reconnect; stage offline + DISCONNECT and briefly drain while GSM is still up.
+        _mqtt->setReconnectEnabled(false);
         _mqtt->disconnect();
+        for (uint8_t i = 0; i < 40; ++i) {
+            _gsm->update();
+            _mqtt->loop();
+            if (!_gsm->tcpBusBusy()) {
+                // Another tick after bus idle to finish DISCONNECT if still pending.
+                _mqtt->loop();
+                break;
+            }
+            yield();
+        }
         _mqttStarted = false;
     }
     if (_gsmStarted) {

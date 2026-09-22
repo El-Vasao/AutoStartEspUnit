@@ -288,11 +288,14 @@ public:
                     strlcpy(t_->mqtt.user, v ? v : "", sizeof t_->mqtt.user);
                 else if (streq(pending_, "pass"))
                     strlcpy(t_->mqtt.pass, v ? v : "", sizeof t_->mqtt.pass);
-                else if (streq(pending_, "status_topic"))
-                    strlcpy(t_->mqtt.status_topic, v ? v : "", sizeof t_->mqtt.status_topic);
-                else if (streq(pending_, "cmd_topic"))
-                    strlcpy(t_->mqtt.cmd_topic, v ? v : "", sizeof t_->mqtt.cmd_topic);
-                else if (streq(pending_, "publish_interval_sec"))
+                else if (streq(pending_, "topic_prefix")) {
+                    strlcpy(t_->mqtt.topic_prefix, v ? v : "", sizeof t_->mqtt.topic_prefix);
+                    // Drop trailing '/' so joinTopic_ can append suffixes cleanly.
+                    size_t n = strlen(t_->mqtt.topic_prefix);
+                    while (n > 0 && t_->mqtt.topic_prefix[n - 1] == '/') {
+                        t_->mqtt.topic_prefix[--n] = '\0';
+                    }
+                } else if (streq(pending_, "publish_interval_sec"))
                     t_->mqtt.publish_interval_sec = parseU16(v, 30);
                 break;
             case St::Vehicle:

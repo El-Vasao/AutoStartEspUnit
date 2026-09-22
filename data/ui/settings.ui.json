@@ -139,20 +139,12 @@
           "help": "Укажите пароль MQTT, если брокер требует авторизацию. Используется вместе с полем \"Пользователь\"."
         },
         {
-          "key": "status_topic",
-          "path": "mqtt.status_topic",
+          "key": "topic_prefix",
+          "path": "mqtt.topic_prefix",
           "type": "text",
-          "label": "Status topic",
+          "label": "Префикс топиков",
           "helpTitle": "Как используется",
-          "help": "MQTT-топик, в который устройство публикует статус и телеметрию."
-        },
-        {
-          "key": "cmd_topic",
-          "path": "mqtt.cmd_topic",
-          "type": "text",
-          "label": "Cmd topic",
-          "helpTitle": "Как используется",
-          "help": "MQTT-топик, из которого устройство получает входящие команды."
+          "help": "Общий префикс без завершающего `/`. Устройство само добавляет суффиксы: `/avail` (online/offline), `/status` (JSON), `/cmd` (команды), `/reply` (ответы)."
         },
         {
           "key": "publish_interval_sec",

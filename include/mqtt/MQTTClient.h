@@ -13,15 +13,11 @@ struct AppPorts;
  * @brief MQTT-клиент для связи с брокером.
  * Публикует статус и обрабатывает входящие команды.
  *
- * Контракт:
- * - работает поверх уже готового сетевого транспорта (`Client`), в этой прошивке — через GSM;
- * - `begin()` читает настройки из `config`, настраивает брокер и выполняет первое подключение;
- * - `loop()` должен вызываться только когда внешний транспорт уже готов; внутри реализованы reconnect/publish по таймеру;
- * - при потере транспорта внешний orchestration обязан вызвать `disconnect()`.
- *
- * Замечания для ESP8266:
- * - Реализация неблокирующая (FSM), без динамических аллокаций.
- * - Payloadы ограничены фиксированными буферами (см. JsonBytes::Mqtt::*).
+ * Контракт топиков (из `mqtt.topic_prefix`):
+ * - `{prefix}/avail`  — retained online/offline (LWT)
+ * - `{prefix}/status` — JSON телеметрия
+ * - `{prefix}/cmd`    — входящие команды
+ * - `{prefix}/reply`  — ответы (list_programs)
  */
 class MQTTClient {
 public:
@@ -34,12 +30,16 @@ public:
     /// Optional app wiring (commands/status) provided by `core` after construction.
     void setAppPorts(const AppPorts* ports) { _ports = ports; }
 
+    /// Optional probe: skip MQTT RX while modem TX/CIPSEND owns the bus (wired from CellularCore).
+    void setDeferMqttRx(bool (*fn)(void*), void* ctx) {
+        _deferMqttRx = fn;
+        _deferMqttRxCtx = ctx;
+    }
+
     // Циклический вызов (поддержка соединения, обработка команд)
     void loop();
 
     /// Разрешить/запретить попытки подключения/переподключения к брокеру.
-    /// Важно для UX: даже неблокирующий MQTT может давать лишнюю нагрузку на сеть/модем,
-    /// поэтому при желании его можно выключать во время активного UI (AP/SSE).
     void setReconnectEnabled(bool enabled) { _reconnectEnabled = enabled; }
 
     // Публикация статуса устройства в топик статуса
@@ -61,26 +61,33 @@ private:
     bool _reconnectEnabled{true};
     uint8_t _connectFailStreak{0};
     const AppPorts* _ports{nullptr};
+    bool (*_deferMqttRx)(void*){nullptr};
+    void* _deferMqttRxCtx{nullptr};
 
     // Non-blocking MQTT FSM engine.
     MqttFsmClient _fsm;
     bool _subscribed{false};
     bool _mqttWasConnected{false}; ///< edge-detect: prime first status publish after each (re)connect
-    bool _onlinePublishDue{false}; ///< retained "online" on `status_topic` after each CONNECT
-    bool _awaitFirstStatus{false}; ///< one JSON status after online/settle on each session
+    bool _onlinePublishDue{false}; ///< retained "online" on avail after each CONNECT
+    bool _awaitFirstStatus{false}; ///< one JSON status after settle on each session
+    bool _listProgramsDue{false};  ///< retry list_programs reply when TX was busy
     uint32_t _firstStatusAfterMs{0}; ///< earliest millis() for `_awaitFirstStatus`
 
     /// NUL-terminated MQTT credentials (copied once in `begin()` from config).
     char _mqttClientId[TextBytes::Mqtt::CLIENT_ID]{};
     char _mqttUser[TextBytes::Mqtt::USER]{};
     char _mqttPass[TextBytes::Mqtt::PASS]{};
-    /// Copy of configured `mqtt.status_topic` for Last Will pointer stability in `MqttFsmClient::Config`.
-    char _mqttStatusTopic[TextBytes::Mqtt::TOPIC]{};
 
-    // Подключение к брокеру (внутреннее)
+    /// Derived topics from `mqtt.topic_prefix` (stable pointers for CONNECT Will).
+    char _topicAvail[TextBytes::Mqtt::TOPIC]{};
+    char _topicStatus[TextBytes::Mqtt::TOPIC]{};
+    char _topicCmd[TextBytes::Mqtt::TOPIC]{};
+    char _topicReply[TextBytes::Mqtt::TOPIC]{};
+
     void connect();
+    static void joinTopic_(char* out, size_t outSz, const char* prefix, const char* suffix);
+    bool tryPublishProgramList_();
 
     static void onPublishThunk(void* ctx, const char* topic, const uint8_t* payload, uint16_t len, bool retained);
     void handlePublish(const char* topic, const uint8_t* payload, uint16_t len, bool retained);
 };
-

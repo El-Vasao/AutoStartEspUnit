@@ -14,26 +14,25 @@ void ModemUart::flushInput() {
 void ModemUart::writeRaw(const char* s) {
     if (!s) return;
     _serial.print(s);
-    // IMPORTANT: avoid Serial.flush() here; it can block long enough to trigger WDT
-    // when higher-level code emits frequent AT commands (e.g. CIPRXGET polling).
+    // No Serial.flush(): blocks long enough to trip WDT under AT load.
 }
 
 void ModemUart::writeLine(const char* line) {
     if (!line) line = "";
     _serial.print(line);
     _serial.print("\r\n");
-    // IMPORTANT: avoid Serial.flush() here; it can block long enough to trigger WDT.
+    // No Serial.flush(): blocks long enough to trip WDT under AT load.
 }
 
 void ModemUart::writeBytes(const uint8_t* data, size_t len) {
     if (!data || len == 0) return;
+    // Continuous CIPSEND burst; yield once after so SoftAP can run.
     _serial.write(data, len);
-    // IMPORTANT: avoid Serial.flush() here; it can block long enough to trigger WDT.
+    yield();
 }
 
 void ModemUart::writeByte(uint8_t b) {
     _serial.write(b);
-    // IMPORTANT: avoid Serial.flush() here; it can block long enough to trigger WDT.
 }
 
 void ModemUart::pollRx() {
@@ -70,4 +69,3 @@ void ModemUart::pollRx() {
         }
     }
 }
-

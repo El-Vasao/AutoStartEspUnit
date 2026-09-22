@@ -65,8 +65,8 @@ struct MQTTConfig {
     char client_id[TextBytes::Mqtt::CLIENT_ID];
     char user[TextBytes::Mqtt::USER];
     char pass[TextBytes::Mqtt::PASS];
-    char status_topic[TextBytes::Mqtt::TOPIC];
-    char cmd_topic[TextBytes::Mqtt::TOPIC];
+    /// Base path for fixed suffixes `/avail`, `/status`, `/cmd`, `/reply`.
+    char topic_prefix[TextBytes::Mqtt::TOPIC_PREFIX];
     uint16_t publish_interval_sec;
 
     MQTTConfig() : port(1883), publish_interval_sec(30) {
@@ -74,8 +74,7 @@ struct MQTTConfig {
         strcpy(client_id, "autostart-ABC123");
         user[0] = '\0';
         pass[0] = '\0';
-        strcpy(status_topic, "car/ABC123/status");
-        strcpy(cmd_topic, "car/ABC123/cmd");
+        strcpy(topic_prefix, "car/ABC123");
     }
 };
 

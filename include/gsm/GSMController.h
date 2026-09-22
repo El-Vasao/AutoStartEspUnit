@@ -76,6 +76,9 @@ public:
     /// True while TCP connect/send/close/recover holds the shared AT bus.
     bool tcpBusBusy() const { return _stack.tcp.isBusBusy(); }
 
+    /// Skip MQTT RX while modem TX/CIPSEND owns the bus or during post-send quiet.
+    bool shouldDeferMqttRead() const { return _stack.tcp.shouldDeferMqttRead(); }
+
 private:
     static constexpr size_t RESPONSE_BUF_SIZE = GSM::RESPONSE_BUFFER_SIZE;
     static constexpr size_t AT_CMD_BUF_SIZE = GSM::CMD_BUFFER_SIZE;

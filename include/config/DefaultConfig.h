@@ -22,13 +22,12 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
   },
   "mqtt": {
     "broker": "m5.wqtt.ru",
-    "port": 1883,
-    "client_id": "autostart-ABC123",
+    "port": 10162,
+    "client_id": "",
     "user": "u_1WJDYV",
     "pass": "9chZ2EvV",
-    "status_topic": "car/ABC123/status",
-    "cmd_topic": "car/ABC123/cmd",
-    "publish_interval_sec": 30
+    "topic_prefix": "car/Subaru",
+    "publish_interval_sec": 60
   },
   "vehicle": {
     "adc_voltage_coeff": 10,

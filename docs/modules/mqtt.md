@@ -14,20 +14,27 @@ MQTT-публикация статуса и подписка на команды
 - Устройство **идентифицируется только по топикам**.
 - В payload **нет** `deviceId`/`unitId` и т.п.
 
-### Топики (берутся из конфигурации)
-Источник — `BaseConfig.mqtt.*` (`include/config/ConfigTypes.h`):
-- `mqtt.cmd_topic`: входящие команды (выделенный топик под устройство)
-- `mqtt.status_topic`: статус и ответы (выделенный топик под устройство)
+### Топики (из `mqtt.topic_prefix`)
+Пользователь настраивает только **`mqtt.topic_prefix`** (без trailing `/`), например `car/Subaru`.
+Суффиксы фиксированы в прошивке (`MqttTopics` в `Constants.h`):
 
-Если `status_topic` пуст, Last Will не задаётся и retained `"online"` не публикуется.
+| Суффикс | Топик | Назначение |
+|---------|-------|------------|
+| `/avail` | `{prefix}/avail` | Presence: retained `online` / `offline` (LWT) |
+| `/status` | `{prefix}/status` | JSON телеметрия |
+| `/cmd` | `{prefix}/cmd` | Входящие команды |
+| `/reply` | `{prefix}/reply` | Ответы (`list_programs`) |
+
+Пустой `topic_prefix` → без LWT/online/subscribe/publish.
 
 ### Доставка (политика по умолчанию)
 Реализация: `src/mqtt/MQTTClient.Core.cpp` + CONNECT в `src/mqtt/MqttFsmClient.cpp`.
-- **LWT** на `mqtt.status_topic`: текст `"offline"`, **retained**, **Will QoS = 1** (задаётся в CONNECT-пакете).
-- После перехода в **MQTT Connected** отправляется **один раз** retained `"online"` (QoS приложения через этот клиент всегда **0** для PUBLISH; см. ограничения FSM).
-- Периодический JSON-статус: **QoS 0**, **без retained**, раз в `mqtt.publish_interval_sec` (первая попытка после connect не ждёт полного интервала).
-- Подписка на команды: **QoS 0**.
-- Ответ на `list_programs`: QoS 0, not retained.
+- **LWT** на `{prefix}/avail`: текст `"offline"`, **retained**, **Will QoS = 1**.
+- После **MQTT Connected**: retained `"online"` на `/avail` (публикуется **независимо** от JSON-статуса).
+- Периодический JSON на `/status`: **QoS 0**, **без retained**, раз в `mqtt.publish_interval_sec`.
+- Подписка на `/cmd`: **QoS 0**.
+- Ответ `list_programs` на `/reply`: QoS 0, not retained.
+- Clean disconnect: один attempt retained `"offline"` на `/avail` перед MQTT DISCONNECT.
 
 ### Anti-hang
 - Вызывающий код гоняет `MQTTClient::loop()` кооперативно вместе с GSM; каждый `tick()` имеет байтовые лимиты RX/TX.
@@ -39,7 +46,7 @@ MQTT-публикация статуса и подписка на команды
 ### Reconnect и 2-phase connect (SIM800)
 - Сначала поднимается TCP (`Client.connected()` после `CONNECT OK` модема); `CIPSTART` с cooldown и без mid-send.
 - Затем MQTT CONNECT только поверх живого TCP.
-- После `"online"` — settle ~1.5 s до первого JSON status.
+- После `"online"` на `/avail` — settle ~1.5 s до первого JSON на `/status`.
 
 Протокол MQTT в CONNECT: при необходимости совместимости с брокером можно включить режим имени **`MQIsdp` / MQTT 3.1** через compile-time (см. `MQTTClient.Core.cpp`): `-DMQTT_VERSION=MQTT_VERSION_3_1`.
 
@@ -53,7 +60,7 @@ MQTT-публикация статуса и подписка на команды
 
 ## Сообщения
 
-### 1) Command (вход, `mqtt.cmd_topic`)
+### 1) Command (вход, `{prefix}/cmd`)
 Команды — **JSON-объект** (строка UTF-8). Поддерживаются:
 - `{"action":"run","program":<1..255>}` — запуск программы по id.
 - `{"action":"run_program","program":<1..255>}` — то же (синоним для совместимости с документацией/интеграциями).
@@ -61,16 +68,14 @@ MQTT-публикация статуса и подписка на команды
 
 Семантика:
 - `run` / `run_program` → `AppPorts.control.startProgram(ctx, programId)` (см. `MQTTClient.Core.cpp`).
-- `list_programs` → публикация в `mqtt.status_topic` (см. ниже).
+- `list_programs` → публикация в `{prefix}/reply` (см. ниже).
 
-### 2) Connection markers (выход, `mqtt.status_topic`)
-На одном и том же топике, что и JSON, могут появляться **краткие не-JSON** сообщения для мониторинга связи:
-- retained `"offline"` — через LWT при обрыве;
+### 2) Connection markers (выход, `{prefix}/avail`)
+Краткие не-JSON сообщения presence:
+- retained `"offline"` — LWT при unclean disconnect; также один attempt при clean disconnect;
 - retained `"online"` — после успешного CONNECT.
 
-Подписчики, ожидающие только JSON, должны отличать payload по содержимому (или подписаться на несколько топиков, если измените конфигурацию).
-
-### 3) StatusSnapshot (периодический JSON, выход, `mqtt.status_topic`)
+### 3) StatusSnapshot (периодический JSON, выход, `{prefix}/status`)
 Формируется `emitMqttStatusJson()` в `src/mqtt/MqttStatusBuilder.cpp`. Поле **`schema` не используется**. QoS 0, **не** retained.
 
 Порядок полей = порядок emit (нормативный контракт):
@@ -115,7 +120,7 @@ MQTT-публикация статуса и подписка на команды
 
 Неймспейс id по умолчанию: входы `1xxx`, реле `2xxx`, сенсоры `3xxx`.
 
-### 4) ProgramsList (ответ на `list_programs`, выход, `mqtt.status_topic`)
+### 4) ProgramsList (ответ на `list_programs`, выход, `{prefix}/reply`)
 Объект вида:
 
 ```json

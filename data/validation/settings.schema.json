@@ -83,13 +83,9 @@
           "type": "string",
           "maxLength": 32
         },
-        "status_topic": {
+        "topic_prefix": {
           "type": "string",
-          "maxLength": 64
-        },
-        "cmd_topic": {
-          "type": "string",
-          "maxLength": 64
+          "maxLength": 47
         },
         "publish_interval_sec": {
           "type": "integer",

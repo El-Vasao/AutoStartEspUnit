@@ -124,7 +124,7 @@ MQTT реализован **в прошивке** как неблокирующ�
 - После settle (`POST_BOOT_SETTLE_MS`) и GSM READY: TCP даёт `CONNECT OK`, затем успешный MQTT CONNECT (`CONNACK`).
 - Нет шторма `CIPSTART` во время `CIPSEND` / между `>` и `SEND OK`.
 - Ожидание логов: строка вида `[MQTTClient] Connected. subscribe=...` после подписки.
-- После успешного MQTT-сессии клиент может опубликовать retained `"online"` на `mqtt.status_topic` (см. [`mqtt.md`](mqtt.md)).
+- После успешного MQTT-сессии клиент публикует retained `"online"` на `{prefix}/avail` (см. [`mqtt.md`](mqtt.md)).
 
 **3) UI при SoftAP**
 

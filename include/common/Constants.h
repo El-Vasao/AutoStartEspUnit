@@ -82,7 +82,10 @@ namespace TextBytes {
         constexpr size_t CLIENT_ID = 33;
         constexpr size_t USER = 33;
         constexpr size_t PASS = 33;
+        /// Full derived topic `{prefix}/{suffix}` incl. NUL.
         constexpr size_t TOPIC = 65;
+        /// User-configured prefix only; leave room for longest suffix `/status`.
+        constexpr size_t TOPIC_PREFIX = 48;
     }
 
     namespace Vehicle {
@@ -114,6 +117,14 @@ namespace TextBytes {
         constexpr size_t STEP_ACTION = 24;
         constexpr size_t NAME = 32;
     }
+}
+
+/// Fixed MQTT topic suffixes under `mqtt.topic_prefix` (not user-configurable).
+namespace MqttTopics {
+    constexpr const char* AVAIL = "avail";
+    constexpr const char* STATUS = "status";
+    constexpr const char* CMD = "cmd";
+    constexpr const char* REPLY = "reply";
 }
 
 namespace BufferBytes {
@@ -459,10 +470,14 @@ namespace Sim800Tcp {
     constexpr uint32_t CIPSTART_ACCEPT_TIMEOUT_MS = 15000;
 
     /// Transport-side connect watchdog (from connectStart); clears stuck `_connecting`.
+    /// Layered with MqttFsmClient TCP wait (~45s): this WD recovers the modem sooner.
     constexpr uint32_t CONNECT_WATCHDOG_MS = CONNECT_TIMEOUT_MS;
 
     /// After CIPSEND '>' / payload write: wait for SEND OK / SEND FAIL.
     constexpr uint32_t SEND_WATCHDOG_MS = 15000;
+
+    /// After SEND OK/FAIL: briefly defer MQTT parse (SoftAP); do not drop RX (CONNACK).
+    constexpr uint32_t POST_SEND_QUIET_MS = 100;
 
     /// Min gap between CIPSTART attempts (non-blocking Client::connect retries every MQTT tick).
     constexpr uint32_t CONNECT_RETRY_COOLDOWN_MS = 3000;
@@ -472,9 +487,6 @@ namespace Sim800Tcp {
 
     /// Stack recovers without CONNECT OK before asking GSM for bearer reattach.
     constexpr uint8_t STACK_RECOVER_REATTACH_THRESHOLD = 3;
-
-    // Micro-budget for helping modem progress after write() (to avoid long stalls during MQTT handshake).
-    constexpr uint32_t WRITE_PUMP_BUDGET_MS = 50;
 }
 
 // ============================================================
