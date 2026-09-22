@@ -13,6 +13,7 @@
 #include "core/CoreHardRestart.h"
 
 #include <WiFi.h>
+#include "esp_bt.h"
 
 Core core;
 CorePrivate g_coreImpl;
@@ -126,6 +127,13 @@ bool Core::begin() {
 
     logger.log("\n[Core] begin\n");
     logger.log("[Core] Reset reason: %s\n", getResetReason());
+
+    // Never use BLE on this product: release controller+host so RF cannot start this boot.
+    {
+        const esp_err_t btErr = esp_bt_mem_release(ESP_BT_MODE_BLE);
+        logger.log("[Core] BT mem_release: %s\n", esp_err_to_name(btErr));
+    }
+
     if (!espHalChipIdValid()) return false;
 
     espHalWdtEnable();
