@@ -2,7 +2,6 @@
 
 #include "app/AppPorts.h"
 #include "config/Config.h"
-#include "mqtt/MqttCommandParser.h"
 #include "mqtt/MqttStatusBuilder.h"
 
 #include "app/StatusSnapshot.h"
@@ -41,7 +40,9 @@ struct CountingForwarder final : public Print {
 };
 
 struct PublishStatusCtx {
-    const StatusSnapshot* s;
+    const StatusSnapshot* cur;
+    const StatusSnapshot* prev; ///< non-null when emitting a delta
+    bool full;
 };
 
 static void buildStatusSnapshotForMqtt(StatusSnapshot& s) {
@@ -110,13 +111,11 @@ static void buildStatusSnapshotForMqtt(StatusSnapshot& s) {
 static size_t encodeMqttStatusForPublish(Print& p, void* ctx) {
     CountingForwarder fc(p);
     auto* c = reinterpret_cast<const PublishStatusCtx*>(ctx);
-    emitMqttStatusJson(*c->s, config.getBase(), fc);
-    return fc.written();
-}
-
-static size_t encodeProgramListForPublish(Print& p, void*) {
-    CountingForwarder fc(p);
-    if (!config.emitProgramListWrapped(fc)) return 0;
+    if (c->full || !c->prev) {
+        emitMqttStatusJson(*c->cur, config.getBase(), fc);
+    } else {
+        emitMqttStatusDeltaJson(*c->cur, *c->prev, config.getBase(), fc);
+    }
     return fc.written();
 }
 
@@ -142,7 +141,6 @@ void MQTTClient::joinTopic_(char* out, size_t outSz, const char* prefix, const c
 }
 
 void MQTTClient::begin() {
-    logger.log("[MQTTClient] begin()\n");
     const auto& mqttCfg = config.getBase().mqtt;
 
     // Make defensive, NUL-terminated copies of config strings.
@@ -159,14 +157,6 @@ void MQTTClient::begin() {
     joinTopic_(_topicStatus, sizeof(_topicStatus), mqttCfg.topic_prefix, MqttTopics::STATUS);
     joinTopic_(_topicCmd, sizeof(_topicCmd), mqttCfg.topic_prefix, MqttTopics::CMD);
     joinTopic_(_topicReply, sizeof(_topicReply), mqttCfg.topic_prefix, MqttTopics::REPLY);
-
-    // Diagnostics: credential lengths only (no plaintext user/pass on SSE).
-    logger.log("[MQTTClient] cfg: clientIdLen=%u userLen=%u passLen=%u prefixLen=%u\n",
-               (unsigned)strlen(_mqttClientId),
-               (unsigned)strlen(_mqttUser),
-               (unsigned)strlen(_mqttPass),
-               (unsigned)strlen(mqttCfg.topic_prefix));
-    logger.logSerialOnly("[MQTTClient] cfg: user=%s prefix=%s\n", _mqttUser, mqttCfg.topic_prefix);
 
     MqttFsmClient::Config c{};
     c.host = mqttCfg.broker;
@@ -196,10 +186,16 @@ void MQTTClient::begin() {
     c.cleanSession = true;
     _fsm.begin(c);
 
-    logger.log("[MQTTClient] settings: keepAlive=%us proto=%s avail=%s status=%s cmd=%s reply=%s\n",
-               (unsigned)30,
+    // One-line begin: lengths only for credentials (no plaintext pass on SSE).
+    logger.log("[MQTTClient] begin keepAlive=30s proto=%s idLen=%u userLen=%u passLen=%u "
+               "avail=%s status=%s cmd=%s reply=%s\n",
                (c.proto == MqttFsmClient::Proto::Mqtt31) ? "3.1" : "3.1.1",
+               (unsigned)strlen(_mqttClientId),
+               (unsigned)strlen(_mqttUser),
+               (unsigned)strlen(_mqttPass),
                _topicAvail, _topicStatus, _topicCmd, _topicReply);
+    logger.logSerialOnly("[MQTTClient] cfg: user=%s prefix=%s\n", _mqttUser, mqttCfg.topic_prefix);
+
     if (!_reconnectEnabled) {
         logger.log("[MQTTClient] begin(): reconnect disabled, skipping initial connect\n");
     } else {
@@ -221,15 +217,6 @@ void MQTTClient::loop() {
         }
     }
 
-    // Queue SUBSCRIBE before tick so the same iteration can build/send it.
-    if (_fsm.isConnected() && !_subscribed && _topicCmd[0]) {
-        _subscribed = _fsm.subscribe(_topicCmd);
-        if (_subscribed) {
-            logger.log("[MQTTClient] Connected. subscribe=%s status=%s avail=%s\n",
-                       _topicCmd, _topicStatus, _topicAvail);
-        }
-    }
-
     MqttFsmClient::Budgets b{};
     b.maxReadBytesPerTick = 160;
     b.maxWriteBytesPerTick = 1024;
@@ -240,6 +227,17 @@ void MQTTClient::loop() {
     _fsm.tick(b);
 
     if (_fsm.isConnected()) {
+        // Queue SUBSCRIBE as soon as Connected; flush on later loop when !tcpBusBusy.
+        if (!_subscribed && _topicCmd[0]) {
+            _subscribed = _fsm.subscribe(_topicCmd);
+            if (_subscribed) {
+                _subWaitStartMs = millis();
+                _subackTimeoutLogged = false;
+                logger.log("[MQTTClient] Connected. subscribe=%s status=%s avail=%s\n",
+                           _topicCmd, _topicStatus, _topicAvail);
+            }
+        }
+
         if (!_mqttWasConnected) {
             _mqttWasConnected = true;
             _connectFailStreak = 0;
@@ -247,34 +245,42 @@ void MQTTClient::loop() {
             _onlinePublishDue = _topicAvail[0] != '\0';
             _awaitFirstStatus = _topicStatus[0] != '\0';
             _firstStatusAfterMs = millis() + 1500u;
-            core.logHeapSnapshot("mqtt_online");
+            _havePublishedBaseline = false;
         }
 
-        // Presence and telemetry are independent (do not gate status on online success).
+        // Hold presence/telemetry until SUBACK, but do not stall forever if SUBACK is lost.
+        static constexpr uint32_t kSubackTimeoutMs = 8000u;
+        const bool subPending = _topicCmd[0] && _fsm.isSubscribePending();
+        const bool subTimedOut =
+            subPending && _subWaitStartMs != 0 && (millis() - _subWaitStartMs) >= kSubackTimeoutMs;
+        if (subTimedOut && !_subackTimeoutLogged) {
+            _subackTimeoutLogged = true;
+            logger.log("[MQTTClient] SUBACK timeout %ums — publishing online/status anyway\n",
+                       (unsigned)kSubackTimeoutMs);
+        }
+        const bool subReady = !subPending || subTimedOut;
+
         static constexpr uint8_t kOnlinePayload[] = "online";
-        if (_onlinePublishDue && _topicAvail[0]) {
-            if (_fsm.publish(_topicAvail, kOnlinePayload, sizeof(kOnlinePayload) - 1u, true)) {
+        if (subReady && _onlinePublishDue && _topicAvail[0]) {
+            if (_fsm.publish(_topicAvail, kOnlinePayload, sizeof(kOnlinePayload) - 1u, true, true)) {
                 _onlinePublishDue = false;
+                logger.log("[MQTTClient] pub avail online\n");
             }
         }
 
-        if (_listProgramsDue) {
-            if (tryPublishProgramList_()) {
-                _listProgramsDue = false;
-            }
-        }
+        flushPending_();
 
-        if (_awaitFirstStatus) {
-            if ((int32_t)(millis() - _firstStatusAfterMs) >= 0 && publishStatus()) {
+        if (subReady && _awaitFirstStatus) {
+            if ((int32_t)(millis() - _firstStatusAfterMs) >= 0 && publishStatus(true)) {
                 _awaitFirstStatus = false;
                 _lastStatusPublish = millis();
                 core.cooperate();
             }
-        } else if (_topicStatus[0]) {
+        } else if (subReady && _topicStatus[0]) {
             const auto& mqttCfg = config.getBase().mqtt;
             const uint32_t interval_ms = mqttCfg.publish_interval_sec * 1000UL;
             const bool due = (_lastStatusPublish == 0) || (millis() - _lastStatusPublish >= interval_ms);
-            if (due && publishStatus()) {
+            if (due && publishStatus(false)) {
                 _lastStatusPublish = millis();
                 core.cooperate();
             }
@@ -284,19 +290,35 @@ void MQTTClient::loop() {
         _mqttWasConnected = false;
         _onlinePublishDue = false;
         _awaitFirstStatus = false;
-        _listProgramsDue = false;
+        _havePublishedBaseline = false;
+        _subWaitStartMs = 0;
+        _subackTimeoutLogged = false;
+        clearIdem_();
+        clearPending_();
+        _hasActiveRun = false;
+        _activeRunId[0] = '\0';
+        _cmdBusy = false;
     }
 }
 
 void MQTTClient::disconnect() {
     logger.log("[MQTTClient] disconnect()\n");
-    // One attempt: stage retained offline before clean DISCONNECT (clears Will).
     if (_fsm.isConnected() && _topicAvail[0]) {
         static constexpr uint8_t kOfflinePayload[] = "offline";
-        (void)_fsm.publish(_topicAvail, kOfflinePayload, sizeof(kOfflinePayload) - 1u, true);
+        (void)_fsm.publish(_topicAvail, kOfflinePayload, sizeof(kOfflinePayload) - 1u, true, true);
     }
     _fsm.requestDisconnect();
     _subscribed = false;
+    _subWaitStartMs = 0;
+    _subackTimeoutLogged = false;
+    clearIdem_();
+    clearPending_();
+    _hasActiveRun = false;
+    _activeRunId[0] = '\0';
+}
+
+bool MQTTClient::needsDisconnectDrain() const {
+    return _fsm.isDisconnectPending() || _fsm.hasOutbound();
 }
 
 void MQTTClient::connect() {
@@ -316,67 +338,24 @@ void MQTTClient::onPublishThunk(void* ctx, const char* topic, const uint8_t* pay
     ((MQTTClient*)ctx)->handlePublish(topic, payload, len, retained);
 }
 
-void MQTTClient::handlePublish(const char* topic, const uint8_t* payload, uint16_t length, bool retained) {
-    (void)retained;
-    logger.logSerialOnly("[MQTTClient] cmd recv topic=%s len=%u\n", topic ? topic : "", (unsigned)length);
-    char message[JsonBytes::Mqtt::CMD_JSON_MAX];
-    if (length == 0 || length >= sizeof(message)) {
-        logger.log("[MQTTClient] Command payload too large (%u)\n", (unsigned)length);
-        return;
-    }
-    memcpy(message, payload, length);
-    message[length] = '\0';
-
-    MqttCommand cmd;
-    if (!parseMqttCommandJson(message, cmd)) {
-        logger.log("[MQTTClient] Unsupported/invalid command\n");
-        return;
-    }
-
-    core.logHeapSnapshot("mqtt_cmd");
-    if (cmd.kind == MqttCommandKind::RunProgram) {
-        logger.log("[MQTTClient] Run program %u\n", (unsigned)cmd.programId);
-        if (_ports && _ports->control.startProgram) {
-            _ports->control.startProgram(_ports->control.ctx, cmd.programId);
-        } else {
-            logger.log("[MQTTClient] run: AppPorts not wired\n");
-        }
-    } else if (cmd.kind == MqttCommandKind::ListPrograms) {
-        logger.log("[MQTTClient] list_programs requested\n");
-        if (!tryPublishProgramList_()) {
-            _listProgramsDue = true;
-            logger.log("[MQTTClient] list_programs deferred (busy/wire)\n");
-        }
-    } else {
-        logger.log("[MQTTClient] Unknown command kind\n");
-    }
-}
-
-bool MQTTClient::tryPublishProgramList_() {
-    if (!_topicReply[0]) return false;
-    size_t measured = 0;
-    if (!_fsm.publishPrintedMeasured(_topicReply, encodeProgramListForPublish, nullptr,
-                                     JsonBytes::Mqtt::LIST_PROGRAMS_JSON_MAX, false, &measured)) {
-        if (measured > JsonBytes::Mqtt::LIST_PROGRAMS_JSON_MAX) {
-            logger.log("[MQTTClient] list_programs JSON too large for MQTT buffer (max %u, got %u)\n",
-                       (unsigned)JsonBytes::Mqtt::LIST_PROGRAMS_JSON_MAX, (unsigned)measured);
-            return true; // don't retry oversize forever
-        }
-        return false;
-    }
-    logger.log("[MQTTClient] list_programs published topic=%s bytes=%u\n", _topicReply, (unsigned)measured);
-    return true;
-}
-
-bool MQTTClient::publishStatus() {
+bool MQTTClient::publishStatus(bool forceFull) {
     if (!_topicStatus[0]) return false;
+
     StatusSnapshot snapshot{};
     buildStatusSnapshotForMqtt(snapshot);
-    PublishStatusCtx ctx{&snapshot};
+    const auto& cfg = config.getBase();
+
+    // Full until first successful stage, on explicit force (first/get_status), else delta/skip.
+    const bool needFull = forceFull || !_havePublishedBaseline;
+    if (!needFull && !mqttStatusHasSignificantChanges(snapshot, _lastPublished, cfg)) {
+        return true; // unchanged — no TX
+    }
+
+    PublishStatusCtx ctx{&snapshot, needFull ? nullptr : &_lastPublished, needFull};
     size_t measured = 0;
     const uint32_t t0 = millis();
     if (!_fsm.publishPrintedMeasured(_topicStatus, encodeMqttStatusForPublish, &ctx,
-                                     JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, false, &measured)) {
+                                     JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, false, false, &measured)) {
         if (measured > JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES) {
             logger.log("[MQTTClient] publishStatus: status JSON too large for MQTT buffer (max %u, got %u)\n",
                        (unsigned)JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, (unsigned)measured);
@@ -391,6 +370,9 @@ bool MQTTClient::publishStatus() {
         logger.log("[MQTTClient] status publish serialize+stage slow (%u ms) (> budget %u ms)\n", (unsigned)dt,
                    (unsigned)kMqttPublishBudgetMs);
     }
-    logger.logSerialOnly("[MQTTClient] status published topic=%s bytes=%u\n", _topicStatus, (unsigned)measured);
+
+    _lastPublished = snapshot;
+    _havePublishedBaseline = true;
+    logger.log("[MQTTClient] pub status %s bytes=%u\n", needFull ? "full" : "delta", (unsigned)measured);
     return true;
 }

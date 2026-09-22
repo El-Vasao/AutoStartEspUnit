@@ -113,7 +113,7 @@ void ProgramExecutor::stop() {
                 if (starterRelay >= 0) core.getRelay().off((uint8_t)starterRelay);
             }
         }
-        finish();
+        finish(false);
     }
 }
 
@@ -122,17 +122,18 @@ void ProgramExecutor::nextStep() {
 
     _currentStep++;
     if (_currentStep >= _localStepCount) {
-        finish();
+        finish(true);
     } else {
         const CompiledStep& next = _localSteps[_currentStep];
         executeStep(next, _localActions[_currentStep]);
     }
 }
 
-void ProgramExecutor::finish() {
-    logger.log("[ProgramExecutor] Program finished id=%u name=%s\n",
+void ProgramExecutor::finish(bool ok) {
+    logger.log("[ProgramExecutor] Program %s id=%u name=%s\n", ok ? "finished" : "stopped/failed",
                (unsigned)_programId, _currentProgramName);
 
+    const uint8_t pid = _programId;
     if (_programId != 0 && _currentProgramName[0] != '\0') {
         _lastProgramId = _programId;
         strlcpy(_lastProgramName, _currentProgramName, sizeof(_lastProgramName));
@@ -143,12 +144,16 @@ void ProgramExecutor::finish() {
     _localActions = nullptr;
     _localSteps = nullptr;
     _localStepCount = 0;
+
+    if (_lifecycleCb && pid != 0) {
+        _lifecycleCb(_lifecycleCtx, pid, ok);
+    }
 }
 
 void ProgramExecutor::abortWithError() {
     logger.log("[ProgramExecutor] ⚠️ Program aborted due to configuration change\n");
     core.getRelay().allOff();
-    finish();
+    finish(false);
     core.getErrorManager().set(ErrorCode::PROGRAM_ABORTED);
 }
 

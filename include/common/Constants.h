@@ -164,6 +164,10 @@ namespace Timing {
     constexpr uint32_t WATCHDOG_FEED_INTERVAL_MS = 1000;
     constexpr uint32_t FS_MAINTENANCE_INTERVAL_MS = 3600000; // 1 час
     constexpr uint32_t ERROR_REPORT_INTERVAL_MS = 30000;
+    /// Periodic heap log cadence (tagged snapshots stay event-driven).
+    constexpr uint32_t HEAP_SNAPSHOT_INTERVAL_MS = 300000; // 5 min
+    /// Skip periodic heap log unless free or maxBlock moved by at least this.
+    constexpr uint32_t HEAP_SNAPSHOT_DELTA_BYTES = 4096;
     /// Минимальная частота yield в длинных циклах (FreeRTOS fairness + lwIP).
     constexpr uint32_t COOPERATE_INTERVAL_MS = 20;
     /// Период «диффа» SSE: сравнение блоков железа/режима без обязательной отправки каждого.
@@ -301,8 +305,12 @@ namespace JsonBytes {
         constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 900;
         constexpr size_t STATUS_JSON_MAX = STATUS_PAYLOAD_MAX_BYTES;
         constexpr size_t STATUS_DOC_CAPACITY = STATUS_PAYLOAD_MAX_BYTES;
-        constexpr size_t LIST_PROGRAMS_JSON_MAX = 900;
+        constexpr size_t LIST_PROGRAMS_JSON_MAX = 960; ///< list reply: envelope + programs array
         constexpr size_t LIST_PROGRAMS_DOC_CAPACITY = MAX_FILE_JSON_BYTES;
+        /// Voltage change below this does not count as significant / does not enter a delta.
+        constexpr float STATUS_VOLTAGE_EPS = 0.05f;
+        /// Temperature change below this does not count as significant / does not enter a delta.
+        constexpr float STATUS_TEMP_EPS = 0.1f;
     }
 
     namespace Programs {
@@ -445,7 +453,6 @@ namespace GSM {
 
     constexpr uint32_t READY_SIGNAL_INTERVAL_MS = 300000;   // 5 min
     constexpr uint32_t READY_OPERATOR_INTERVAL_MS = 900000; // 15 min
-    constexpr uint32_t READY_TCP_STATS_INTERVAL_MS = 60000; // 1 min
     constexpr uint32_t TCP_CLOSED_REATTACH_WINDOW_MS = 60000; // 1 min
     constexpr uint8_t TCP_CLOSED_REATTACH_THRESHOLD = 3;      // 3 drops within window
     constexpr uint32_t ERROR_RECOVERY_DELAY_MS = 30000;

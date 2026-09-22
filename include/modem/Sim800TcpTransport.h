@@ -83,8 +83,8 @@ private:
     char _cmdStart[128]{};
     char _cmdSend[32]{};
 
-    // RX ring (push mode); drop into MQTT only outside send-epoch / post-send quiet.
-    static constexpr uint16_t RX_SIZE = 320;
+    // RX ring (push mode); drop into MQTT only outside send-epoch for non-IPD path.
+    static constexpr uint16_t RX_SIZE = 512;
     uint8_t _rx[RX_SIZE]{};
     uint16_t _rxHead{0};
     uint16_t _rxCount{0};
@@ -113,8 +113,10 @@ private:
     uint32_t nowMs_() const { return _lastNowMs ? _lastNowMs : millis(); }
     bool inPostSendQuiet_(uint32_t now) const;
     void beginPostSendQuiet_();
-    void pushRx_(uint8_t b);
-    bool discardingTcpPayload_() const;
+    /// `fromIpd`: framed +IPD body — keep during send-epoch (CONNACK/SUBACK). Raw UART path may be junk.
+    void pushRx_(uint8_t b, bool fromIpd = false);
+    /// Drop non-IPD bytes while CIPSEND owns the UART (not during post-send quiet).
+    bool discardingTcpPayload_(bool fromIpd) const;
     void clearRx_();
     bool startConnect_();
     void startSend_();

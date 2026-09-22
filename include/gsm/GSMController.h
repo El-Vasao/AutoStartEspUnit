@@ -221,9 +221,6 @@ private:
     // Прочитать оператора
     void readOperator();
 
-    // Редкая диагностика транспорта TCP (URC-first SIM800).
-    void logTcpStats();
-
     // Обработчики состояний
     void handleIdle();
     void handleInit();

@@ -48,6 +48,19 @@ bool Config::emitProgramListWrapped(Print& p) const {
     return true;
 }
 
+bool Config::emitProgramIndexArray(Print& p) const {
+    program_json::IndexRow rows[Limits::MAX_PROGRAMS];
+    size_t n = 0;
+    File f = fileSystem.openRead("/programs/index.json");
+    if (f) {
+        const bool parsed = program_json::parseProgramIndexFile(f, rows, Limits::MAX_PROGRAMS, &n);
+        f.close();
+        if (!parsed) n = 0;
+    }
+    program_json::emitProgramIndexArrayPrint(rows, n, p);
+    return true;
+}
+
 bool Config::ensureProgramIndex() {
     bool present[256] = { false };
     bool inIndex[256] = { false };

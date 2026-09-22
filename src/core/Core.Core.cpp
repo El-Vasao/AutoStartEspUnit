@@ -6,6 +6,7 @@
 #include "config/Config.h"
 #include "config/DefaultConfig.h"
 #include "common/Logger.h"
+#include "common/Constants.h"
 #include "fs/FSManager.h"
 #include "web/WebServer.h"
 #include "core/FlashCommitCoordinator.h"
@@ -29,8 +30,12 @@ static void requestRebootThunk(void* ctx, uint32_t delayMs) {
     static_cast<Core*>(ctx)->requestReboot(delayMs);
 }
 
-static void startProgramThunk(void* ctx, uint8_t programId) {
-    static_cast<Core*>(ctx)->getProgramExecutor().start(programId);
+static bool startProgramThunk(void* ctx, uint8_t programId) {
+    return static_cast<Core*>(ctx)->getProgramExecutor().start(programId);
+}
+
+static void stopProgramThunk(void* ctx) {
+    static_cast<Core*>(ctx)->getProgramExecutor().stop();
 }
 
 static void startOtaUpdateThunk(void* ctx) {
@@ -39,6 +44,46 @@ static void startOtaUpdateThunk(void* ctx) {
 
 static void factoryResetThunk(void* ctx) {
     static_cast<Core*>(ctx)->factoryReset();
+}
+
+static void setThermostatThunk(void* ctx, bool en) {
+    static_cast<Core*>(ctx)->setThermostatRuntime(en);
+}
+
+static void setBatterySaverThunk(void* ctx, bool en) {
+    static_cast<Core*>(ctx)->setBatterySaverRuntime(en);
+}
+
+static bool setInputRuntimeThunk(void* ctx, uint16_t id, bool en) {
+    Core* c = static_cast<Core*>(ctx);
+    const int8_t idx = c->getInputs().findIndexById(id);
+    if (idx < 0) return false;
+    c->getInputs().setRuntimeEnabled((uint8_t)idx, en);
+    return true;
+}
+
+static bool setInputTriggerThunk(void* ctx, uint16_t id, bool en) {
+    Core* c = static_cast<Core*>(ctx);
+    const auto& cfg = config.getBase();
+    for (uint8_t i = 0; i < cfg.input_triggers_count && i < Limits::MAX_TRIGGERS; i++) {
+        if (cfg.input_triggers[i].id == id) {
+            c->setTriggerRuntime(i, en);
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool setTempTriggerThunk(void* ctx, uint16_t id, bool en) {
+    Core* c = static_cast<Core*>(ctx);
+    const auto& cfg = config.getBase();
+    for (uint8_t i = 0; i < cfg.temperature_triggers_count && i < Limits::MAX_TRIGGERS; i++) {
+        if (cfg.temperature_triggers[i].id == id) {
+            c->setTempTriggerRuntime(i, en);
+            return true;
+        }
+    }
+    return false;
 }
 
 static void logHeapTag_(const char* tag) {
@@ -89,7 +134,19 @@ bool Core::begin() {
     config.setWdtPort(WdtPort{this, wdtFeedThunk, cooperateThunk});
 
     impl.ports.wdt = WdtPort{this, wdtFeedThunk, cooperateThunk};
-    impl.ports.control = AppControlPort{this, requestRebootThunk, startProgramThunk, startOtaUpdateThunk, factoryResetThunk};
+    impl.ports.control = AppControlPort{
+        this,
+        requestRebootThunk,
+        startProgramThunk,
+        stopProgramThunk,
+        startOtaUpdateThunk,
+        factoryResetThunk,
+        setThermostatThunk,
+        setBatterySaverThunk,
+        setInputRuntimeThunk,
+        setInputTriggerThunk,
+        setTempTriggerThunk,
+    };
     logger.log("[Core] begin() done\n");
     impl.modeManager.init(webServer, impl.gsm, impl.mqtt, config, impl.otaHandler);
     impl.modeManager.switchMode(CoreMode::BOOT);

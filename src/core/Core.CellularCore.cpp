@@ -71,7 +71,8 @@ void CellularCore::service() {
             _mqttStarted = true;
         }
         if (_mqttStarted) {
-            // Avoid hammering MQTT while modem TCP is mid-CIPSEND / connecting.
+            // Avoid hammering MQTT policy while modem TCP is mid-CIPSEND / connecting.
+            // Transport still ticks from GSM update; +IPD can buffer until bus is idle.
             if (!_gsm->tcpBusBusy()) {
                 _mqtt->loop();
             }
@@ -107,12 +108,10 @@ void CellularCore::suspend() {
         // Stop reconnect; stage offline + DISCONNECT and briefly drain while GSM is still up.
         _mqtt->setReconnectEnabled(false);
         _mqtt->disconnect();
-        for (uint8_t i = 0; i < 40; ++i) {
+        for (uint8_t i = 0; i < 50; ++i) {
             _gsm->update();
             _mqtt->loop();
-            if (!_gsm->tcpBusBusy()) {
-                // Another tick after bus idle to finish DISCONNECT if still pending.
-                _mqtt->loop();
+            if (!_mqtt->needsDisconnectDrain() && !_gsm->tcpBusBusy()) {
                 break;
             }
             yield();

@@ -27,13 +27,21 @@ struct WdtPort {
 struct AppControlPort {
     void* ctx{nullptr};
     void (*requestReboot)(void* ctx, uint32_t delayMs){nullptr};
-    void (*startProgram)(void* ctx, uint8_t programId){nullptr};
+    /// Returns false if program could not start.
+    bool (*startProgram)(void* ctx, uint8_t programId){nullptr};
+    void (*stopProgram)(void* ctx){nullptr};
     void (*startOtaUpdate)(void* ctx){nullptr};
     void (*factoryReset)(void* ctx){nullptr};
+
+    void (*setThermostat)(void* ctx, bool en){nullptr};
+    void (*setBatterySaver)(void* ctx, bool en){nullptr};
+    /// Returns false if id not found.
+    bool (*setInputRuntime)(void* ctx, uint16_t id, bool en){nullptr};
+    bool (*setInputTrigger)(void* ctx, uint16_t id, bool en){nullptr};
+    bool (*setTempTrigger)(void* ctx, uint16_t id, bool en){nullptr};
 };
 
 struct AppPorts {
     WdtPort wdt;
     AppControlPort control;
 };
-

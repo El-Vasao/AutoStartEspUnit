@@ -17,12 +17,6 @@
 
 #include "common/Logger.h"
 
-void GSMController::logTcpStats() {
-    logger.log("[GSMController] TCP: connected=%u connecting=%u\n",
-               (unsigned)_stack.tcp.isConnected(),
-               (unsigned)_stack.tcp.isConnecting());
-}
-
 void GSMController::ev(uint8_t type, uint16_t aux) {
     _ev[_evHead] = { millis(), type, (uint8_t)_state, aux };
     _evHead = (uint8_t)((_evHead + 1) % EVENT_RING_SIZE);
@@ -38,4 +32,3 @@ void GSMController::readOperator() {
     // Ответ парсится в `handleUrc()` по строке `+COPS:` (без TinyGSM / без heap-String).
     sendAt("AT+COPS?", "COPS", AwaitKind::NONE, 0);
 }
-

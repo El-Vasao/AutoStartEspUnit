@@ -151,6 +151,7 @@ void Core::handleBoot() {
             case CorePrivate::BootStage::InitManagers: {
                 logger.log("[Core] BOOT: InitManagers\n");
                 impl.mqtt.setAppPorts(&impl.ports);
+                impl.programExecutor.setLifecycleCallback(&MQTTClient::onProgramLifecycleThunk, &impl.mqtt);
                 impl.cellular.init(impl.gsm, impl.mqtt, webServer);
                 impl.triggerManager.begin();
                 impl.batterySaverManager.begin();

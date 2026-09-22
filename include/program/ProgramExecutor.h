@@ -41,6 +41,13 @@ public:
     // Возвращает true только во время выполнения шага STARTER_*.
     bool isInStarterStep() const;
 
+    /// MQTT / UI: finished=true штатно; false = stop/abort.
+    using LifecycleCb = void (*)(void* ctx, uint8_t programId, bool finishedOk);
+    void setLifecycleCallback(LifecycleCb cb, void* ctx) {
+        _lifecycleCb = cb;
+        _lifecycleCtx = ctx;
+    }
+
 private:
     struct StepRuntime {
         uint8_t phase;        ///< 0 = init/idle, >0 = определяется действием
@@ -69,12 +76,15 @@ private:
     ActionId* _localActions;                             ///< указатель на _localActionsArr пока программа бежит
     uint8_t _localStepCount;                          ///< количество шагов в локальной копии
 
+    LifecycleCb _lifecycleCb{nullptr};
+    void* _lifecycleCtx{nullptr};
+
     static ActionId compileAction(const char* action);
     ActionId currentActionId() const;
 
     void executeStep(const CompiledStep& step, ActionId actionId);
     void nextStep();
-    void finish();
+    void finish(bool ok);
     void abort();
     void abortWithError();
 };

@@ -151,7 +151,7 @@ void ProgramExecutor::update() {
                 logger.log("[ProgramExecutor] Starter failed after retries, finishing program\n");
                 _starter.phase = 0;
                 _starter.attemptsLeft = 0;
-                finish();
+                finish(false);
                 return;
             }
 

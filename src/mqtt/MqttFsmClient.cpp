@@ -73,8 +73,7 @@ void MqttFsmClient::requestDisconnect() {
 }
 
 void MqttFsmClient::resetSession_() {
-    _txLen = 0;
-    _txOff = 0;
+    clearTxQueue_();
     _rxLen = 0;
     _tcpConnectStartMs = 0;
     _mqttHandshakeStartMs = 0;
@@ -85,6 +84,62 @@ void MqttFsmClient::resetSession_() {
     _awaitingSuback = false;
     _subPacketId = 0;
     _subTopic[0] = '\0';
+}
+
+void MqttFsmClient::clearTxQueue_() {
+    _txQHead = 0;
+    _txQTail = 0;
+    _txQCount = 0;
+    _txOff = 0;
+    for (uint8_t i = 0; i < TX_Q_DEPTH; i++) {
+        _txQLen[i] = 0;
+        _txQClass[i] = OutClass::Ctrl;
+    }
+}
+
+int MqttFsmClient::findReplaceableTele_() const {
+    for (uint8_t i = 0; i < _txQCount; i++) {
+        const uint8_t idx = (uint8_t)((_txQHead + i) % TX_Q_DEPTH);
+        if (_txQClass[idx] != OutClass::Tele) continue;
+        if (i == 0 && _txOff != 0) continue; // mid-send head
+        return (int)idx;
+    }
+    return -1;
+}
+
+bool MqttFsmClient::beginQueueSlot_(OutClass cls, uint8_t*& buf, uint16_t& cap) {
+    if (cls == OutClass::Tele) {
+        // After enqueue must leave ≥1 free slot for Ctrl.
+        if (freeSlots_() < 2) return false;
+    } else if (!queueHasRoom_()) {
+        return false;
+    }
+    buf = _txQ[_txQTail];
+    cap = TX_MAX;
+    return true;
+}
+
+void MqttFsmClient::commitQueueSlot_(uint16_t len, OutClass cls) {
+    if (len == 0 || len > TX_MAX) return;
+    _txQLen[_txQTail] = len;
+    _txQClass[_txQTail] = cls;
+    _txQTail = (uint8_t)((_txQTail + 1u) % TX_Q_DEPTH);
+    _txQCount++;
+}
+
+bool MqttFsmClient::beginReplaceTeleSlot_(uint8_t*& buf, uint16_t& cap, uint8_t& slotIdxOut) {
+    const int idx = findReplaceableTele_();
+    if (idx < 0) return false;
+    slotIdxOut = (uint8_t)idx;
+    buf = _txQ[slotIdxOut];
+    cap = TX_MAX;
+    return true;
+}
+
+void MqttFsmClient::commitReplaceTeleSlot_(uint8_t slotIdx, uint16_t len) {
+    if (slotIdx >= TX_Q_DEPTH || len == 0 || len > TX_MAX) return;
+    _txQLen[slotIdx] = len;
+    _txQClass[slotIdx] = OutClass::Tele;
 }
 
 void MqttFsmClient::setError_(const char* reason) {
@@ -104,13 +159,11 @@ bool MqttFsmClient::subscribe(const char* topic) {
     return true;
 }
 
-bool MqttFsmClient::publish(const char* topic, const uint8_t* payload, uint16_t len, bool retained) {
+bool MqttFsmClient::publish(const char* topic, const uint8_t* payload, uint16_t len, bool retained, bool control) {
     if (!topic || !topic[0]) return false;
     if (!payload && len) return false;
     if (_state != State::Connected) return false;
-    if (_txLen != 0) return false; // single outstanding packet for simplicity
-    if (!buildPublish_(topic, payload, len, retained)) return false;
-    return true;
+    return buildPublish_(topic, payload, len, retained, control ? OutClass::Ctrl : OutClass::Tele);
 }
 
 void MqttFsmClient::tick(const Budgets& b) {
@@ -128,9 +181,9 @@ void MqttFsmClient::tick(const Budgets& b) {
     };
 
     if (_disconnectRequested) {
-        // Drain any staged PUBLISH (e.g. retained offline) before DISCONNECT+TCP stop.
+        // Drain outbound queue (e.g. retained offline) before DISCONNECT+TCP stop.
         doWrite();
-        if (_txLen != 0) return;
+        if (_txQCount != 0) return;
         if (_state == State::Connected) {
             (void)buildDisconnect_();
             doWrite();
@@ -162,7 +215,7 @@ void MqttFsmClient::tick(const Budgets& b) {
 
     if (_state == State::MqttConnecting) {
         // Send CONNECT once.
-        if (_txLen == 0 && _lastTxMs == 0) {
+        if (_txQCount == 0 && _lastTxMs == 0) {
             if (!buildConnect_()) {
                 setError_("connect_build");
                 return;
@@ -183,8 +236,8 @@ void MqttFsmClient::tick(const Budgets& b) {
     }
 
     if (_state == State::Connected) {
-        // Subscribe request (single topic)
-        if (_subRequested && !_awaitingSuback && _txLen == 0) {
+        // Subscribe request (single topic) — enqueue when a queue slot is free.
+        if (_subRequested && !_awaitingSuback && queueHasRoom_()) {
             if (buildSubscribe_(_subTopic)) {
                 _awaitingSuback = true;
                 _subRequested = false;
@@ -194,7 +247,7 @@ void MqttFsmClient::tick(const Budgets& b) {
         maybeSendPing_(now);
         doWrite();
         doRead();
-        // Cmd handler may stage a reply during doRead — flush it this tick.
+        // Cmd handler may enqueue a reply during doRead — flush this tick.
         doWrite();
 
         // If underlying transport dropped, go back to connect.
@@ -253,8 +306,7 @@ bool MqttFsmClient::ensureTcp_() {
 void MqttFsmClient::maybeSendPing_(uint32_t now) {
     if (_cfg.keepAliveSec == 0) return;
     const uint32_t kaMs = (uint32_t)_cfg.keepAliveSec * 1000UL;
-    if (_txLen != 0) return;
-    // If we received anything recently, no need to ping.
+    // Ctrl slot may still be free while Tele is queued — beginQueueSlot_(Ctrl) enforces reserve.
     const uint32_t last = (_lastRxMs != 0) ? _lastRxMs : _lastTxMs;
     if (last != 0 && (now - last) < (kaMs / 2)) return;
     if (_lastPingMs != 0 && (now - _lastPingMs) < (kaMs / 2)) return;
@@ -268,26 +320,30 @@ bool MqttFsmClient::pastDeadline_(uint32_t deadlineMs) {
 }
 
 void MqttFsmClient::pumpWrite_(uint16_t maxBytes, uint32_t deadlineMs) {
-    if (_txLen == 0) return;
-    uint16_t remaining = (uint16_t)(_txLen - _txOff);
-    if (remaining == 0) {
-        _txLen = 0;
+    if (_txQCount == 0) return;
+    uint8_t* pkt = _txQ[_txQHead];
+    uint16_t pktLen = _txQLen[_txQHead];
+    if (pktLen == 0) {
+        _txQHead = (uint8_t)((_txQHead + 1u) % TX_Q_DEPTH);
+        _txQCount--;
         _txOff = 0;
         return;
     }
+    uint16_t remaining = (uint16_t)(pktLen - _txOff);
     uint16_t budget = maxBytes;
     while (budget && remaining) {
         if (pastDeadline_(deadlineMs)) break;
         const uint16_t chunk = (remaining < budget) ? remaining : budget;
-        const size_t w = _net.write(_tx + _txOff, chunk);
+        const size_t w = _net.write(pkt + _txOff, chunk);
         if (w == 0) break;
         _txOff += (uint16_t)w;
         budget -= (uint16_t)w;
-        remaining = (uint16_t)(_txLen - _txOff);
+        remaining = (uint16_t)(pktLen - _txOff);
         _lastTxMs = millis();
     }
-    if (_txOff >= _txLen) {
-        _txLen = 0;
+    if (_txOff >= pktLen) {
+        _txQHead = (uint8_t)((_txQHead + 1u) % TX_Q_DEPTH);
+        _txQCount--;
         _txOff = 0;
     }
 }
@@ -367,9 +423,15 @@ bool MqttFsmClient::parseOneFrame_() {
     } else if (pktType == 9 /* SUBACK */) {
         if (remLen >= 3) {
             const uint16_t pid = (uint16_t)((p[0] << 8) | p[1]);
+            const uint8_t rc = p[2];
             (void)pid;
             _awaitingSuback = false;
             _subPacketId = 0;
+            logger.log("[MqttFsm] SUBACK rc=%u\n", (unsigned)rc);
+            if (rc == 0x80) {
+                // Broker refused — re-queue subscribe.
+                _subRequested = true;
+            }
         }
     } else if (pktType == 3 /* PUBLISH */) {
         // QoS0 only
@@ -445,7 +507,7 @@ bool MqttFsmClient::decodeRemainingLen_(const uint8_t* p, uint16_t cap, uint32_t
 }
 
 bool MqttFsmClient::buildConnect_() {
-    if (_txLen != 0) return false;
+    if (!queueHasRoom_()) return false;
     if (!_cfg.clientId || !_cfg.clientId[0]) return false;
 
     // Variable header
@@ -506,48 +568,46 @@ bool MqttFsmClient::buildConnect_() {
     const uint8_t rlLen = encodeRemainingLen_(remLen, rl);
 
     const uint16_t total = (uint16_t)(1 + rlLen + vhLen + plLen);
-    if (total > sizeof(_tx)) return false;
+    uint8_t* slot = nullptr;
+    uint16_t cap = 0;
+    if (!beginQueueSlot_(OutClass::Ctrl, slot, cap) || total > cap) return false;
 
     uint16_t off = 0;
-    _tx[off++] = 0x10; // CONNECT
-    memcpy(_tx + off, rl, rlLen);
+    slot[off++] = 0x10; // CONNECT
+    memcpy(slot + off, rl, rlLen);
     off += rlLen;
-    memcpy(_tx + off, vh, vhLen);
+    memcpy(slot + off, vh, vhLen);
     off += vhLen;
-    memcpy(_tx + off, pl, plLen);
+    memcpy(slot + off, pl, plLen);
     off += plLen;
 
-    _txLen = off;
-    _txOff = 0;
-    // CONNECT is staged in `_tx` until `pumpWrite_()` actually sends bytes.
-    // Do not mark `_lastTxMs` here, otherwise keepalive heuristics think we "talked recently"
-    // while the modem may still be buffering/waiting for prompt.
+    commitQueueSlot_(off, OutClass::Ctrl);
+    // CONNECT staged until pumpWrite_ sends bytes — do not mark lastTx yet.
     _lastTxMs = 0;
     return true;
 }
 
 bool MqttFsmClient::buildDisconnect_() {
-    if (_txLen != 0) return false;
-    _tx[0] = 0xE0;
-    _tx[1] = 0x00;
-    _txLen = 2;
-    _txOff = 0;
-    _lastTxMs = millis();
+    uint8_t* slot = nullptr;
+    uint16_t cap = 0;
+    if (!beginQueueSlot_(OutClass::Ctrl, slot, cap) || cap < 2) return false;
+    slot[0] = 0xE0;
+    slot[1] = 0x00;
+    commitQueueSlot_(2, OutClass::Ctrl);
     return true;
 }
 
 bool MqttFsmClient::buildPingreq_() {
-    if (_txLen != 0) return false;
-    _tx[0] = 0xC0;
-    _tx[1] = 0x00;
-    _txLen = 2;
-    _txOff = 0;
-    _lastTxMs = millis();
+    uint8_t* slot = nullptr;
+    uint16_t cap = 0;
+    if (!beginQueueSlot_(OutClass::Ctrl, slot, cap) || cap < 2) return false;
+    slot[0] = 0xC0;
+    slot[1] = 0x00;
+    commitQueueSlot_(2, OutClass::Ctrl);
     return true;
 }
 
 bool MqttFsmClient::buildSubscribe_(const char* topic) {
-    if (_txLen != 0) return false;
     if (!topic || !topic[0]) return false;
     if (_state != State::Connected) return false;
 
@@ -566,24 +626,25 @@ bool MqttFsmClient::buildSubscribe_(const char* topic) {
     uint8_t rl[4];
     const uint8_t rlLen = encodeRemainingLen_(remLen, rl);
     const uint16_t total = (uint16_t)(1 + rlLen + 2 + plLen);
-    if (total > sizeof(_tx)) return false;
+
+    uint8_t* slot = nullptr;
+    uint16_t cap = 0;
+    if (!beginQueueSlot_(OutClass::Ctrl, slot, cap) || total > cap) return false;
 
     uint16_t off = 0;
-    _tx[off++] = 0x82; // SUBSCRIBE (type=8, flags=0010)
-    memcpy(_tx + off, rl, rlLen);
+    slot[off++] = 0x82; // SUBSCRIBE (type=8, flags=0010)
+    memcpy(slot + off, rl, rlLen);
     off += rlLen;
-    off += writeU16_(_tx + off, pid);
-    memcpy(_tx + off, pl, plLen);
+    off += writeU16_(slot + off, pid);
+    memcpy(slot + off, pl, plLen);
     off += plLen;
 
-    _txLen = off;
-    _txOff = 0;
-    _lastTxMs = millis();
+    commitQueueSlot_(off, OutClass::Ctrl);
     return true;
 }
 
-bool MqttFsmClient::buildPublish_(const char* topic, const uint8_t* payload, uint16_t len, bool retained) {
-    if (_txLen != 0) return false;
+bool MqttFsmClient::buildPublish_(const char* topic, const uint8_t* payload, uint16_t len, bool retained,
+                                  OutClass cls) {
     if (!topic || !topic[0]) return false;
     const uint16_t topicLen = (uint16_t)strnlen(topic, 255);
     if (topicLen == 0 || topicLen > 255) return false;
@@ -591,39 +652,51 @@ bool MqttFsmClient::buildPublish_(const char* topic, const uint8_t* payload, uin
     const uint32_t remLen = 2 + topicLen + len;
     uint8_t rl[4];
     const uint8_t rlLen = encodeRemainingLen_(remLen, rl);
-
     const uint16_t total = (uint16_t)(1 + rlLen + 2 + topicLen + len);
-    if (total > sizeof(_tx)) {
+
+    uint8_t* slot = nullptr;
+    uint16_t cap = 0;
+    uint8_t replaceIdx = 0;
+    const bool coalesce = (cls == OutClass::Tele) && beginReplaceTeleSlot_(slot, cap, replaceIdx);
+    if (!coalesce) {
+        if (!beginQueueSlot_(cls, slot, cap)) return false;
+    }
+    if (total > cap) {
         logger.log("[MqttFsm] PUBLISH too large: need=%u txMax=%u (topicLen=%u payloadLen=%u)\n",
-                   (unsigned)total, (unsigned)sizeof(_tx), (unsigned)topicLen, (unsigned)len);
+                   (unsigned)total, (unsigned)cap, (unsigned)topicLen, (unsigned)len);
         return false;
     }
 
     uint16_t off = 0;
     uint8_t hdr = 0x30; // PUBLISH QoS0
     if (retained) hdr |= 0x01;
-    _tx[off++] = hdr;
-    memcpy(_tx + off, rl, rlLen);
+    slot[off++] = hdr;
+    memcpy(slot + off, rl, rlLen);
     off += rlLen;
-    _tx[off++] = (uint8_t)(topicLen >> 8);
-    _tx[off++] = (uint8_t)(topicLen & 0xFF);
-    memcpy(_tx + off, topic, topicLen);
+    slot[off++] = (uint8_t)(topicLen >> 8);
+    slot[off++] = (uint8_t)(topicLen & 0xFF);
+    memcpy(slot + off, topic, topicLen);
     off += topicLen;
     if (len) {
-        memcpy(_tx + off, payload, len);
+        memcpy(slot + off, payload, len);
         off += len;
     }
-    _txLen = off;
-    _txOff = 0;
-    _lastTxMs = millis();
+    if (coalesce) {
+        commitReplaceTeleSlot_(replaceIdx, off);
+    } else {
+        commitQueueSlot_(off, cls);
+    }
+    // lastTx only in pumpWrite_ after real UART bytes leave.
     return true;
 }
 
 bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn encoder, void* ctx,
-                                          uint16_t maxPayloadBytes, bool retained, size_t* measuredBytesOut) {
+                                          uint16_t maxPayloadBytes, bool retained, bool control,
+                                          size_t* measuredBytesOut) {
     if (!topic || !topic[0] || !encoder) return false;
     if (_state != State::Connected) return false;
-    if (_txLen != 0) return false;
+
+    const OutClass cls = control ? OutClass::Ctrl : OutClass::Tele;
 
     JsonCountingPrint measure;
     const size_t mj = encoder(measure, ctx);
@@ -643,24 +716,32 @@ bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn 
     uint8_t rl[4];
     const uint8_t rlLen = encodeRemainingLen_(remLen, rl);
     const uint16_t total = (uint16_t)(1U + (uint32_t)rlLen + 2U + (uint32_t)topicLen + (uint32_t)mj);
-    if (total > sizeof(_tx)) {
+
+    uint8_t* slot = nullptr;
+    uint16_t cap = 0;
+    uint8_t replaceIdx = 0;
+    const bool coalesce = (cls == OutClass::Tele) && beginReplaceTeleSlot_(slot, cap, replaceIdx);
+    if (!coalesce) {
+        if (!beginQueueSlot_(cls, slot, cap)) return false;
+    }
+    if (total > cap) {
         logger.log("[MqttFsm] publishJson: packet too large total=%u txMax=%u topicLen=%u json=%u\n",
-                   (unsigned)total, (unsigned)sizeof(_tx), (unsigned)topicLen, (unsigned)mj);
+                   (unsigned)total, (unsigned)TX_MAX, (unsigned)topicLen, (unsigned)mj);
         return false;
     }
 
     uint16_t off = 0;
     uint8_t hdr = 0x30;
     if (retained) hdr |= 0x01;
-    _tx[off++] = hdr;
-    memcpy(_tx + off, rl, rlLen);
+    slot[off++] = hdr;
+    memcpy(slot + off, rl, rlLen);
     off += rlLen;
-    _tx[off++] = (uint8_t)(topicLen >> 8);
-    _tx[off++] = (uint8_t)(topicLen & 0xFF);
-    memcpy(_tx + off, topic, topicLen);
+    slot[off++] = (uint8_t)(topicLen >> 8);
+    slot[off++] = (uint8_t)(topicLen & 0xFF);
+    memcpy(slot + off, topic, topicLen);
     off += topicLen;
 
-    JsonIntoBufferPrint jp(_tx + off, sizeof(_tx) - off);
+    JsonIntoBufferPrint jp(slot + off, (size_t)(cap - off));
     const size_t w = encoder(jp, ctx);
     if (jp.overflowed() || w != mj) {
         logger.log("[MqttFsm] publishJson: encode mismatch wrote=%u expected=%u overflow=%u\n", (unsigned)w,
@@ -669,9 +750,12 @@ bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn 
     }
     off += (uint16_t)w;
 
-    _txLen = off;
-    _txOff = 0;
-    _lastTxMs = millis();
+    if (coalesce) {
+        commitReplaceTeleSlot_(replaceIdx, off);
+    } else {
+        commitQueueSlot_(off, cls);
+    }
+    // lastTx only in pumpWrite_ after real UART bytes leave.
     return true;
 }
 

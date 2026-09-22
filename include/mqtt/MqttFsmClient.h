@@ -7,6 +7,7 @@
 // Goals:
 // - no dynamic allocation
 // - strict per-tick budgets (caller controls read/write pumping)
+// - outbound packet queue with Ctrl vs Tele priority (reserve + status coalesce)
 // - supports: CONNECT (3.1): will QoS 0..2, retained will; CONNACK, SUBSCRIBE QoS0, SUBACK, PUBLISH QoS0, PINGREQ/PINGRESP, DISCONNECT
 class MqttFsmClient {
 public:
@@ -19,6 +20,9 @@ public:
         Connected,
         Error,
     };
+
+    /// Outbound priority: control (session/presence/replies) vs telemetry (status).
+    enum class OutClass : uint8_t { Ctrl, Tele };
 
     struct Config {
         const char* host{nullptr};
@@ -67,17 +71,22 @@ public:
     State state() const { return _state; }
     bool isConnected() const { return _state == State::Connected; }
     bool isDisconnectPending() const { return _disconnectRequested; }
+    /// True until SUBSCRIBE is built and SUBACK observed (or no subscribe was requested).
+    bool isSubscribePending() const { return _subRequested || _awaitingSuback; }
+    /// True while any outbound MQTT packet is queued or mid-write.
+    bool hasOutbound() const { return _txQCount != 0; }
 
     // Subscribe QoS0. Allowed in Connected state; queued otherwise.
     bool subscribe(const char* topic);
 
-    // Publish QoS0. Returns false if cannot queue now.
-    bool publish(const char* topic, const uint8_t* payload, uint16_t len, bool retained);
+    // Publish QoS0. `control=true` uses Ctrl class (may fill last free slot).
+    // `control=false` is Tele: requires reserve or coalesces pending status.
+    bool publish(const char* topic, const uint8_t* payload, uint16_t len, bool retained, bool control = true);
 
-    /** Publish QoS0 JSON: byte-length preflight via `measure(Print&)` then serialize into TX buffer. */
+    /** Publish QoS0 JSON into a queue slot (or coalesce Tele). */
     using JsonPrintEncodeFn = size_t (*)(Print& p, void* ctx);
     bool publishPrintedMeasured(const char* topic, JsonPrintEncodeFn encoder, void* ctx, uint16_t maxPayloadBytes,
-                                bool retained, size_t* measuredBytesOut = nullptr);
+                                bool retained, bool control = false, size_t* measuredBytesOut = nullptr);
 
     // Millis of last rx activity (any valid MQTT frame).
     uint32_t lastRxMs() const { return _lastRxMs; }
@@ -112,21 +121,35 @@ private:
     static constexpr uint8_t TOPIC_MAX = 56;
     char _subTopic[TOPIC_MAX]{};
 
-    // TX staging buffer (single packet at a time).
-    // Wire: 1 (fixed hdr) + up to 4 (remaining length) + 2 (topic len) + topicLen + payloadLen <= TX_MAX.
+    // Outbound packet queue: wire-ready MQTT frames.
+    // Depth 3: Ctrl reserve + one Tele (coalesced) + one in-flight Ctrl (SUBSCRIBE/online/PING).
     static constexpr uint16_t TX_MAX = 1024;
-    uint8_t _tx[TX_MAX]{};
-    uint16_t _txLen{0};
-    uint16_t _txOff{0};
+    static constexpr uint8_t TX_Q_DEPTH = 3;
+    uint8_t _txQ[TX_Q_DEPTH][TX_MAX]{};
+    uint16_t _txQLen[TX_Q_DEPTH]{};
+    OutClass _txQClass[TX_Q_DEPTH]{};
+    uint8_t _txQHead{0};  ///< next packet to send
+    uint8_t _txQTail{0};  ///< next free slot
+    uint8_t _txQCount{0};
+    uint16_t _txOff{0};   ///< byte offset into head packet while writing
 
-    // RX frame assembly (header + remaining length + payload). Must cover worst-case cmd PUBLISH (topic + CMD_JSON_MAX).
+    // RX frame assembly
     static constexpr uint16_t RX_MAX = 320;
     uint8_t _rx[RX_MAX]{};
     uint16_t _rxLen{0};
 
-    // Helpers
     void resetSession_();
     void setError_(const char* reason);
+    void clearTxQueue_();
+    bool queueHasRoom_() const { return _txQCount < TX_Q_DEPTH; }
+    uint8_t freeSlots_() const { return (uint8_t)(TX_Q_DEPTH - _txQCount); }
+    /// Index of replaceable Tele slot, or -1. Skips mid-send head.
+    int findReplaceableTele_() const;
+    bool beginQueueSlot_(OutClass cls, uint8_t*& buf, uint16_t& cap);
+    void commitQueueSlot_(uint16_t len, OutClass cls);
+    /// Overwrite an existing Tele slot (coalesce).
+    bool beginReplaceTeleSlot_(uint8_t*& buf, uint16_t& cap, uint8_t& slotIdxOut);
+    void commitReplaceTeleSlot_(uint8_t slotIdx, uint16_t len);
 
     bool ensureTcp_();
     void maybeSendPing_(uint32_t now);
@@ -134,20 +157,16 @@ private:
     void pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uint32_t deadlineMs);
     static bool pastDeadline_(uint32_t deadlineMs);
 
-    // Packet builders (write into _tx)
     bool buildConnect_();
     bool buildDisconnect_();
     bool buildPingreq_();
     bool buildSubscribe_(const char* topic);
-    bool buildPublish_(const char* topic, const uint8_t* payload, uint16_t len, bool retained);
+    bool buildPublish_(const char* topic, const uint8_t* payload, uint16_t len, bool retained, OutClass cls);
 
-    // Parsers
     bool parseOneFrame_();
 
-    // Encoding utils
     static uint16_t writeU16_(uint8_t* p, uint16_t v) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)(v & 0xFF); return 2; }
     static uint16_t putStr_(uint8_t* p, uint16_t cap, const char* s);
     static uint8_t encodeRemainingLen_(uint32_t len, uint8_t out[4]);
     static bool decodeRemainingLen_(const uint8_t* p, uint16_t cap, uint32_t& outLen, uint8_t& outUsed);
 };
-

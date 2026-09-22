@@ -100,13 +100,15 @@ bool Sim800TcpTransport::inPostSendQuiet_(uint32_t now) const {
 }
 
 bool Sim800TcpTransport::shouldDeferMqttRead() const {
-    if (hasBufferedTx()) return true;
-    return inPostSendQuiet_(nowMs_());
+    // Only while TX owns the bus — do not defer on post-send quiet so +IPD/cmd drain promptly.
+    return hasBufferedTx();
 }
 
-bool Sim800TcpTransport::discardingTcpPayload_() const {
-    // Only while CIPSEND owns the UART. Do NOT discard during post-send quiet —
-    // CONNACK often arrives in that window and must reach the MQTT RX ring.
+bool Sim800TcpTransport::discardingTcpPayload_(bool fromIpd) const {
+    // Framed +IPD is real TCP payload (CONNACK/SUBACK/PINGRESP often arrive mid-CIPSEND).
+    if (fromIpd) return false;
+    // Raw sniff path during send-epoch is usually modem echo/URC junk — keep it out of MQTT RX.
+    // Do NOT discard during post-send quiet: CONNACK often lands there without a new +IPD frame edge.
     return _sendInProgress || _modemTxLocked;
 }
 
@@ -429,7 +431,7 @@ void Sim800TcpTransport::onByte(char c) {
             }
             break;
         case IpState::ReadData:
-            pushRx_((uint8_t)c);
+            pushRx_((uint8_t)c, true);
             if (++_ipRead >= _ipLen) {
                 _at.uart().setDataMode(false);
                 _ipState = IpState::Idle;
@@ -528,9 +530,8 @@ void Sim800TcpTransport::onByte(char c) {
     _rawLineLen = 0;
 }
 
-void Sim800TcpTransport::pushRx_(uint8_t b) {
-    // Drop TCP bytes during CIPSEND / post-send quiet (modem junk must not fill MQTT RX).
-    if (discardingTcpPayload_()) return;
+void Sim800TcpTransport::pushRx_(uint8_t b, bool fromIpd) {
+    if (discardingTcpPayload_(fromIpd)) return;
     if (_rxCount >= RX_SIZE) {
         // drop oldest
         _rxHead = (uint16_t)((_rxHead + 1) % RX_SIZE);

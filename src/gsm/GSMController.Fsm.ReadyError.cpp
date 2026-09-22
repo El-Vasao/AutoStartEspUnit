@@ -106,11 +106,6 @@ void GSMController::handleReady() {
             readOperator();
         }
     }
-    static uint32_t lastTcpStatsMs = 0;
-    if (now - lastTcpStatsMs >= GSM::READY_TCP_STATS_INTERVAL_MS) {
-        lastTcpStatsMs = now;
-        logTcpStats();
-    }
 }
 
 void GSMController::handleError() {

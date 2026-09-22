@@ -58,6 +58,7 @@
 - Единый `takeResult`: TCP CIP* теги → `Sim800TcpTransport::consumeAtResult`, иначе GSM await absorb.
 - RX по умолчанию: **`+IPD`** и `AT+CIPRXGET=0` (push mode).
 - Payload внутри `+IPD` — **бинарный**; пока принимается тело IP-пакета, `ModemUart` переводится в `dataMode` (выключается line-framing для URC), чтобы сырой поток не ломал парсеры строк.
+- **Selective discard во время CIPSEND:** сырой (non-`+IPD`) путь в MQTT RX дропается, пока `_sendInProgress || _modemTxLocked`; байты из framed `+IPD` ReadData **принимаются** (CONNACK/SUBACK/PINGRESP часто приходят mid-send). Post-send quiet не дропает payload — только откладывает MQTT parse через `shouldDeferMqttRead()`.
 
 ### 3а) CellularCore glue
 
@@ -96,11 +97,11 @@ MQTT реализован **в прошивке** как неблокирующ�
 
 **Тихий парсинг URC:** `+CREG`/`+CGATT` обновляют состояние без спама. **`+CSQ`** логируется только при заметном изменении RSSI (порог `GSM::URC_RSSI_LOG_DELTA` в [`Constants.h`](../../include/common/Constants.h)); **`+COPS`** — только при смене строки оператора.
 
-**TCP (`Sim800Tcp`):** подключение/обрыв/ошибка accept — краткие фиксированные строки. Детали (**`+IPD`**, «CIPSTART accepted») включаются только при сборке с **`SERIAL_DEBUG`** или если **`Sim800Tcp::TCP_VERBOSE_LOG`** в `Constants.h` выставлен в `true`.
+**TCP (`Sim800Tcp`):** подключение/обрыв/ошибка accept — краткие фиксированные строки (без периодического heartbeat `TCP: connected=1`). Детали (**`+IPD`**, «CIPSTART accepted») включаются только при сборке с **`SERIAL_DEBUG`** или если **`Sim800Tcp::TCP_VERBOSE_LOG`** в `Constants.h` выставлен в `true`.
 
 ### Логи и Serial monitor
 
-- Ключевые логи — редкие, событийные (смена состояния, итоги TCP).
+- Ключевые логи — редкие, событийные (смена состояния, итоги TCP up/down).
 - Если модем делит **UART0 (`Serial`)** с USB-UART адаптером, в монитор могут попадать произвольные байты MQTT (`CIPSEND`), не интерпретируйте их как текстовые логи прошивки.
 
 Предпочтительно: прикладной лог через UI/SSE; низкий уровень — структурные сообщения вида `[Sim800Tcp]`, `[GSMController]`.
@@ -109,7 +110,8 @@ MQTT реализован **в прошивке** как неблокирующ�
 
 - Повторы `MQTT connect fails -> GSM reattach` должны быть rate-limited (не каждый тик цикла).
 - High-frequency RX snippets (`GSMController` ring tail) выводятся в `logSerialOnly`, а не в SSE, чтобы не забивать очередь `/events`.
-- На ключевых событиях деградации (`connect fails` порог, вход/выход OTA pressure окна) снимаются heap-метрики через `Core::logHeapSnapshot`.
+- Heap: периодический снимок не чаще `Timing::HEAP_SNAPSHOT_INTERVAL_MS` (5 мин) и только при сдвиге ≥ `HEAP_SNAPSHOT_DELTA_BYTES`; на деградации (`mqtt_connect_fail`, OTA/mode, `gsm_ready`) — tagged `Core::logHeapSnapshot`.
+- MQTT исходящие: краткие `[MQTTClient] pub avail online` / `pub status full|delta bytes=N` / `pub reply bytes=N` (без PING/SEND OK spam).
 
 ### Сценарии проверки
 
@@ -124,7 +126,7 @@ MQTT реализован **в прошивке** как неблокирующ�
 - После settle (`POST_BOOT_SETTLE_MS`) и GSM READY: TCP даёт `CONNECT OK`, затем успешный MQTT CONNECT (`CONNACK`).
 - Нет шторма `CIPSTART` во время `CIPSEND` / между `>` и `SEND OK`.
 - Ожидание логов: строка вида `[MQTTClient] Connected. subscribe=...` после подписки.
-- После успешного MQTT-сессии клиент публикует retained `"online"` на `{prefix}/avail` (см. [`mqtt.md`](mqtt.md)).
+- После успешного MQTT-сессии: `[MQTTClient] pub avail online`, затем `pub status full …`, далее периодически delta/skip.
 
 **3) UI при SoftAP**
 

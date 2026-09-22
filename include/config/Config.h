@@ -49,6 +49,9 @@ public:
     /** `{"programs":[{id,name},...]}` из `/programs/index.json` (для MQTT и др.). */
     bool emitProgramListWrapped(Print& p) const;
 
+    /** Только массив `[{id,name},...]` для обёртки reply envelope. */
+    bool emitProgramIndexArray(Print& p) const;
+
     bool isProgramUsed(uint8_t id) const;
     bool ensureProgramIndex();
 

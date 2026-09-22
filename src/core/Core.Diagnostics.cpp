@@ -7,26 +7,49 @@
 #include "common/Logger.h"
 #include "common/Utils.h"
 #include "common/EspHal.h"
+#include "common/Constants.h"
 
 #include <esp_system.h>
 
+namespace {
+
+uint32_t g_sessionMinFree = 0xFFFFFFFFu;
+uint32_t g_sessionMinMaxBlk = 0xFFFFFFFFu;
+uint32_t g_lastLoggedFree = 0;
+uint32_t g_lastLoggedMaxBlk = 0;
+bool g_heapEverLogged = false;
+
+uint32_t absDiffU32_(uint32_t a, uint32_t b) {
+    return (a >= b) ? (a - b) : (b - a);
+}
+
+bool heapMovedEnough_(uint32_t freeHeap, uint32_t maxBlock) {
+    if (!g_heapEverLogged) return true;
+    const uint32_t dFree = absDiffU32_(freeHeap, g_lastLoggedFree);
+    const uint32_t dBlk = absDiffU32_(maxBlock, g_lastLoggedMaxBlk);
+    return dFree >= Timing::HEAP_SNAPSHOT_DELTA_BYTES || dBlk >= Timing::HEAP_SNAPSHOT_DELTA_BYTES;
+}
+
+} // namespace
+
 void Core::logHeapSnapshot(const char* tag) const {
-    uint32_t freeHeap = espHalFreeHeap();
-    uint32_t maxBlock = espHalMaxBlock();
-    static uint32_t sessionMinFree = 0xFFFFFFFFu;
-    static uint32_t sessionMinMaxBlk = 0xFFFFFFFFu;
-    if (freeHeap < sessionMinFree) {
-        sessionMinFree = freeHeap;
+    const uint32_t freeHeap = espHalFreeHeap();
+    const uint32_t maxBlock = espHalMaxBlock();
+    if (freeHeap < g_sessionMinFree) {
+        g_sessionMinFree = freeHeap;
     }
-    if (maxBlock < sessionMinMaxBlk) {
-        sessionMinMaxBlk = maxBlock;
+    if (maxBlock < g_sessionMinMaxBlk) {
+        g_sessionMinMaxBlk = maxBlock;
     }
+    g_lastLoggedFree = freeHeap;
+    g_lastLoggedMaxBlk = maxBlock;
+    g_heapEverLogged = true;
     if (tag && tag[0]) {
         logger.log("[Core][%s] Heap: %u bytes, Max block: %u (since boot min free=%u min maxBlk=%u)\n", tag,
-                   freeHeap, maxBlock, sessionMinFree, sessionMinMaxBlk);
+                   freeHeap, maxBlock, g_sessionMinFree, g_sessionMinMaxBlk);
     } else {
         logger.log("[Core] Heap: %u bytes, Max block: %u (since boot min free=%u min maxBlk=%u)\n",
-                   freeHeap, maxBlock, sessionMinFree, sessionMinMaxBlk);
+                   freeHeap, maxBlock, g_sessionMinFree, g_sessionMinMaxBlk);
     }
 }
 
@@ -50,9 +73,12 @@ void Core::performPeriodicTasks(uint32_t now) {
         logger.log("[Core] Active error: %s\n", impl.errorManager.getMessage());
     }
 
-    if (every(Timing::ERROR_REPORT_INTERVAL_MS, impl.lastStatsPrint)) {
-        logHeapSnapshot(nullptr);
-        // ESP32-C3: heap frag auto-restart removed; snapshot is diagnostic only.
+    if (every(Timing::HEAP_SNAPSHOT_INTERVAL_MS, impl.lastStatsPrint)) {
+        const uint32_t freeHeap = espHalFreeHeap();
+        const uint32_t maxBlock = espHalMaxBlock();
+        if (heapMovedEnough_(freeHeap, maxBlock)) {
+            logHeapSnapshot(nullptr);
+        }
     }
 }
 
