@@ -53,7 +53,6 @@ void Sim800TcpTransport::reset() {
     _sendWatchMs = 0;
     _lastStackRecoverMs = 0;
     _lastConnectAttemptMs = 0;
-    _postSendQuietUntilMs = 0;
     _flushRequested = false;
     _rawLineLen = 0;
     _promptLeak = 0;
@@ -98,11 +97,6 @@ void Sim800TcpTransport::clearRx_() {
     _ipRead = 0;
 }
 
-bool Sim800TcpTransport::inPostSendQuiet_(uint32_t now) const {
-    if (_postSendQuietUntilMs == 0) return false;
-    return (int32_t)(now - _postSendQuietUntilMs) < 0;
-}
-
 bool Sim800TcpTransport::takeRxOverflow() {
     if (!_rxOverflow) return false;
     _rxOverflow = false;
@@ -114,11 +108,6 @@ bool Sim800TcpTransport::discardingTcpPayload_(bool fromIpd) const {
     // Raw (non-+IPD) bytes during send-epoch are modem echo/URC — keep them out of MQTT RX.
     if (fromIpd) return false;
     return _sendInProgress || _modemTxLocked;
-}
-
-void Sim800TcpTransport::beginPostSendQuiet_() {
-    // Defer MQTT parse briefly (SoftAP fairness); keep buffered TCP bytes.
-    _postSendQuietUntilMs = nowMs_() + Sim800Tcp::POST_SEND_QUIET_MS;
 }
 
 void Sim800TcpTransport::endSendEpoch_() {
@@ -300,7 +289,9 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
                        (unsigned)r.timedOut, (unsigned)r.error);
             _connecting = false;
             _connected = false;
+            _connectStartMs = 0;
             _lastConnectAttemptMs = _lastNowMs ? _lastNowMs : millis();
+            forceStackRecover_("cipstart_accept");
         } else if (r.ok) {
             if (kTcpWantVerbose) {
                 logger.log("[Sim800Tcp] CIPSTART accepted (waiting URC)\n");
@@ -316,7 +307,12 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
             _sendWatchMs = _lastNowMs ? _lastNowMs : millis(); // wait for SEND OK / SEND FAIL
             // Keep _modemTxLocked + _sendInProgress until SEND OK (AtSession is Idle after '>').
         } else if (r.timedOut || r.error) {
+            logger.log("[Sim800Tcp] CIPSEND accept failed (timeout=%u error=%u)\n",
+                       (unsigned)r.timedOut, (unsigned)r.error);
             endSendEpoch_();
+            _connected = false;
+            _connecting = false;
+            forceStackRecover_("cipsend_accept");
         }
         return true;
     }
@@ -384,12 +380,14 @@ void Sim800TcpTransport::onLine(const char* line) {
     }
     if (strcmp(line, "SEND OK") == 0) {
         endSendEpoch_();
-        beginPostSendQuiet_();
         return;
     }
     if (strstr(line, "SEND FAIL") != nullptr) {
+        logger.log("[Sim800Tcp] SEND FAIL — stack recover\n");
         endSendEpoch_();
-        beginPostSendQuiet_();
+        _connected = false;
+        _connecting = false;
+        forceStackRecover_("send_fail");
         return;
     }
 }

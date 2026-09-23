@@ -41,7 +41,7 @@ public:
     /// True while modem TX staging has bytes or CIPSEND is in flight (incl. post-'>' until SEND OK).
     bool hasBufferedTx() const { return _txLen != 0 || _sendInProgress || _modemTxLocked; }
 
-    /// Legacy hook; MQTT should always drain the RX ring (IPD is safe mid-send).
+    /// Always false: MQTT must drain the RX ring (framed +IPD is safe mid-CIPSEND).
     bool shouldDeferMqttRead() const { return false; }
 
     /// Sticky until consumed: RX ring overflow (would have desynced MQTT stream).
@@ -80,8 +80,6 @@ private:
     uint32_t _sendWatchMs{0};
     uint32_t _lastStackRecoverMs{0};
     uint32_t _lastConnectAttemptMs{0};
-    /// After SEND OK/FAIL, defer MQTT RX until this millis() (0 = inactive).
-    uint32_t _postSendQuietUntilMs{0};
     /// Staged buffer is sealed; write() refuses until CIPSEND completes.
     bool _flushRequested{false};
 
@@ -119,11 +117,9 @@ private:
     uint8_t _promptLeak{0}; // 0=none, 1=saw '>', 2=saw CR after '>'
 
     uint32_t nowMs_() const { return _lastNowMs ? _lastNowMs : millis(); }
-    bool inPostSendQuiet_(uint32_t now) const;
-    void beginPostSendQuiet_();
     /// `fromIpd`: framed +IPD body — keep during send-epoch (CONNACK/SUBACK). Raw UART path may be junk.
     void pushRx_(uint8_t b, bool fromIpd = false);
-    /// Drop non-IPD bytes while CIPSEND owns the UART (not during post-send quiet).
+    /// Drop non-IPD bytes while CIPSEND owns the UART.
     bool discardingTcpPayload_(bool fromIpd) const;
     void clearRx_();
     bool startConnect_();

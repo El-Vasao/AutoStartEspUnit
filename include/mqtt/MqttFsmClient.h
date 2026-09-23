@@ -84,6 +84,8 @@ public:
 
     /// Force Error state (e.g. transport RX overflow) → reconnect path.
     void forceError(const char* reason);
+    /// Last `setError_` / `forceError` reason (stable c-string; "" if none).
+    const char* lastErrorReason() const { return _lastErrorReason; }
 
     // Subscribe QoS0. Allowed in Connected state; queued otherwise.
     bool subscribe(const char* topic);
@@ -117,6 +119,7 @@ private:
     uint32_t _lastRxMs{0};
     uint32_t _lastTxMs{0};
     uint32_t _lastPingMs{0};
+    const char* _lastErrorReason{""};
 
     // Pending control actions
     bool _connectRequested{false};
@@ -168,6 +171,8 @@ private:
 
     bool ensureTcp_();
     void maybeSendPing_(uint32_t now);
+    /// Connected dead-man: no MQTT RX for 1.5× keepAlive → Error.
+    void maybeKeepaliveWatchdog_(uint32_t now);
     void pumpWrite_(uint16_t maxBytes, uint32_t deadlineMs);
     void pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uint32_t deadlineMs);
     /// Drop one RX head byte while hunting MQTT frame sync (no session tear-down).

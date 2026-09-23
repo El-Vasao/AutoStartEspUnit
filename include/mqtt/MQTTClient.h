@@ -40,6 +40,8 @@ public:
     void disconnect();
     bool needsDisconnectDrain() const;
     uint8_t getConsecutiveConnectFails() const;
+    /// Last MQTT session fail reason (`keepalive_timeout` / `tcp_drop` / …); "" if none.
+    const char* getLastConnectFailReason() const;
     bool isNonBlocking() const { return true; }
 
     void onProgramLifecycle(uint8_t programId, bool finishedOk);

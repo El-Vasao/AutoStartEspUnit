@@ -15,7 +15,8 @@
  * Принципы:
  * - После бута — settle `GSM::POST_BOOT_SETTLE_MS` до первого `gsm.begin()`.
  * - Неблокирующее обслуживание: GSM тикает в `service()`, MQTT — когда модем READY.
- * - В NORMAL: SoftAP up → service; SoftAP down / OTA pressure → suspend (см. Core.Modes).
+ * - Cellular suspend только в SETUP / EMERGENCY / OTA (см. Core.Modes); SoftAP в NORMAL
+ *   сосуществует с GSM/MQTT.
  */
 
 void CellularCore::init(GSMController& gsm, MQTTClient& mqtt, WebServer& web) {
@@ -93,7 +94,9 @@ void CellularCore::service() {
             }
             if (failStreak != _lastLoggedFailStreak) {
                 _lastLoggedFailStreak = failStreak;
-                logger.log("[Core] MQTT connect fails=%u, requesting GSM reattach%s\n", (unsigned)failStreak,
+                const char* why = _mqtt->getLastConnectFailReason();
+                logger.log("[Core] MQTT connect fails=%u reason=%s, requesting GSM reattach%s\n",
+                           (unsigned)failStreak, (why && why[0]) ? why : "?",
                            canRequest ? "" : " (cooldown)");
                 core.logHeapSnapshot("mqtt_connect_fail");
             }

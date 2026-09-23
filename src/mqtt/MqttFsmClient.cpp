@@ -163,7 +163,8 @@ void MqttFsmClient::commitReplaceTeleSlot_(uint8_t slotIdx, uint16_t len) {
 }
 
 void MqttFsmClient::setError_(const char* reason) {
-    logger.log("[MqttFsm] close tcp: %s\n", reason ? reason : "?");
+    _lastErrorReason = reason ? reason : "?";
+    logger.log("[MqttFsm] close tcp: %s\n", _lastErrorReason);
     _state = State::Error;
     _net.stop();
     resetSession_();
@@ -272,21 +273,26 @@ void MqttFsmClient::tick(const Budgets& b) {
         }
 
         maybeSendPing_(now);
+        maybeKeepaliveWatchdog_(now);
+        if (_state != State::Connected) return;
         doWrite();
         doRead();
         // Cmd handler may enqueue a reply during doRead — flush this tick.
         doWrite();
 
-        // If underlying transport dropped, go back to connect.
+        // Transport dropped (CLOSED / SEND FAIL / CIPSHUT) — count as Error for reattach streak.
         if (!_net.connected()) {
-            resetSession_();
-            _state = State::Idle;
+            setError_("tcp_drop");
         }
     }
 }
 
 bool MqttFsmClient::ensureTcp_() {
     const uint32_t now = millis();
+    // Reconnect after Error: clear sticky Error so Idle→TcpConnecting can start.
+    if (_state == State::Error) {
+        _state = State::Idle;
+    }
     if (_state == State::Idle) {
         if (_net.connected()) {
             _tcpConnectStartMs = now;
@@ -322,9 +328,9 @@ bool MqttFsmClient::ensureTcp_() {
         return false;
     }
 
-    // Already TCP connected or beyond.
+    // MqttConnecting / Connected: TCP must still be up.
     if (!_net.connected()) {
-        _state = State::Idle;
+        setError_("tcp_drop");
         return false;
     }
     return true;
@@ -340,6 +346,16 @@ void MqttFsmClient::maybeSendPing_(uint32_t now) {
     if (buildPingreq_()) {
         _lastPingMs = now;
     }
+}
+
+void MqttFsmClient::maybeKeepaliveWatchdog_(uint32_t now) {
+    if (_cfg.keepAliveSec == 0 || _lastRxMs == 0) return;
+    const uint32_t kaMs = (uint32_t)_cfg.keepAliveSec * 1000UL;
+    const uint32_t deadMs =
+        (kaMs * (uint32_t)NetTiming::MQTT_KEEPALIVE_DEADMAN_NUM) /
+        (uint32_t)NetTiming::MQTT_KEEPALIVE_DEADMAN_DEN;
+    if ((now - _lastRxMs) < deadMs) return;
+    setError_("keepalive_timeout");
 }
 
 bool MqttFsmClient::pastDeadline_(uint32_t deadlineMs) {

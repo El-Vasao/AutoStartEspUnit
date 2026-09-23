@@ -133,6 +133,10 @@ uint8_t MQTTClient::getConsecutiveConnectFails() const {
     return _connectFailStreak;
 }
 
+const char* MQTTClient::getLastConnectFailReason() const {
+    return _fsm.lastErrorReason();
+}
+
 void MQTTClient::joinTopic_(char* out, size_t outSz, const char* prefix, const char* suffix) {
     if (!out || outSz == 0) return;
     out[0] = '\0';
@@ -338,8 +342,13 @@ bool MQTTClient::needsDisconnectDrain() const {
 
 void MQTTClient::connect() {
     const auto& mqttCfg = config.getBase().mqtt;
+    // Count any Error (tcp_drop / keepalive / connack / SEND-path recover → Error) toward GSM reattach.
     if (_fsm.state() == MqttFsmClient::State::Error) {
         if (_connectFailStreak < 255) _connectFailStreak++;
+        const char* why = _fsm.lastErrorReason();
+        if (why && why[0]) {
+            logger.log("[MQTTClient] connect after fail=%s streak=%u\n", why, (unsigned)_connectFailStreak);
+        }
     }
     if (_fsm.state() == MqttFsmClient::State::Idle) {
         logger.log("[MQTTClient] connect() broker=%s:%u\n", mqttCfg.broker, (unsigned)mqttCfg.port);

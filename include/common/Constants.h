@@ -353,6 +353,9 @@ namespace NetTiming {
     constexpr uint32_t MQTT_RECONNECT_INTERVAL_MS = 5000;
     /// Ожидание CONNACK после CONNECT на GSM (секунды RTT + очередь оператора).
     constexpr uint32_t MQTT_FSM_CONNECT_TIMEOUT_MS = 30000;
+    /// Keepalive dead-man: force Error if no MQTT RX for (keepAliveSec * NUM / DEN).
+    constexpr uint16_t MQTT_KEEPALIVE_DEADMAN_NUM = 3;
+    constexpr uint16_t MQTT_KEEPALIVE_DEADMAN_DEN = 2;
 }
 
 // ============================================================
@@ -508,9 +511,6 @@ namespace Sim800Tcp {
 
     /// After CIPSEND '>' / payload write: wait for SEND OK / SEND FAIL.
     constexpr uint32_t SEND_WATCHDOG_MS = 15000;
-
-    /// After SEND OK/FAIL: briefly defer MQTT parse (SoftAP); do not drop RX (CONNACK).
-    constexpr uint32_t POST_SEND_QUIET_MS = 100;
 
     /// Min gap between CIPSTART attempts (non-blocking Client::connect retries every MQTT tick).
     constexpr uint32_t CONNECT_RETRY_COOLDOWN_MS = 3000;

@@ -54,6 +54,7 @@
 - Перед **первым** `CIPSTART` после `Sim800TcpTransport::reset()` — один `AT+CIPSHUT` (тёплый модем после ребута ESP). Cooldown `CONNECT_RETRY_COOLDOWN_MS` между попытками.
 - `Client::connect` — **неблокирующий** kick `CIPSTART` (без wall-clock wait); иначе SoftAP/IWDT.
 - Watchdogs: connect (`CONNECT_WATCHDOG_MS`) сбрасывает залипший `_connecting`; send (`SEND_WATCHDOG_MS`) после `CIPSEND`/`>` без `SEND OK` — end send-epoch + CIPSHUT recover.
+- **`SEND FAIL` / CIPSEND accept fail / CIPSTART accept fail** — fail-closed: session down + CIPSHUT recover (как send WD). MQTT RX всегда drain (mid-CIPSEND +IPD безопасен; post-send quiet нет).
 - После `STACK_RECOVER_REATTACH_THRESHOLD` CIPSHUT-recover без успешного `CONNECT OK` — `needsBearerReattach` → GSM `requestReattach` (status-first `SAPBR=2,1`).
 - Единый `takeResult`: TCP CIP* теги → `Sim800TcpTransport::consumeAtResult`, иначе GSM await absorb.
 - RX: **`AT+CIPRXGET=0` → `AT+CIPHEAD=1` → `AT+CIPMUX=0`**. `CIPHEAD=1` обязателен: без него inbound TCP сырой и **дропается mid-CIPSEND** (`discardingTcpPayload_`) → обрезанный MQTT PUBLISH.
