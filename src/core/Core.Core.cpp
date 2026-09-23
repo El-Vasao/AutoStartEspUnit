@@ -87,6 +87,11 @@ static bool setTempTriggerThunk(void* ctx, uint16_t id, bool en) {
     return false;
 }
 
+static bool wakeWifiApThunk(void* ctx, bool en) {
+    if (!en) return false;
+    return static_cast<Core*>(ctx)->wakeWifiApFromSilent();
+}
+
 static void logHeapTag_(const char* tag) {
     logger.log("[Core] heap %s: free=%u maxBlk=%u frag=%u%%\n", tag, (unsigned)espHalFreeHeap(),
                (unsigned)espHalMaxBlock(), (unsigned)0 /* heap frag N/A on ESP32 */);
@@ -154,6 +159,7 @@ bool Core::begin() {
         setInputRuntimeThunk,
         setInputTriggerThunk,
         setTempTriggerThunk,
+        wakeWifiApThunk,
     };
     logger.log("[Core] begin() done\n");
     impl.modeManager.init(webServer, impl.gsm, impl.mqtt, config, impl.otaHandler);

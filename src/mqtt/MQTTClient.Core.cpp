@@ -45,7 +45,20 @@ struct PublishStatusCtx {
     bool full;
 };
 
-static void buildStatusSnapshotForMqtt(StatusSnapshot& s) {
+static size_t encodeMqttStatusForPublish(Print& p, void* ctx) {
+    CountingForwarder fc(p);
+    auto* c = reinterpret_cast<const PublishStatusCtx*>(ctx);
+    if (c->full || !c->prev) {
+        emitMqttStatusJson(*c->cur, config.getBase(), fc);
+    } else {
+        emitMqttStatusDeltaJson(*c->cur, *c->prev, config.getBase(), fc);
+    }
+    return fc.written();
+}
+
+} // namespace
+
+void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
     s = StatusSnapshot{};
     s.uptimeSec = core.getUptime();
     strlcpy(s.modeName, core.getModeName(), sizeof(s.modeName));
@@ -107,19 +120,6 @@ static void buildStatusSnapshotForMqtt(StatusSnapshot& s) {
 
     strlcpy(s.lastError, err.getMessage(), sizeof(s.lastError));
 }
-
-static size_t encodeMqttStatusForPublish(Print& p, void* ctx) {
-    CountingForwarder fc(p);
-    auto* c = reinterpret_cast<const PublishStatusCtx*>(ctx);
-    if (c->full || !c->prev) {
-        emitMqttStatusJson(*c->cur, config.getBase(), fc);
-    } else {
-        emitMqttStatusDeltaJson(*c->cur, *c->prev, config.getBase(), fc);
-    }
-    return fc.written();
-}
-
-} // namespace
 
 static constexpr uint32_t kMqttPublishBudgetMs = 10;
 
@@ -204,6 +204,11 @@ void MQTTClient::begin() {
     }
 }
 
+void MQTTClient::onTransportRxOverflow() {
+    logger.log("[MQTTClient] transport RX overflow — forcing reconnect\n");
+    _fsm.forceError("rx_overflow");
+}
+
 void MQTTClient::loop() {
     // Still drain clean disconnect even when reconnect is disabled (suspend path).
     if (!_reconnectEnabled && !_fsm.isDisconnectPending()) return;
@@ -218,19 +223,20 @@ void MQTTClient::loop() {
     }
 
     MqttFsmClient::Budgets b{};
-    b.maxReadBytesPerTick = 160;
+    b.maxReadBytesPerTick = 256;
     b.maxWriteBytesPerTick = 1024;
     b.maxParseFramesPerTick = 4;
     b.maxMsPerTick = 20;
+    // Always drain RX ring (shouldDeferMqttRead is false on SIM800).
     b.shouldDeferRead = _deferMqttRx;
     b.shouldDeferReadCtx = _deferMqttRxCtx;
     _fsm.tick(b);
 
     if (_fsm.isConnected()) {
-        // Queue SUBSCRIBE as soon as Connected; flush on later loop when !tcpBusBusy.
-        if (!_subscribed && _topicCmd[0]) {
-            _subscribed = _fsm.subscribe(_topicCmd);
-            if (_subscribed) {
+        // Queue SUBSCRIBE once; confirmed only after SUBACK.
+        if (!_subscribeQueued && _topicCmd[0]) {
+            if (_fsm.subscribe(_topicCmd)) {
+                _subscribeQueued = true;
                 _subWaitStartMs = millis();
                 _subackTimeoutLogged = false;
                 logger.log("[MQTTClient] Connected. subscribe=%s status=%s avail=%s\n",
@@ -248,17 +254,23 @@ void MQTTClient::loop() {
             _havePublishedBaseline = false;
         }
 
-        // Hold presence/telemetry until SUBACK, but do not stall forever if SUBACK is lost.
         static constexpr uint32_t kSubackTimeoutMs = 8000u;
+        const bool subConfirmed = _fsm.isSubscribeConfirmed();
         const bool subPending = _topicCmd[0] && _fsm.isSubscribePending();
         const bool subTimedOut =
-            subPending && _subWaitStartMs != 0 && (millis() - _subWaitStartMs) >= kSubackTimeoutMs;
-        if (subTimedOut && !_subackTimeoutLogged) {
-            _subackTimeoutLogged = true;
-            logger.log("[MQTTClient] SUBACK timeout %ums — publishing online/status anyway\n",
-                       (unsigned)kSubackTimeoutMs);
+            subPending && !subConfirmed && _subWaitStartMs != 0 &&
+            (millis() - _subWaitStartMs) >= kSubackTimeoutMs;
+        if (subTimedOut) {
+            if (!_subackTimeoutLogged) {
+                _subackTimeoutLogged = true;
+                logger.log("[MQTTClient] SUBACK timeout %ums — publishing online/status; retrying SUBSCRIBE\n",
+                           (unsigned)kSubackTimeoutMs);
+            }
+            _fsm.requeueSubscribe();
+            _subWaitStartMs = millis();
         }
-        const bool subReady = !subPending || subTimedOut;
+        // Presence/tele after SUBACK, or after timeout so we are not stuck offline forever.
+        const bool subReady = subConfirmed || subTimedOut || _subackTimeoutLogged;
 
         static constexpr uint8_t kOnlinePayload[] = "online";
         if (subReady && _onlinePublishDue && _topicAvail[0]) {
@@ -269,14 +281,17 @@ void MQTTClient::loop() {
         }
 
         flushPending_();
+        drainInbound_();
 
-        if (subReady && _awaitFirstStatus) {
+        const bool teleIdle = (_inboundCount == 0) && (_pendingCount == 0) && !_cmdBusy && !_fsm.hasCtrlOutbound();
+
+        if (subReady && teleIdle && _awaitFirstStatus) {
             if ((int32_t)(millis() - _firstStatusAfterMs) >= 0 && publishStatus(true)) {
                 _awaitFirstStatus = false;
                 _lastStatusPublish = millis();
                 core.cooperate();
             }
-        } else if (subReady && _topicStatus[0]) {
+        } else if (subReady && teleIdle && _topicStatus[0]) {
             const auto& mqttCfg = config.getBase().mqtt;
             const uint32_t interval_ms = mqttCfg.publish_interval_sec * 1000UL;
             const bool due = (_lastStatusPublish == 0) || (millis() - _lastStatusPublish >= interval_ms);
@@ -286,15 +301,15 @@ void MQTTClient::loop() {
             }
         }
     } else if (!_fsm.isDisconnectPending()) {
-        _subscribed = false;
+        _subscribeQueued = false;
         _mqttWasConnected = false;
         _onlinePublishDue = false;
         _awaitFirstStatus = false;
         _havePublishedBaseline = false;
         _subWaitStartMs = 0;
         _subackTimeoutLogged = false;
-        clearIdem_();
         clearPending_();
+        clearInbound_();
         _hasActiveRun = false;
         _activeRunId[0] = '\0';
         _cmdBusy = false;
@@ -308,11 +323,11 @@ void MQTTClient::disconnect() {
         (void)_fsm.publish(_topicAvail, kOfflinePayload, sizeof(kOfflinePayload) - 1u, true, true);
     }
     _fsm.requestDisconnect();
-    _subscribed = false;
+    _subscribeQueued = false;
     _subWaitStartMs = 0;
     _subackTimeoutLogged = false;
-    clearIdem_();
     clearPending_();
+    clearInbound_();
     _hasActiveRun = false;
     _activeRunId[0] = '\0';
 }
@@ -342,7 +357,7 @@ bool MQTTClient::publishStatus(bool forceFull) {
     if (!_topicStatus[0]) return false;
 
     StatusSnapshot snapshot{};
-    buildStatusSnapshotForMqtt(snapshot);
+    captureStatusSnapshot_(snapshot);
     const auto& cfg = config.getBase();
 
     // Full until first successful stage, on explicit force (first/get_status), else delta/skip.

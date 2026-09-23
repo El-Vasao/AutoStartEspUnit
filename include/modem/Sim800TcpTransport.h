@@ -33,14 +33,19 @@ public:
     void abandonConnect(const char* reason = nullptr);
     void stop(const char* reason = nullptr);
 
-    // Non-blocking write: buffers data, schedules CIPSEND.
+    // Non-blocking write: buffers into one CIPSEND staging area only (no auto-send).
     size_t write(const uint8_t* data, size_t len);
+    /// Freeze staged bytes and start AT+CIPSEND=N. Call once per complete MQTT/TCP packet.
+    bool flushSend();
 
     /// True while modem TX staging has bytes or CIPSEND is in flight (incl. post-'>' until SEND OK).
     bool hasBufferedTx() const { return _txLen != 0 || _sendInProgress || _modemTxLocked; }
 
-    /// Skip MQTT RX while TX/CIPSEND owns the bus or during post-send quiet.
-    bool shouldDeferMqttRead() const;
+    /// Legacy hook; MQTT should always drain the RX ring (IPD is safe mid-send).
+    bool shouldDeferMqttRead() const { return false; }
+
+    /// Sticky until consumed: RX ring overflow (would have desynced MQTT stream).
+    bool takeRxOverflow();
 
     int available() const;
     int read();
@@ -77,17 +82,20 @@ private:
     uint32_t _lastConnectAttemptMs{0};
     /// After SEND OK/FAIL, defer MQTT RX until this millis() (0 = inactive).
     uint32_t _postSendQuietUntilMs{0};
+    /// Staged buffer is sealed; write() refuses until CIPSEND completes.
+    bool _flushRequested{false};
 
     char _host[64]{};
     uint16_t _port{0};
     char _cmdStart[128]{};
     char _cmdSend[32]{};
 
-    // RX ring (push mode); drop into MQTT only outside send-epoch for non-IPD path.
-    static constexpr uint16_t RX_SIZE = 512;
+    // RX ring (push mode); overflow marks session fatal (no drop-oldest desync).
+    static constexpr uint16_t RX_SIZE = 1024;
     uint8_t _rx[RX_SIZE]{};
     uint16_t _rxHead{0};
     uint16_t _rxCount{0};
+    bool _rxOverflow{false};
 
     // TX staging: one CIPSEND epoch, sized for one full MQTT packet.
     static constexpr uint16_t TX_SIZE = 1024;
@@ -151,7 +159,11 @@ public:
         pump_();
         return _t.peek();
     }
-    void flush() override {}
+    void flush() override {
+        pump_();
+        (void)_t.flushSend();
+        pump_();
+    }
     void stop() override { _t.stop(); }
     void stop(const char* reason) { _t.stop(reason); }
     uint8_t connected() override {

@@ -202,6 +202,11 @@ void Core::handleSetupAP() {
 
 void Core::handleNormal() {
     CorePrivate& impl = *_impl;
+    const bool pollIdle =
+        !impl.programExecutor.isRunning() && webServer.activeUiSessionCount() == 0;
+    impl.sensors.setPollIdle(pollIdle);
+    impl.triggerManager.setPollIdle(pollIdle);
+
     impl.inputs.update();
     impl.sensors.update();
     updateEngineRunning();
@@ -211,12 +216,8 @@ void Core::handleNormal() {
     impl.triggerManager.update();
     impl.batterySaverManager.update();
     impl.thermostatManager.update();
-    // SoftAP + cellular coexist on ESP32-C3. Suspend when SoftAP is down.
-    if (!webServer.isActive()) {
-        suspendCellularLink();
-    } else {
-        serviceCellularLink();
-    }
+    // SoftAP + cellular coexist on ESP32-C3. Same cellular policy as NORMAL_SILENT.
+    serviceCellularLink();
 
     const auto& wcfg = config.getBase().wifi;
     if (wcfg.ap_timeout_enabled && wcfg.ap_timeout_sec > 0 && impl.modeManager.getCurrentMode() == CoreMode::NORMAL) {
@@ -235,6 +236,15 @@ void Core::handleNormal() {
 void Core::handleNormalSilent() {
     CorePrivate& impl = *_impl;
     impl.inputs.update();
+    // PCB button (IN3): wake SoftAP regardless of trigger enable on that input.
+    if (impl.inputs.wasButtonPressed()) {
+        (void)wakeWifiApFromSilent();
+        return;
+    }
+    const bool pollIdle = !impl.programExecutor.isRunning();
+    impl.sensors.setPollIdle(pollIdle);
+    impl.triggerManager.setPollIdle(pollIdle);
+
     impl.sensors.update();
     updateEngineRunning();
 

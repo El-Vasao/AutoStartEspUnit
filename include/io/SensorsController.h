@@ -48,6 +48,10 @@ public:
     // Обновление показаний (вызывается в loop)
     void update();
 
+    /// When true, use longer ADC/DS18B20 intervals (no program / no UI sessions).
+    void setPollIdle(bool idle) { _pollIdle = idle; }
+    bool isPollIdle() const { return _pollIdle; }
+
     // ---- Температура ----
 
     // Запустить преобразование температуры (асинхронно)
@@ -102,6 +106,7 @@ private:
     bool _conversionInProgress;                     ///< флаг ожидания преобразования
     uint32_t _conversionStartTime;                   ///< время запуска преобразования (мс)
     uint32_t _lastTemperatureRequest;                ///< время последнего запроса (мс)
+    bool _pollIdle{false};                           ///< растянутые интервалы опроса
 
     // Обновление температуры (опрос датчиков)
     void updateTemperatures();

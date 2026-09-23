@@ -49,7 +49,9 @@ void TriggerManager::begin() {
 
 void TriggerManager::update() {
     uint32_t now = millis();
-    if (now - _lastCheck < Timing::TRIGGER_CHECK_INTERVAL_MS) return;
+    const uint32_t interval =
+        _pollIdle ? Timing::TRIGGER_CHECK_INTERVAL_IDLE_MS : Timing::TRIGGER_CHECK_INTERVAL_MS;
+    if (now - _lastCheck < interval) return;
     _lastCheck = now;
 
     const auto& full = _config.getBase();

@@ -37,7 +37,9 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 На ESP32-C3 SoftAP UI и GSM/MQTT **сосуществуют**. Cellular suspend при:
 
 - режиме `OTA_UPDATE` (stream flash);
-- SoftAP down в NORMAL (модем тихий, пока AP снова не поднят).
+- `SETUP_AP` / `EMERGENCY_AP` (локальная настройка/recovery без модема).
+
+В `NORMAL` и `NORMAL_SILENT` GSM/MQTT обслуживаются одинаково; silent только гасит SoftAP/веб.
 
 Нет `noteHeavyUiTraffic` / `POST /ui/ready` / UI-storm defer / pre-OTA pressure.
 

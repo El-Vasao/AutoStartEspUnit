@@ -32,6 +32,11 @@ void CellularCore::init(GSMController& gsm, MQTTClient& mqtt, WebServer& web) {
             return static_cast<GSMController*>(ctx)->shouldDeferMqttRead();
         },
         _gsm);
+    _mqtt->setCtrlPlaneBusy(
+        [](void* ctx) -> bool {
+            return static_cast<GSMController*>(ctx)->tcpBusBusy();
+        },
+        _gsm);
 }
 
 void CellularCore::service() {
@@ -71,11 +76,11 @@ void CellularCore::service() {
             _mqttStarted = true;
         }
         if (_mqttStarted) {
-            // Avoid hammering MQTT policy while modem TCP is mid-CIPSEND / connecting.
-            // Transport still ticks from GSM update; +IPD can buffer until bus is idle.
-            if (!_gsm->tcpBusBusy()) {
-                _mqtt->loop();
+            if (_gsm->takeTcpRxOverflow()) {
+                _mqtt->onTransportRxOverflow();
             }
+            // Always tick MQTT so the RX ring drains during CIPSEND; writes no-op while bus locked.
+            _mqtt->loop();
         }
 
         const uint8_t failStreak = _mqtt->getConsecutiveConnectFails();

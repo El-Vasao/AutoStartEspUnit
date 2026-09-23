@@ -79,9 +79,11 @@ void SensorsController::update() {
 
 void SensorsController::updateTemperatures() {
     uint32_t now = millis();
+    const uint32_t tempInterval =
+        _pollIdle ? Timing::TEMPERATURE_READ_INTERVAL_IDLE_MS : Timing::TEMPERATURE_READ_INTERVAL_MS;
 
     if (!_conversionInProgress &&
-        (now - _lastTemperatureRequest >= Timing::TEMPERATURE_READ_INTERVAL_MS)) {
+        (now - _lastTemperatureRequest >= tempInterval)) {
         // DS18B20 конвертирует температуру не мгновенно. Запускаем конверсию и вернёмся за результатом позже.
         requestTemperatures();
         _lastTemperatureRequest = now;
@@ -194,7 +196,9 @@ void SensorsController::printAllAddresses() const {
 
 void SensorsController::updateVoltage() {
     uint32_t now = millis();
-    if (now - _lastVoltageRead < Timing::VOLTAGE_READ_INTERVAL_MS) return;
+    const uint32_t interval =
+        _pollIdle ? Timing::VOLTAGE_READ_INTERVAL_IDLE_MS : Timing::VOLTAGE_READ_INTERVAL_MS;
+    if (now - _lastVoltageRead < interval) return;
     _lastVoltageRead = now;
 
     uint16_t raw = analogRead(Pin::VBAT);

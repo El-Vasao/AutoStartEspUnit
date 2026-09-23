@@ -156,8 +156,11 @@ namespace BufferBytes {
 // ============================================================
 namespace Timing {
     constexpr uint32_t TRIGGER_CHECK_INTERVAL_MS = 50;
+    constexpr uint32_t TRIGGER_CHECK_INTERVAL_IDLE_MS = 200;
     constexpr uint32_t VOLTAGE_READ_INTERVAL_MS = 200;
+    constexpr uint32_t VOLTAGE_READ_INTERVAL_IDLE_MS = 1000;
     constexpr uint32_t TEMPERATURE_READ_INTERVAL_MS = DS18B20::READ_INTERVAL_MS;
+    constexpr uint32_t TEMPERATURE_READ_INTERVAL_IDLE_MS = 15000;
     constexpr uint32_t DEBOUNCE_DELAY_MS = 50;
     constexpr uint32_t PULSE_COUNTER_INTERVAL_MS = 100;
 
@@ -231,6 +234,8 @@ namespace APConfig {
     constexpr char DEFAULT_PASSWORD[] = "12345678";
     constexpr uint8_t CHANNEL = 1;
     constexpr uint8_t HIDDEN = 0;
+    /// SoftAP TX cap: Arduino `WIFI_POWER_8_5dBm` (0.25 dBm units).
+    constexpr int8_t TX_POWER = 34;
     /// ESP32-C3 SoftAP: allow a few concurrent STA (was 1 on ESP8266 RAM gates).
     constexpr uint8_t SETUP_MAX_CONNECTIONS = 4;
     /// В NORMAL допускаем несколько станций (ESP32-C3 имеет больше RAM).
@@ -307,6 +312,8 @@ namespace JsonBytes {
         constexpr size_t STATUS_DOC_CAPACITY = STATUS_PAYLOAD_MAX_BYTES;
         constexpr size_t LIST_PROGRAMS_JSON_MAX = 960; ///< list reply: envelope + programs array
         constexpr size_t LIST_PROGRAMS_DOC_CAPACITY = MAX_FILE_JSON_BYTES;
+        /// status cmd fat /reply: id+code + nested status object (≤ STATUS_PAYLOAD_MAX_BYTES).
+        constexpr size_t STATUS_REPLY_JSON_MAX = 960;
         /// Voltage change below this does not count as significant / does not enter a delta.
         constexpr float STATUS_VOLTAGE_EPS = 0.05f;
         /// Temperature change below this does not count as significant / does not enter a delta.
@@ -316,6 +323,25 @@ namespace JsonBytes {
     namespace Programs {
         constexpr size_t INDEX_FILTER_DOC_CAPACITY = 64;
     }
+}
+
+/// MQTT cmd/reply queue and idempotency limits (wire contract in docs/modules/mqtt.md).
+namespace MqttCmd {
+    constexpr uint8_t INBOUND_DEPTH = 8;
+    constexpr uint8_t IDEM_DEPTH = 16;
+    constexpr uint32_t IDEM_TTL_MS = 30UL * 60UL * 1000UL;
+    constexpr uint8_t PENDING_REPLY_DEPTH = 4;
+    constexpr uint8_t ID_MAX_LEN = 16;
+
+    constexpr uint16_t CODE_OK = 200;
+    constexpr uint16_t CODE_CREATED = 201;   ///< reserved (not used on wire; run has no mid-ack)
+    constexpr uint16_t CODE_ACCEPTED = 202;  ///< received / queued
+    constexpr uint16_t CODE_BAD_REQUEST = 400;
+    constexpr uint16_t CODE_NOT_FOUND = 404;
+    constexpr uint16_t CODE_CONFLICT = 409;
+    constexpr uint16_t CODE_UNPROCESSABLE = 422;
+    constexpr uint16_t CODE_INTERNAL = 500;
+    constexpr uint16_t CODE_UNAVAILABLE = 503; ///< inbound queue full
 }
 
 namespace PoolLimits {

@@ -165,7 +165,6 @@ void ModeManager::enterNormalSilent() {
 
 void ModeManager::exitNormalSilent() {
     logger.log("[ModeManager] exitNormalSilent\n");
-    core.getRelay().allOff();
 }
 
 void ModeManager::enterOTAUpdate() {
@@ -176,6 +175,7 @@ void ModeManager::enterOTAUpdate() {
         core.getProgramExecutor().stop();
     }
     core.getRelay().allOff();
+    core.suspendDomainManagersForOta();
     if (_ota) {
         _ota->begin();
     }
@@ -187,5 +187,6 @@ void ModeManager::exitOTAUpdate() {
     if (_ota) {
         _ota->onModeExit();
     }
+    core.restoreDomainManagersAfterOta();
 }
 

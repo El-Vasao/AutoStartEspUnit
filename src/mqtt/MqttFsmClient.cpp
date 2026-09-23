@@ -75,6 +75,7 @@ void MqttFsmClient::requestDisconnect() {
 void MqttFsmClient::resetSession_() {
     clearTxQueue_();
     _rxLen = 0;
+    _rxAssembleStartMs = 0;
     _tcpConnectStartMs = 0;
     _mqttHandshakeStartMs = 0;
     _lastRxMs = 0;
@@ -82,8 +83,13 @@ void MqttFsmClient::resetSession_() {
     _lastPingMs = 0;
     _subRequested = false;
     _awaitingSuback = false;
+    _subscribeConfirmed = false;
     _subPacketId = 0;
     _subTopic[0] = '\0';
+}
+
+void MqttFsmClient::forceError(const char* reason) {
+    setError_(reason ? reason : "force");
 }
 
 void MqttFsmClient::clearTxQueue_() {
@@ -107,8 +113,22 @@ int MqttFsmClient::findReplaceableTele_() const {
     return -1;
 }
 
+bool MqttFsmClient::hasCtrlInQueue_() const {
+    for (uint8_t i = 0; i < _txQCount; i++) {
+        const uint8_t idx = (uint8_t)((_txQHead + i) % TX_Q_DEPTH);
+        if (_txQClass[idx] == OutClass::Ctrl) return true;
+    }
+    return false;
+}
+
+bool MqttFsmClient::hasCtrlOutbound() const {
+    return hasCtrlInQueue_();
+}
+
 bool MqttFsmClient::beginQueueSlot_(OutClass cls, uint8_t*& buf, uint16_t& cap) {
     if (cls == OutClass::Tele) {
+        // Lowest priority: never take a new Tele slot while Ctrl is waiting.
+        if (hasCtrlInQueue_()) return false;
         // After enqueue must leave ≥1 free slot for Ctrl.
         if (freeSlots_() < 2) return false;
     } else if (!queueHasRoom_()) {
@@ -157,6 +177,13 @@ bool MqttFsmClient::subscribe(const char* topic) {
     _subTopic[n] = '\0';
     _subRequested = true;
     return true;
+}
+
+void MqttFsmClient::requeueSubscribe() {
+    if (!_subTopic[0]) return;
+    _awaitingSuback = false;
+    _subPacketId = 0;
+    _subRequested = true;
 }
 
 bool MqttFsmClient::publish(const char* topic, const uint8_t* payload, uint16_t len, bool retained, bool control) {
@@ -329,23 +356,27 @@ void MqttFsmClient::pumpWrite_(uint16_t maxBytes, uint32_t deadlineMs) {
         _txOff = 0;
         return;
     }
-    uint16_t remaining = (uint16_t)(pktLen - _txOff);
-    uint16_t budget = maxBytes;
-    while (budget && remaining) {
-        if (pastDeadline_(deadlineMs)) break;
-        const uint16_t chunk = (remaining < budget) ? remaining : budget;
-        const size_t w = _net.write(pkt + _txOff, chunk);
-        if (w == 0) break;
-        _txOff += (uint16_t)w;
-        budget -= (uint16_t)w;
-        remaining = (uint16_t)(pktLen - _txOff);
-        _lastTxMs = millis();
+
+    // Stage the entire remaining frame into the transport buffer, then flush one CIPSEND.
+    // Partial CIPSEND of an MQTT packet desyncs the broker stream.
+    (void)maxBytes;
+    if (pastDeadline_(deadlineMs)) return;
+
+    const uint16_t remaining = (uint16_t)(pktLen - _txOff);
+    const size_t w = _net.write(pkt + _txOff, remaining);
+    if (w == 0) return;
+    _txOff += (uint16_t)w;
+    _lastTxMs = millis();
+
+    if (_txOff < pktLen) {
+        // Transport staging full or busy — wait; do not flush a partial MQTT frame.
+        return;
     }
-    if (_txOff >= pktLen) {
-        _txQHead = (uint8_t)((_txQHead + 1u) % TX_Q_DEPTH);
-        _txQCount--;
-        _txOff = 0;
-    }
+
+    _net.flush();
+    _txQHead = (uint8_t)((_txQHead + 1u) % TX_Q_DEPTH);
+    _txQCount--;
+    _txOff = 0;
 }
 
 void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uint32_t deadlineMs) {
@@ -357,10 +388,11 @@ void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uin
             if ((uint16_t)avail < want) want = (uint16_t)avail;
             if (room < want) want = room;
             if (want > 0) {
-                // Bulk read pumps the modem once via Client::read(buf,n).
                 const int n = _net.read(_rx + _rxLen, want);
                 if (n > 0) {
                     _rxLen = (uint16_t)(_rxLen + (uint16_t)n);
+                    // Stall clock: only "no progress" counts — refresh on every RX byte.
+                    _rxAssembleStartMs = millis();
                 }
             }
         }
@@ -372,29 +404,79 @@ void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uin
         if (!parseOneFrame_()) break;
         frames++;
     }
+
+    if (_rxLen == 0) {
+        _rxAssembleStartMs = 0;
+    } else if (_rxAssembleStartMs != 0 &&
+               (millis() - _rxAssembleStartMs) >= RX_ASSEMBLE_TIMEOUT_MS) {
+        uint32_t need = 0;
+        if (stallIsValidIncomplete_(need)) {
+            // Fail-closed: do not byte-hunt from a real PUBLISH head (eats "car/..." forever).
+            logger.log("[MqttFsm] RX stall incomplete type=%u have=%u need=%u — resync session\n",
+                       (unsigned)(_rx[0] >> 4), (unsigned)_rxLen, (unsigned)need);
+            _rxLen = 0;
+            _rxAssembleStartMs = 0;
+            setError_("rx_incomplete");
+            return;
+        }
+        // Leading junk / desync: drop one byte and hunt for a valid MQTT type.
+        logger.log("[MqttFsm] RX stall rxLen=%u — sync skip 0x%02X\n", (unsigned)_rxLen,
+                   (unsigned)_rx[0]);
+        memmove(_rx, _rx + 1, (size_t)(_rxLen - 1u));
+        _rxLen--;
+        _rxAssembleStartMs = _rxLen ? millis() : 0;
+    }
+}
+
+bool MqttFsmClient::stallIsValidIncomplete_(uint32_t& needOut) const {
+    needOut = 0;
+    if (_rxLen < 2) return false;
+    const uint8_t pktType = (uint8_t)(_rx[0] >> 4);
+    if (pktType < 1 || pktType > 14) return false;
+    uint32_t remLen = 0;
+    uint8_t used = 0;
+    if (!decodeRemainingLen_(_rx + 1, (uint16_t)(_rxLen - 1), remLen, used)) return false;
+    const uint32_t totalLen32 = (uint32_t)(1u + used) + remLen;
+    if (totalLen32 > sizeof(_rx) || (uint32_t)_rxLen >= totalLen32) return false;
+    needOut = totalLen32;
+    return true;
+}
+
+bool MqttFsmClient::resyncDropOne_(const char* why) {
+    if (_rxLen == 0) return false;
+    logger.log("[MqttFsm] RX resync (%s) drop 0x%02X rxLen=%u\n", why ? why : "?", (unsigned)_rx[0],
+               (unsigned)_rxLen);
+    memmove(_rx, _rx + 1, (size_t)(_rxLen - 1u));
+    _rxLen--;
+    _rxAssembleStartMs = _rxLen ? millis() : 0;
+    return _rxLen > 0;
 }
 
 bool MqttFsmClient::parseOneFrame_() {
     if (_rxLen < 2) return false;
     const uint8_t typeFlags = _rx[0];
     const uint8_t pktTypeEarly = (uint8_t)(typeFlags >> 4);
-    // Reject non-MQTT control types (modem junk must not enter the parser).
+    // Non-MQTT type at head → byte-hunt, do not tear down the session.
     if (pktTypeEarly < 1 || pktTypeEarly > 14) {
-        _rxLen = 0;
+        (void)resyncDropOne_("bad_type");
         return false;
     }
 
     uint32_t remLen = 0;
     uint8_t used = 0;
     if (!decodeRemainingLen_(_rx + 1, (uint16_t)(_rxLen - 1), remLen, used)) {
-        return false; // need more bytes
+        // 4 continuation bytes already present ⇒ malformed head, resync.
+        if ((uint16_t)(_rxLen - 1) >= 4) {
+            (void)resyncDropOne_("bad_remlen");
+        }
+        return false;
     }
 
     const uint16_t headerLen = (uint16_t)(1 + used);
     const uint32_t totalLen32 = (uint32_t)headerLen + remLen;
     if (totalLen32 > sizeof(_rx)) {
-        // Frame too large for our buffer -> drop everything.
-        _rxLen = 0;
+        // Impossible frame size from this head byte — skip and hunt.
+        (void)resyncDropOne_("oversize");
         return false;
     }
     const uint16_t totalLen = (uint16_t)totalLen32;
@@ -416,6 +498,7 @@ bool MqttFsmClient::parseOneFrame_() {
                 _mqttHandshakeStartMs = 0;
                 _awaitingSuback = false;
                 _subPacketId = 0;
+                _subscribeConfirmed = false;
             } else {
                 setError_("connack_refused");
             }
@@ -429,40 +512,46 @@ bool MqttFsmClient::parseOneFrame_() {
             _subPacketId = 0;
             logger.log("[MqttFsm] SUBACK rc=%u\n", (unsigned)rc);
             if (rc == 0x80) {
-                // Broker refused — re-queue subscribe.
+                _subscribeConfirmed = false;
                 _subRequested = true;
+            } else {
+                _subscribeConfirmed = true;
             }
         }
     } else if (pktType == 3 /* PUBLISH */) {
-        // QoS0 only
         const bool retained = (flags & 0x01) != 0;
-        if (remLen >= 2) {
-            const uint16_t topicLen = (uint16_t)((p[0] << 8) | p[1]);
-            if ((uint32_t)(topicLen + 2U) <= remLen && topicLen < TOPIC_MAX) {
-                char topic[TOPIC_MAX];
-                memcpy(topic, p + 2, topicLen);
-                topic[topicLen] = '\0';
-                uint16_t off = (uint16_t)(2 + topicLen);
-                // QoS>0 includes packet id (not supported); if present, skip minimally.
-                if ((flags & 0x06) != 0) {
-                    if ((uint32_t)(off + 2U) <= remLen) off += 2;
-                }
-                const uint16_t payLen = (off <= remLen) ? (uint16_t)(remLen - off) : 0;
-                if (_pubCb) {
-                    _pubCb(_pubCbCtx, topic, p + off, payLen, retained);
-                }
-            }
+        if (remLen < 2) {
+            (void)resyncDropOne_("pub_short");
+            return false;
+        }
+        const uint16_t topicLen = (uint16_t)((p[0] << 8) | p[1]);
+        if ((uint32_t)(topicLen + 2U) > remLen || topicLen == 0 || topicLen >= TOPIC_MAX) {
+            // Bad PUBLISH layout at this offset — hunt rather than reconnect (preserves pending acks).
+            (void)resyncDropOne_("pub_framing");
+            return false;
+        }
+        char topic[TOPIC_MAX];
+        memcpy(topic, p + 2, topicLen);
+        topic[topicLen] = '\0';
+        uint16_t off = (uint16_t)(2 + topicLen);
+        if ((flags & 0x06) != 0) {
+            if ((uint32_t)(off + 2U) <= remLen) off += 2;
+        }
+        const uint16_t payLen = (off <= remLen) ? (uint16_t)(remLen - off) : 0;
+        if (_pubCb) {
+            _pubCb(_pubCbCtx, topic, p + off, payLen, retained);
         }
     } else if (pktType == 14 /* DISCONNECT */) {
         setError_("server_disconnect");
     } else {
-        // ignore other frames
+        // PINGRESP (13) and other valid types: consume.
     }
 
-    // Consume frame from _rx buffer (memmove tail)
     const uint16_t remain = (uint16_t)(_rxLen - totalLen);
     if (remain) memmove(_rx, _rx + totalLen, remain);
     _rxLen = remain;
+    if (_rxLen == 0) _rxAssembleStartMs = 0;
+    else _rxAssembleStartMs = millis();
     return true;
 }
 

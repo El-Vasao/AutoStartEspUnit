@@ -125,6 +125,14 @@ public:
     bool getTempTriggerRuntime(uint8_t index) const;
     void setTempTriggerRuntime(uint8_t index, bool en);
 
+    /// OTA enter: stop domain automations (triggers / battery saver / thermostat).
+    void suspendDomainManagersForOta();
+    /// OTA exit: reload runtime enables from config via manager begin().
+    void restoreDomainManagersAfterOta();
+
+    /// NORMAL_SILENT → NORMAL (SoftAP on). Returns false if not in silent.
+    bool wakeWifiApFromSilent();
+
     /// Сводная статистика через `logger` (SSE/UI).
     void printStats();
 

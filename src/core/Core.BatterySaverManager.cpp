@@ -57,7 +57,20 @@ void BatterySaverManager::update() {
     if (!_sensors.isVoltageValid()) return;
 
     float startThreshold = bs.voltage_start_threshold;
+    float abortThreshold = bs.voltage_abort_threshold;
     float hysteresis = bs.hysteresis;
+
+    // Critical low: stop attempts and abort the battery-saver program if it is running.
+    if (voltage < abortThreshold) {
+        _lowStartTime = 0;
+        if (bs.program_id != 0 && _executor.isRunning() &&
+            _executor.getCurrentProgramId() == bs.program_id) {
+            logger.log("[BatterySaverManager] Abort program %u: voltage %.2f < abort %.2f\n",
+                       bs.program_id, voltage, abortThreshold);
+            _executor.stop();
+        }
+        return;
+    }
 
     if (voltage < startThreshold) {
         if (_lowStartTime == 0) {

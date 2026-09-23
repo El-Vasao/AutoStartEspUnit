@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <Client.h>
 
+#include "common/Constants.h"
+
 // Minimal non-blocking MQTT client (FSM) for embedded constraints.
 // Goals:
 // - no dynamic allocation
@@ -73,11 +75,20 @@ public:
     bool isDisconnectPending() const { return _disconnectRequested; }
     /// True until SUBSCRIBE is built and SUBACK observed (or no subscribe was requested).
     bool isSubscribePending() const { return _subRequested || _awaitingSuback; }
+    /// True after SUBACK with granted QoS (not 0x80). Cleared on session reset.
+    bool isSubscribeConfirmed() const { return _subscribeConfirmed; }
     /// True while any outbound MQTT packet is queued or mid-write.
     bool hasOutbound() const { return _txQCount != 0; }
+    /// True if any Ctrl (reply/PING/avail/…) is queued or mid-send.
+    bool hasCtrlOutbound() const;
+
+    /// Force Error state (e.g. transport RX overflow) → reconnect path.
+    void forceError(const char* reason);
 
     // Subscribe QoS0. Allowed in Connected state; queued otherwise.
     bool subscribe(const char* topic);
+    /// Drop in-flight SUBACK wait and re-queue SUBSCRIBE (same topic).
+    void requeueSubscribe();
 
     // Publish QoS0. `control=true` uses Ctrl class (may fill last free slot).
     // `control=false` is Tele: requires reserve or coalesces pending status.
@@ -112,13 +123,14 @@ private:
     bool _disconnectRequested{false};
     bool _subRequested{false};
     bool _awaitingSuback{false};
+    bool _subscribeConfirmed{false};
 
     // Single in-flight packet id (for SUBSCRIBE / SUBACK).
     uint16_t _nextPacketId{1};
     uint16_t _subPacketId{0};
 
-    // Queued subscribe topic (single)
-    static constexpr uint8_t TOPIC_MAX = 56;
+    // Queued subscribe topic (single). Match TextBytes::Mqtt::TOPIC so long prefixes work.
+    static constexpr size_t TOPIC_MAX = TextBytes::Mqtt::TOPIC;
     char _subTopic[TOPIC_MAX]{};
 
     // Outbound packet queue: wire-ready MQTT frames.
@@ -135,14 +147,17 @@ private:
 
     // RX frame assembly
     static constexpr uint16_t RX_MAX = 320;
+    static constexpr uint32_t RX_ASSEMBLE_TIMEOUT_MS = 3000;
     uint8_t _rx[RX_MAX]{};
     uint16_t _rxLen{0};
+    uint32_t _rxAssembleStartMs{0};
 
     void resetSession_();
     void setError_(const char* reason);
     void clearTxQueue_();
     bool queueHasRoom_() const { return _txQCount < TX_Q_DEPTH; }
     uint8_t freeSlots_() const { return (uint8_t)(TX_Q_DEPTH - _txQCount); }
+    bool hasCtrlInQueue_() const;
     /// Index of replaceable Tele slot, or -1. Skips mid-send head.
     int findReplaceableTele_() const;
     bool beginQueueSlot_(OutClass cls, uint8_t*& buf, uint16_t& cap);
@@ -155,6 +170,10 @@ private:
     void maybeSendPing_(uint32_t now);
     void pumpWrite_(uint16_t maxBytes, uint32_t deadlineMs);
     void pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uint32_t deadlineMs);
+    /// Drop one RX head byte while hunting MQTT frame sync (no session tear-down).
+    bool resyncDropOne_(const char* why);
+    /// True if head is a valid MQTT type+remLen and buffer is still short of totalLen.
+    bool stallIsValidIncomplete_(uint32_t& needOut) const;
     static bool pastDeadline_(uint32_t deadlineMs);
 
     bool buildConnect_();

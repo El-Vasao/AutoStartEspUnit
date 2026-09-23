@@ -39,6 +39,8 @@ struct AppControlPort {
     bool (*setInputRuntime)(void* ctx, uint16_t id, bool en){nullptr};
     bool (*setInputTrigger)(void* ctx, uint16_t id, bool en){nullptr};
     bool (*setTempTrigger)(void* ctx, uint16_t id, bool en){nullptr};
+    /// NORMAL_SILENT → NORMAL SoftAP wake. Returns false if not silent or enabled==false.
+    bool (*wakeWifiAp)(void* ctx, bool en){nullptr};
 };
 
 struct AppPorts {

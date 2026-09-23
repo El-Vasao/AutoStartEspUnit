@@ -73,10 +73,13 @@ public:
     // Получить ссылку на клиент для MQTT
     Client& getClient() { return _stack.client; }
 
-    /// True while TCP connect/send/close/recover holds the shared AT bus.
+    /// True while modem TX/CIPSEND owns the bus.
     bool tcpBusBusy() const { return _stack.tcp.isBusBusy(); }
 
-    /// Skip MQTT RX while modem TX/CIPSEND owns the bus or during post-send quiet.
+    /// Sticky TCP RX ring overflow (MQTT must reconnect).
+    bool takeTcpRxOverflow() { return _stack.tcp.takeRxOverflow(); }
+
+    /// Legacy: always false — MQTT drains RX ring even mid-send.
     bool shouldDeferMqttRead() const { return _stack.tcp.shouldDeferMqttRead(); }
 
 private:

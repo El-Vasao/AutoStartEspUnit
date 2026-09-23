@@ -170,6 +170,35 @@ void Core::setTempTriggerRuntime(uint8_t index, bool en) {
     impl.triggerManager.setTempTriggerEnabled(index, en);
 }
 
+void Core::suspendDomainManagersForOta() {
+    CorePrivate& impl = *_impl;
+    impl.thermostatManager.setEnabled(false);
+    impl.batterySaverManager.setEnabled(false);
+    for (uint8_t i = 0; i < Limits::MAX_TRIGGERS; i++) {
+        impl.triggerManager.setInputTriggerEnabled(i, false);
+        impl.triggerManager.setTempTriggerEnabled(i, false);
+    }
+    logger.log("[Core] Domain managers suspended for OTA\n");
+}
+
+void Core::restoreDomainManagersAfterOta() {
+    CorePrivate& impl = *_impl;
+    impl.triggerManager.begin();
+    impl.batterySaverManager.begin();
+    impl.thermostatManager.begin();
+    logger.log("[Core] Domain managers restored after OTA\n");
+}
+
+bool Core::wakeWifiApFromSilent() {
+    CorePrivate& impl = *_impl;
+    if (impl.modeManager.getCurrentMode() != CoreMode::NORMAL_SILENT) {
+        return false;
+    }
+    logger.log("[Core] Wake SoftAP: NORMAL_SILENT -> NORMAL\n");
+    impl.modeManager.switchMode(CoreMode::NORMAL);
+    return true;
+}
+
 bool Core::isEngineRunning() const {
     const CorePrivate& impl = *_impl;
     return impl.engineRunning;

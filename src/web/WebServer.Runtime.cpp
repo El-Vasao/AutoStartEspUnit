@@ -87,6 +87,7 @@ void WebServerRuntime::update(WebServer& ws) {
                 ws.apStartState_ = WebServer::ApStartState::Idle;
                 return;
             }
+            WiFi.setTxPower(static_cast<wifi_power_t>(APConfig::TX_POWER));
 
             strlcpy(ws.lastApSsid, ssid, sizeof(ws.lastApSsid));
             strlcpy(ws.lastApPass, pass, sizeof(ws.lastApPass));

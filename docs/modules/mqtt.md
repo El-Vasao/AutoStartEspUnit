@@ -8,71 +8,64 @@ MQTT-публикация статуса и подписка на команды
 - `include/mqtt/MqttFsmClient.h`, `src/mqtt/MqttFsmClient.cpp`
 - парсинг команд: `include/mqtt/MqttCommandParser.h`, `src/mqtt/MqttCommandParser.cpp`
 - JSON статуса: `src/mqtt/MqttStatusBuilder.cpp`
+- лимиты cmd/reply: `MqttCmd::*` в `Constants.h`
 
 ## Контракт
 ### Идентификация устройства
 - Устройство **идентифицируется только по топикам**.
-- В payload **нет** `deviceId`/`unitId` и т.п.
-- Один device = один `topic_prefix`. Мультиклиент на один prefix — вне ответственности устройства.
+- В payload **нет** `deviceId`/`unitId`.
+- Один device = один `topic_prefix`.
 
 ### Топики (из `mqtt.topic_prefix`)
-Пользователь настраивает только **`mqtt.topic_prefix`** (без trailing `/`), например `car/Subaru`.
-Суффиксы фиксированы в прошивке (`MqttTopics` в `Constants.h`):
 
 | Суффикс | Топик | Назначение |
 |---------|-------|------------|
 | `/avail` | `{prefix}/avail` | Presence: retained `online` / `offline` (LWT) |
-| `/status` | `{prefix}/status` | JSON телеметрия |
+| `/status` | `{prefix}/status` | JSON телеметрия (периодика) |
 | `/cmd` | `{prefix}/cmd` | Команды → device (QoS 0, не retained) |
-| `/reply` | `{prefix}/reply` | Ответы / lifecycle ← device (QoS 0, не retained) |
+| `/reply` | `{prefix}/reply` | Ответы ← device (QoS 0, не retained) |
 
-Пустой `topic_prefix` → без LWT/online/subscribe/publish.
+**Offline = нет команд:** QoS 0, `cleanSession=true`, `/cmd` без retain. Клиент шлёт `/cmd` только при `avail=online`.
 
-**Offline = нет команд:** QoS 0, `cleanSession=true`, `/cmd` без retain. Клиент шлёт `/cmd` только при `avail=online`. Устройство не копит отложенные команды.
+### Единый `/reply` (все `cmd`)
 
-### Доставка (политика по умолчанию)
-Реализация: `MQTTClient.Core.cpp` + `MQTTClient.Commands.cpp` + CONNECT в `MqttFsmClient.cpp`.
-- **LWT** на `{prefix}/avail`: текст `"offline"`, **retained**, **Will QoS = 1**.
-- После **MQTT Connected**: SUBSCRIBE на `/cmd`, затем retained `"online"` (после SUBACK или таймаута ~8 с).
-- Периодический JSON на `/status`: **QoS 0**, **без retained**, раз в `mqtt.publish_interval_sec` — дельта или skip; full после connect и по `cmd=status`.
-- Подписка `/cmd` и ответы `/reply`: **QoS 0**.
-- Clean disconnect: retained `"offline"` на `/avail` перед DISCONNECT.
+Слои:
+- **Ingress** (`tryAckIngress_`): только parse + место в FIFO → **ack** с `code` (`202` или reject). Handlers не вызываются.
+- **Dispatch**: только **финал** с итоговым `code` (+ fat body у `list`/`status`).
 
-### Anti-hang / очереди
-- `CellularCore` не вызывает `mqtt.loop()`, пока `gsm.tcpBusBusy()`.
-- Keepalive 30 с; `_lastTxMs` только после реальной UART-записи.
-- Идемпотентность: LRU **16** слотов, TTL **30 мин** по полю `id` (fingerprint args + `ok`/`err` + для `run` последний `state`). Hit → replay без side-effect. Сброс LRU при MQTT session drop.
-- Pending reply depth **2**; пока cmd обрабатывается — новые cmd → `err=busy` (или один входной буфер).
-- RX MQTT: `RX_SIZE=512`; defer read только пока есть buffered TX.
+1. **Ack** — по факту приёма кадра с валидным `id`:
+   - принято → `{id, code:202}`, команда в FIFO;
+   - не принято → один `/reply` (`400` / `503` / …) и **без** финала.
+2. **Финал** — после исполнения, **ровно один** `/reply` с итоговым `code`:
+   - thin `{id, code}` — `set` / `stop` / ошибки / финал `run`;
+   - fat — `list` (`programs`), `status` (объект `status` = full snapshot). Команда `status` **не** публикует Tele `/status`.
 
-### Reconnect (SIM800)
-- 2-phase: TCP (`CONNECT OK`), затем MQTT CONNECT.
-- После `"online"` — settle ~1.5 s до первого `/status`.
-- Опционально MQTT 3.1 (`MQIsdp`): `-DMQTT_VERSION=MQTT_VERSION_3_1`.
+Нет третьих сообщений (`run` без промежуточного `201`).
 
-### Логи (нарратив)
-- Handshake: `connect` → TCP → CONNACK → subscribe → SUBACK → `pub avail online`.
-- Cmd: `cmd recv` → `pub reply …`.
-- Status: `pub status full|delta bytes=N`.
+**Ctrl serialize:** следующий Ctrl publish (ack или final) стейджится только когда в TX нет другого Ctrl — один CIPSEND-epoch на control reply за раз.
 
-## Память
-- `CMD_JSON_MAX` на вход; `LIST_PROGRAMS_JSON_MAX` (960) / `STATUS_PAYLOAD_MAX_BYTES` на выход.
-- Outbound queue: `TX_Q_DEPTH = 3` × `TX_MAX = 1024`. Envelope+`programs` для `list` обязано влезать в MQTT TX.
+### Очереди cmd (`MqttCmd::*`)
+- Inbound FIFO **`INBOUND_DEPTH=8`**: по порядку, по одной; dispatch не стартует, пока Ctrl ещё outbound.
+- Pending reply **`PENDING_REPLY_DEPTH=4`** (retry если Ctrl занят).
+- Периодический `/status` (Tele) — низший приоритет: только когда inbound/pending пусты, нет активного cmd и нет Ctrl в TX; Tele не занимает последний слот очереди FSM (FIFO send).
 
-## Сообщения
+**Нет silent drop:** на кадр с валидным `id` на `{prefix}/cmd` устройство всегда отдаёт ≥1 `/reply` с тем же `id`. Исключение — oversized payload без извлекаемого `id`.
 
-### 1) Command (вход, `{prefix}/cmd`)
+### Транспорт (SIM800)
+- Один MQTT-кадр = один атомарный `AT+CIPSEND` (`write` только буферизует, `flush`/`flushSend` стартует send).
+- RX ring overflow → reconnect (не drop-oldest — иначе desync framing).
+- `+IPD` framing exclusive while matching/reading; last payload byte never falls through to raw sniffer; `CIPHEAD=1` required.
+- MQTT RX stall: валидный неполный кадр → fail-closed reconnect (`rx_incomplete`); junk head → byte-hunt.
+- `mqtt.loop()` always when READY; mid-CIPSEND TX no-op, RX drained.
+- Ctrl serialize: ack/final wait MQTT Ctrl queue and `gsm.tcpBusBusy()`.
+- PUBLISH not on `/cmd` — ignore (no reconnect).
 
-Плоский JSON. Поле версии протокола **нет**. Legacy `action` / `run_program` / `list_programs` / `get_status` **не поддерживаются**.
+### Доставка
+- LWT `/avail` `"offline"` retained Will QoS1; после connect — `"online"` (после SUBACK или SUBACK-timeout с retry SUBSCRIBE).
+- `/status` QoS0, период `publish_interval_sec` (если Tele-idle).
+- `/cmd` и `/reply` QoS0.
 
-| Поле | Правило |
-|------|---------|
-| `id` | обязательно, 1..16 символов (корреляция + идемпотентность) |
-| `cmd` | `run` \| `stop` \| `list` \| `status` \| `set` |
-| `program` | для `run`, 1..255 |
-| `name` / `ref` / `enabled` | для `set` |
-
-Примеры:
+### 1) Command (`{prefix}/cmd`)
 
 ```json
 {"id":"7f3a","cmd":"run","program":2}
@@ -84,104 +77,44 @@ MQTT-публикация статуса и подписка на команды
 {"id":"7f3a","cmd":"set","name":"trigger","ref":10,"enabled":false}
 {"id":"7f3a","cmd":"set","name":"temp_trigger","ref":20,"enabled":true}
 {"id":"7f3a","cmd":"set","name":"battery_saver","enabled":false}
+{"id":"a1","cmd":"set","name":"wifi_ap","enabled":true}
 ```
 
-`set` → `name`: `thermostat` | `battery_saver` | `input` | `trigger` | `temp_trigger` (`ref` обязателен для input/trigger/temp_trigger).
+| Поле | Правило |
+|------|---------|
+| `id` | 1..`MqttCmd::ID_MAX_LEN` (16) |
+| `cmd` | `run` \| `stop` \| `list` \| `status` \| `set` |
+| `program` / `name` / `ref` / `enabled` | по cmd |
 
-Клиент: subscribe `/reply` до publish `/cmd`; таймаут reply ~10 с; ретрай с тем же `id`; новое действие → новый `id`. Даже если `avail` ещё online (окно Will ~45 с), отсутствие reply = недоставка.
-
-### 2) Reply (выход, `{prefix}/reply`)
-
-Timestamp в reply **не нужен**.
+### 2) Reply (`{prefix}/reply`)
 
 ```json
-{"id":"7f3a","cmd":"run","ok":true,"state":"accepted"}
-{"id":"7f3a","cmd":"run","ok":true,"state":"finished"}
-{"id":"7f3a","cmd":"run","ok":false,"err":"rejected","state":"failed"}
-{"id":"7f3a","cmd":"stop","ok":true}
-{"id":"7f3a","cmd":"set","ok":true}
-{"id":"7f3a","cmd":"list","ok":true,"programs":[…]}
-{"id":"7f3a","cmd":"status","ok":true}
+{"id":"b2","code":202}
+{"id":"b2","code":200}
+{"id":"b2","code":200,"programs":[…]}
+{"id":"b2","code":200,"status":{"full":true,…}}
 ```
 
-`err`: `parse` · `unknown` · `args` · `not_found` · `rejected` · `busy` · `conflict`.
+| code | Смысл |
+|------|--------|
+| **202** | Ack: принято в FIFO |
+| **200** | Успешный финал |
+| **400** | Не распознана / parse / args (только ack-фаза reject) |
+| **404** | not found |
+| **422** | rejected / start failed / reply too large |
+| **500** | авария исполнения `run` |
+| **503** | inbound полна — не принята |
 
-#### `run` / `stop` lifecycle
-| state | Когда |
-|-------|--------|
-| `accepted` | успешный `startProgram` |
-| `finished` | штатное завершение (`ProgramExecutor`) |
-| `failed` | отказ start / авария / stop бегущей программы |
+`run`: `202` → финал `200`/`500` после lifecycle — в том числе при синхронном `finish()` внутри `start()` (одношаговые программы); `422` если старт не удался.  
+Клиент: ждать `202` (~10 с) как факт приёма; финал — своим таймаутом. Повтор с тем же `id` обрабатывается заново (idempotency LRU нет).
 
-`stop` → `ProgramExecutor::stop()`; если программа не бежала — всё равно `ok:true`. Повтор `stop`/`run` с тем же `id` → replay без side-effect.
+### 3) Connection markers (`{prefix}/avail`)
+retained `"offline"` / `"online"`.
 
-### 3) Connection markers (выход, `{prefix}/avail`)
-- retained `"offline"` — LWT / clean disconnect;
-- retained `"online"` — после CONNECT.
+### 4) StatusSnapshot (`{prefix}/status`)
+`emitMqttStatusJson` / delta. QoS 0. Маркер `full` true/false. Периодика / first после connect. `cmd=status` отвечает fat `/reply`, Tele не форсирует.
 
-### 4) StatusSnapshot (JSON, выход, `{prefix}/status`)
-Формируется `emitMqttStatusJson()` / `emitMqttStatusDeltaJson()`. QoS 0, **не** retained.
-
-Каждое сообщение начинается с маркера **`full`**:
-- `"full":true` — полный snapshot.
-- `"full":false` — дельта (deep-merge по id).
-
-Когда что шлётся:
-- После connect (settle ~1.5 s): **full**.
-- Периодика (`publish_interval_sec`): дельта при значимых изменениях, иначе skip.
-- `cmd=status`: внеочередной **full** + thin reply `ok`.
-
-Значимые изменения: `mode`, `engineRunning`, `last_error`, relays/inputs, triggers, program fields; `voltage` / temp — смена valid или \|Δ\| ≥ ε. Остановка программы в дельте: `"current_program":null`.
-
-Порядок полей full-снимка (после `full`):
-
-| # | Поле | Тип | Смысл |
-|---|------|-----|--------|
-| 1 | `full` | bool | `true` = snapshot, `false` = delta |
-| 2 | `uptime` | number | секунды аптайма |
-| 3 | `mode` | string | имя режима (до 15 символов) |
-| 4 | `voltage` | number или `null` | напряжение |
-| 5 | `engineRunning` | bool | `Core::isEngineRunning()` |
-| 6 | `inputsById` | object | ключи `Pin::INPUT_IDS` |
-| 7 | `relaysById` | object | ключи `Pin::RELAY_IDS` |
-| 8 | `tempSensorsById` | object | `{ valid, lastMs, t }` по id сенсора |
-| 9 | `current_program` | number | только если выполняется (в full); в дельте при stop — `null` |
-| 10 | `last_program` | number | всегда в full |
-| 11 | `runtime` | object | `inputTriggersById`, `tempTriggersById` |
-| 12 | `last_error` | string | экранированная; пустая если нет ошибок |
-
-Пример full:
-
-```json
-{
-  "full": true,
-  "uptime": 12345,
-  "mode": "NORMAL",
-  "voltage": 12.4,
-  "engineRunning": true,
-  "inputsById": {"1001": false, "1002": true, "1003": false},
-  "relaysById": {"2001": false, "2002": true, "2003": false, "2004": false, "2005": false},
-  "tempSensorsById": {
-    "3001": {"valid": true, "lastMs": 1000, "t": 21.5},
-    "3003": {"valid": true, "lastMs": 2000, "t": 18.0}
-  },
-  "current_program": 2,
-  "last_program": 2,
-  "runtime": {
-    "inputTriggersById": {"10": true},
-    "tempTriggersById": {"20": false}
-  },
-  "last_error": ""
-}
-```
-
-Пример delta:
-
-```json
-{"full":false,"uptime":12600,"engineRunning":true,"relaysById":{"2002":true}}
-```
-
-Неймспейс id по умолчанию: входы `1xxx`, реле `2xxx`, сенсоры `3xxx`.
+Значимые изменения: `mode`, `engineRunning`, `last_error`, relays/inputs, triggers, program fields; `voltage` / temp — ε из `JsonBytes::Mqtt`.
 
 ### Вне scope
-QoS1 на cmd/reply, timestamp в reply, persist LRU across reboot, ACL, любое старое API / поле `v`.
+QoS1, текстовые `err` на wire, persist LRU, ACL, legacy API.

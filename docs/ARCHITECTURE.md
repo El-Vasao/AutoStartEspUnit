@@ -98,8 +98,8 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
   Локальное время «измерить + застейджить» JSON ограничивают **логируемым** порогом
   (~10 мс в `MQTTClient::publishStatus`) и не приводят к принудительному `disconnect()` сами по себе.
   SIM800: send-epoch до `SEND OK`, selective discard (raw UART junk drop / `+IPD` keep),
-  `POST_BOOT_SETTLE_MS` до `gsm.begin()`, `mqtt.loop` только когда `!tcpBusBusy()` (см. `docs/modules/gsm_modem.md`).
-  MQTT outbound: очередь Ctrl/Tele (`TX_Q_DEPTH=3`), presence после SUBACK или timeout (см. `docs/modules/mqtt.md`).
+  `POST_BOOT_SETTLE_MS` до `gsm.begin()`, `mqtt.loop()` всегда при READY (TX no-op mid-CIPSEND, RX дренируется; см. `docs/modules/gsm_modem.md`).
+  MQTT outbound: очередь Ctrl/Tele (`TX_Q_DEPTH=3`, Tele не занимает последний слот, FIFO send), атомарный CIPSEND, presence после SUBACK или timeout+retry (см. `docs/modules/mqtt.md`). RX overflow → reconnect.
 
 ### Долгие операции и watchdog/cooperate
 Любые потенциально долгие операции (flash, большие сериализации, loop’ы по файлам):
@@ -111,9 +111,9 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
 Контракт по памяти между `Core`, `WebServer`, `CellularCore` и `ModeManager`:
 
 - `NORMAL` / `NORMAL_SILENT`:
-  - GSM/MQTT обслуживаются штатно (в NORMAL — при SoftAP up), SSE incremental в обычных soft queue.
+  - GSM/MQTT обслуживаются штатно в обоих режимах (отличие silent — только SoftAP/веб off), SSE incremental в обычных soft queue.
 - `OTA_UPDATE` (в т.ч. во время stream-upload):
-  - программы stop, реле safe, cellular suspend;
+  - программы stop, реле safe, triggers/battery saver/thermostat runtime off, cellular suspend;
   - **SSE остаётся** (логи/статус под обычными soft gates);
   - пакет льётся стримом в `Update` + FS tail, без полного `/update.bin` на LittleFS;
   - после успешного `streamFinish` — reboot.

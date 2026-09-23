@@ -27,6 +27,9 @@ public:
     void begin();
     void update();
 
+    /// When true, use Timing::TRIGGER_CHECK_INTERVAL_IDLE_MS.
+    void setPollIdle(bool idle) { _pollIdle = idle; }
+
     void setInputTriggerEnabled(uint8_t index, bool en);
     bool isInputTriggerEnabled(uint8_t index) const;
 
@@ -45,5 +48,6 @@ private:
     bool _tempLastState[Limits::MAX_TRIGGERS];
 
     uint32_t _lastCheck;
+    bool _pollIdle{false};
 };
 

@@ -54,6 +54,7 @@ void Sim800TcpTransport::reset() {
     _lastStackRecoverMs = 0;
     _lastConnectAttemptMs = 0;
     _postSendQuietUntilMs = 0;
+    _flushRequested = false;
     _rawLineLen = 0;
     _promptLeak = 0;
     _port = 0;
@@ -62,6 +63,7 @@ void Sim800TcpTransport::reset() {
     _cmdSend[0] = '\0';
     _rxHead = 0;
     _rxCount = 0;
+    _rxOverflow = false;
     _txLen = 0;
     _sendLen = 0;
     _ipState = IpState::Idle;
@@ -79,11 +81,13 @@ void Sim800TcpTransport::clearTx_() {
     _sendWatchMs = 0;
     _txLen = 0;
     _sendLen = 0;
+    _flushRequested = false;
 }
 
 void Sim800TcpTransport::clearRx_() {
     _rxHead = 0;
     _rxCount = 0;
+    _rxOverflow = false;
     _rawLineLen = 0;
     _promptLeak = 0;
     if (_ipState == IpState::ReadData) {
@@ -99,16 +103,16 @@ bool Sim800TcpTransport::inPostSendQuiet_(uint32_t now) const {
     return (int32_t)(now - _postSendQuietUntilMs) < 0;
 }
 
-bool Sim800TcpTransport::shouldDeferMqttRead() const {
-    // Only while TX owns the bus — do not defer on post-send quiet so +IPD/cmd drain promptly.
-    return hasBufferedTx();
+bool Sim800TcpTransport::takeRxOverflow() {
+    if (!_rxOverflow) return false;
+    _rxOverflow = false;
+    return true;
 }
 
 bool Sim800TcpTransport::discardingTcpPayload_(bool fromIpd) const {
-    // Framed +IPD is real TCP payload (CONNACK/SUBACK/PINGRESP often arrive mid-CIPSEND).
+    // Requires CIPHEAD=1 (see startConnect_): framed +IPD is real TCP and must arrive mid-CIPSEND.
+    // Raw (non-+IPD) bytes during send-epoch are modem echo/URC — keep them out of MQTT RX.
     if (fromIpd) return false;
-    // Raw sniff path during send-epoch is usually modem echo/URC junk — keep it out of MQTT RX.
-    // Do NOT discard during post-send quiet: CONNACK often lands there without a new +IPD frame edge.
     return _sendInProgress || _modemTxLocked;
 }
 
@@ -219,11 +223,13 @@ bool Sim800TcpTransport::startConnect_() {
         logger.log("[Sim800Tcp] CIPSHUT (initial, warm-safe)\n");
     }
 
-    // One-time IP stack policy.
-    // RX strategy: push mode (+IPD). Manual CIPRXGET is not reliable across SIM800C firmwares.
-    // CIPMUX=0: single socket.
+    // One-time IP stack: push RX + length prefix + single socket.
+    // Order: CIPRXGET=0 → CIPHEAD=1 → CIPMUX=0. CIPHEAD is required for discardingTcpPayload_.
     if (!_ipConfigDone) {
         if (!_at.enqueue({ "AT+CIPRXGET=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPRXGET0" })) {
+            return false;
+        }
+        if (!_at.enqueue({ "AT+CIPHEAD=1", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPHEAD1" })) {
             return false;
         }
         if (!_at.enqueue({ "AT+CIPMUX=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPMUX0" })) {
@@ -270,8 +276,8 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
         (void)consumeAtResult(_at.takeResult());
     }
 
-    // Start CIPSEND when connected and TX staged.
-    if (_connected && !_sendInProgress && _txLen > 0) {
+    // Start sealed CIPSEND when flushSend() was called.
+    if (_flushRequested && _connected && !_sendInProgress && !_modemTxLocked && _txLen > 0) {
         startSend_();
     }
 }
@@ -314,8 +320,9 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
         }
         return true;
     }
-    if (strcmp(r.tag, "CIPRXGET0") == 0 || strcmp(r.tag, "CIPMUX0") == 0 ||
-        strcmp(r.tag, "CIPMODE") == 0 || strcmp(r.tag, "CIPQSEND") == 0) {
+    if (strcmp(r.tag, "CIPRXGET0") == 0 || strcmp(r.tag, "CIPHEAD1") == 0 ||
+        strcmp(r.tag, "CIPMUX0") == 0 || strcmp(r.tag, "CIPMODE") == 0 ||
+        strcmp(r.tag, "CIPQSEND") == 0) {
         return true; // drain TCP stack config replies
     }
     return false;
@@ -388,7 +395,7 @@ void Sim800TcpTransport::onLine(const char* line) {
 }
 
 void Sim800TcpTransport::onByte(char c) {
-    // +IPD framing when present; else CIPRXGET=0 raw push with control-line filter.
+    // +IPD state machine (CIPHEAD=1). While !_Idle, framing owns the byte — no raw sniffer.
     switch (_ipState) {
         case IpState::Idle:
             if (c == '+') _ipState = IpState::MatchI;
@@ -435,17 +442,18 @@ void Sim800TcpTransport::onByte(char c) {
             if (++_ipRead >= _ipLen) {
                 _at.uart().setDataMode(false);
                 _ipState = IpState::Idle;
+                _rawLineLen = 0; // drop any accidental "+IPD,n:" residue from match path
             }
-            break;
+            // Always return: last payload byte must not fall through to the raw sniffer.
+            return;
         default:
             _ipState = IpState::Idle;
             break;
     }
 
-    // If we're in +IPD data mode, raw sniffing must not run (payload may be binary).
-    if (_ipState == IpState::ReadData) return;
+    if (_ipState != IpState::Idle) return;
 
-    // CIPRXGET=0: binary stream with CRLF control-line filter.
+    // Raw path (fallback / modem text): CRLF control-line filter into MQTT RX.
     // Do not treat 0x20 as text start — MQTT CONNACK begins with that byte.
     const uint8_t ub = (uint8_t)c;
     const bool printable = (ub == '\r' || ub == '\n' || ub == '\t' || (ub >= 0x20 && ub <= 0x7E));
@@ -533,9 +541,11 @@ void Sim800TcpTransport::onByte(char c) {
 void Sim800TcpTransport::pushRx_(uint8_t b, bool fromIpd) {
     if (discardingTcpPayload_(fromIpd)) return;
     if (_rxCount >= RX_SIZE) {
-        // drop oldest
-        _rxHead = (uint16_t)((_rxHead + 1) % RX_SIZE);
-        _rxCount--;
+        if (!_rxOverflow) {
+            _rxOverflow = true;
+            logger.log("[Sim800Tcp] RX overflow — MQTT stream desync risk\n");
+        }
+        return; // do not drop-oldest (that desyncs MQTT framing)
     }
     const uint16_t idx = (uint16_t)((_rxHead + _rxCount) % RX_SIZE);
     _rx[idx] = b;
@@ -562,12 +572,21 @@ int Sim800TcpTransport::peek() const {
 size_t Sim800TcpTransport::write(const uint8_t* data, size_t len) {
     if (!data || len == 0) return 0;
     // Refuse append while a CIPSEND epoch owns the TX buffer (length was frozen in AT+CIPSEND=N).
-    if (_sendInProgress || _modemTxLocked) return 0;
+    if (_sendInProgress || _modemTxLocked || _flushRequested) return 0;
     const size_t room = TX_SIZE - _txLen;
     const size_t n = (len < room) ? len : room;
     memcpy(_tx + _txLen, data, n);
     _txLen += (uint16_t)n;
     return n;
+}
+
+bool Sim800TcpTransport::flushSend() {
+    if (_txLen == 0) return false;
+    _flushRequested = true;
+    if (_connected && !_sendInProgress && !_modemTxLocked) {
+        startSend_();
+    }
+    return true;
 }
 
 void Sim800TcpTransport::startSend_() {
@@ -604,11 +623,8 @@ int Sim800ClientAdapter::connect(const char* host, uint16_t port) {
 
 size_t Sim800ClientAdapter::write(const uint8_t* buf, size_t size) {
     pump_();
-    const size_t n = _t.write(buf, size);
-    if (n == 0) return 0;
-    // One pump to enqueue CIPSEND; do not wait for SEND OK.
-    pump_();
-    return n;
+    // Buffer only — CIPSEND starts on flush() after a full MQTT packet is staged.
+    return _t.write(buf, size);
 }
 
 int Sim800ClientAdapter::read(uint8_t* buf, size_t size) {

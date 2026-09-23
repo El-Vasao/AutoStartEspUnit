@@ -38,12 +38,7 @@
         const wasNearBottom = !!el && (el.scrollHeight - (el.scrollTop + el.clientHeight) < 40);
 
         this.entries.push(line);
-        if (this.entries.length > 200) {
-          this.entries.shift();
-          this.text = this.entries.join('\n');
-        } else {
-          this.text = this.text ? (this.text + '\n' + line) : String(line);
-        }
+        this.text = this.text ? (this.text + '\n' + line) : String(line);
 
         if (this.visible && el && wasNearBottom) {
           requestAnimationFrame(() => {
@@ -56,6 +51,51 @@
         this.text = '';
         const el = this._getEl();
         if (el) el.scrollTop = 0;
+      },
+      async copy() {
+        const toast = Alpine.store('uiToast');
+        const text = String(this.text || '');
+        if (!text) {
+          toast?.show?.('Лог пуст', 'info', 2500);
+          return;
+        }
+
+        const fallbackCopy = () => {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly', '');
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          ta.style.top = '0';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          ta.setSelectionRange(0, ta.value.length);
+          let ok = false;
+          try {
+            ok = document.execCommand('copy');
+          } catch (_) {
+            ok = false;
+          }
+          document.body.removeChild(ta);
+          return ok;
+        };
+
+        try {
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(text);
+            toast?.show?.('Лог скопирован', 'success', 2500);
+            return;
+          }
+        } catch (_) {
+          // fall through to execCommand
+        }
+
+        if (fallbackCopy()) {
+          toast?.show?.('Лог скопирован', 'success', 2500);
+        } else {
+          toast?.show?.('Не удалось скопировать', 'error', 3500);
+        }
       }
     });
   };

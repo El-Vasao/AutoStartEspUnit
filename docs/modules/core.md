@@ -31,6 +31,8 @@
 `ModeManager` отвечает за enter/exit и включение подсистем (web/ota), а доменная логика и hot-path update’ы живут в
 `Core::handle*()`.
 
+`NORMAL` / `NORMAL_SILENT`: одинаковый доменный стек + GSM/MQTT; silent только без SoftAP. Wake в NORMAL: кнопка IN3 или MQTT `set` `wifi_ap`. `OTA_UPDATE`: на enter гасятся programs/relays и runtime triggers/battery/thermostat.
+
 ## Важные инварианты
 - `Core::update()` должен быть неблокирующим и вызываться часто.
 - Долгие операции обязаны делать time slicing:

@@ -12,7 +12,9 @@ struct AppPorts;
 #include "mqtt/MqttFsmClient.h"
 
 /**
- * MQTT: status/avail + cmd/reply contract (id, cmd, set/run/stop/list/status).
+ * MQTT: status/avail + cmd/reply.
+ * Wire: ingress ack (202|4xx|503) then one final (thin id+code; list/status fat body).
+ * `id` correlates request/reply only — no idempotency LRU.
  */
 class MQTTClient {
 public:
@@ -24,44 +26,32 @@ public:
         _deferMqttRx = fn;
         _deferMqttRxCtx = ctx;
     }
+    /// True while modem CIPSEND/TX owns the bus — gate Ctrl replies (ack then final).
+    void setCtrlPlaneBusy(bool (*fn)(void*), void* ctx) {
+        _ctrlPlaneBusy = fn;
+        _ctrlPlaneBusyCtx = ctx;
+    }
 
     void loop();
     void setReconnectEnabled(bool enabled) { _reconnectEnabled = enabled; }
+    /// Transport RX ring overflow → force MQTT error/reconnect (stream desync).
+    void onTransportRxOverflow();
     bool publishStatus(bool forceFull = false);
     void disconnect();
     bool needsDisconnectDrain() const;
     uint8_t getConsecutiveConnectFails() const;
     bool isNonBlocking() const { return true; }
 
-    /// ProgramExecutor lifecycle → /reply for active run id.
     void onProgramLifecycle(uint8_t programId, bool finishedOk);
     static void onProgramLifecycleThunk(void* ctx, uint8_t programId, bool finishedOk);
 
 private:
-    static constexpr uint8_t kIdemDepth = 16;
-    static constexpr uint32_t kIdemTtlMs = 30UL * 60UL * 1000UL;
-    static constexpr uint8_t kPendingReplyDepth = 2;
-
-    struct IdemEntry {
-        char id[17]{};
-        uint32_t argsFp{0};
-        MqttCommandKind kind{MqttCommandKind::None};
-        bool ok{false};
-        MqttCmdErr err{MqttCmdErr::None};
-        MqttRunState runState{MqttRunState::None};
-        uint32_t atMs{0};
-        bool used{false};
-    };
-
-    enum class PendingKind : uint8_t { None, Thin, List, StatusAndAck };
+    enum class PendingKind : uint8_t { None, Thin, List, Status };
 
     struct PendingReply {
         PendingKind kind{PendingKind::None};
-        char id[17]{};
-        MqttCommandKind cmd{MqttCommandKind::None};
-        bool ok{false};
-        MqttCmdErr err{MqttCmdErr::None};
-        MqttRunState runState{MqttRunState::None};
+        char id[MqttCmd::ID_MAX_LEN + 1]{};
+        uint16_t code{0};
     };
 
     Client& _netClient;
@@ -72,9 +62,11 @@ private:
     const AppPorts* _ports{nullptr};
     bool (*_deferMqttRx)(void*){nullptr};
     void* _deferMqttRxCtx{nullptr};
+    bool (*_ctrlPlaneBusy)(void*){nullptr};
+    void* _ctrlPlaneBusyCtx{nullptr};
 
     MqttFsmClient _fsm;
-    bool _subscribed{false};
+    bool _subscribeQueued{false};
     bool _mqttWasConnected{false};
     bool _onlinePublishDue{false};
     bool _awaitFirstStatus{false};
@@ -85,12 +77,14 @@ private:
     bool _havePublishedBaseline{false};
 
     bool _cmdBusy{false};
-    IdemEntry _idem[kIdemDepth]{};
-    uint8_t _idemNext{0};
-    PendingReply _pending[kPendingReplyDepth]{};
+    PendingReply _pending[MqttCmd::PENDING_REPLY_DEPTH]{};
     uint8_t _pendingCount{0};
 
-    char _activeRunId[17]{};
+    MqttCommand _inbound[MqttCmd::INBOUND_DEPTH]{};
+    uint8_t _inboundHead{0};
+    uint8_t _inboundCount{0};
+
+    char _activeRunId[MqttCmd::ID_MAX_LEN + 1]{};
     uint8_t _activeRunProgram{0};
     bool _hasActiveRun{false};
 
@@ -107,18 +101,24 @@ private:
 
     static void onPublishThunk(void* ctx, const char* topic, const uint8_t* payload, uint16_t len, bool retained);
     void handlePublish(const char* topic, const uint8_t* payload, uint16_t len, bool retained);
+    /// Ingress only: parse/validate/queue → ack 202 or reject; never runs handlers.
+    void tryAckIngress_(const uint8_t* payload, uint16_t length);
     void dispatchCommand_(const MqttCommand& cmd);
-    void clearIdem_();
+
     void clearPending_();
-    uint32_t argsFingerprint_(const MqttCommand& cmd) const;
-    IdemEntry* findIdem_(const char* id);
-    void storeIdem_(const MqttCommand& cmd, bool ok, MqttCmdErr err, MqttRunState st);
-    void updateIdemRunState_(const char* id, bool ok, MqttCmdErr err, MqttRunState st);
+    void clearInbound_();
+
+    bool enqueueInbound_(const MqttCommand& cmd);
+    void drainInbound_();
 
     bool enqueuePending_(const PendingReply& pr);
+    void evictOldestPending_();
     void flushPending_();
-    bool publishThinReply_(const char* id, MqttCommandKind cmd, bool ok, MqttCmdErr err, MqttRunState st);
+    bool stageReply_(const PendingReply& pr);
+    bool ctrlPlaneBlocked_() const;
+    bool publishThinReply_(const char* id, uint16_t code);
     bool publishListReply_(const char* id);
-    bool tryPublishThinOrQueue_(const char* id, MqttCommandKind cmd, bool ok, MqttCmdErr err, MqttRunState st);
+    bool publishStatusReply_(const char* id);
+    void captureStatusSnapshot_(StatusSnapshot& out) const;
     bool validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const;
 };

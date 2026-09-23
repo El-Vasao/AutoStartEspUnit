@@ -77,6 +77,7 @@ MqttSetName setNameFrom(const char* n) {
     if (strcmp(n, "input") == 0) return MqttSetName::Input;
     if (strcmp(n, "trigger") == 0) return MqttSetName::Trigger;
     if (strcmp(n, "temp_trigger") == 0) return MqttSetName::TempTrigger;
+    if (strcmp(n, "wifi_ap") == 0) return MqttSetName::WifiAp;
     return MqttSetName::None;
 }
 
@@ -103,7 +104,7 @@ bool mqttExtractReqId(const char* json, char* out, size_t outCap) {
     skipWs(p);
     if (*p != '"') return false;
     p++;
-    return readJsonStringContent(p, out, outCap) && out[0] != '\0' && strlen(out) <= 16;
+    return readJsonStringContent(p, out, outCap) && out[0] != '\0' && strlen(out) <= MqttCmd::ID_MAX_LEN;
 }
 
 bool parseMqttCommandJson(const char* json, MqttCommand& out) {
@@ -146,7 +147,7 @@ bool parseMqttCommandJson(const char* json, MqttCommand& out) {
             if (!readJsonStringContent(p, vbuf, sizeof vbuf)) return false;
             switch (key) {
                 case Key::Id:
-                    if (vbuf[0] == '\0' || strlen(vbuf) > 16) return false;
+                    if (vbuf[0] == '\0' || strlen(vbuf) > MqttCmd::ID_MAX_LEN) return false;
                     strlcpy(out.id, vbuf, sizeof(out.id));
                     break;
                 case Key::Cmd:

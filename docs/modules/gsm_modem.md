@@ -56,14 +56,15 @@
 - Watchdogs: connect (`CONNECT_WATCHDOG_MS`) сбрасывает залипший `_connecting`; send (`SEND_WATCHDOG_MS`) после `CIPSEND`/`>` без `SEND OK` — end send-epoch + CIPSHUT recover.
 - После `STACK_RECOVER_REATTACH_THRESHOLD` CIPSHUT-recover без успешного `CONNECT OK` — `needsBearerReattach` → GSM `requestReattach` (status-first `SAPBR=2,1`).
 - Единый `takeResult`: TCP CIP* теги → `Sim800TcpTransport::consumeAtResult`, иначе GSM await absorb.
-- RX по умолчанию: **`+IPD`** и `AT+CIPRXGET=0` (push mode).
-- Payload внутри `+IPD` — **бинарный**; пока принимается тело IP-пакета, `ModemUart` переводится в `dataMode` (выключается line-framing для URC), чтобы сырой поток не ломал парсеры строк.
-- **Selective discard во время CIPSEND:** сырой (non-`+IPD`) путь в MQTT RX дропается, пока `_sendInProgress || _modemTxLocked`; байты из framed `+IPD` ReadData **принимаются** (CONNACK/SUBACK/PINGRESP часто приходят mid-send). Post-send quiet не дропает payload — только откладывает MQTT parse через `shouldDeferMqttRead()`.
+- RX: **`AT+CIPRXGET=0` → `AT+CIPHEAD=1` → `AT+CIPMUX=0`**. `CIPHEAD=1` обязателен: без него inbound TCP сырой и **дропается mid-CIPSEND** (`discardingTcpPayload_`) → обрезанный MQTT PUBLISH.
+- Инвариант `onByte`: пока `_ipState != Idle`, raw CRLF-sniffer не трогает байт; после конца `+IPD` payload сбрасывается `_rawLineLen`; последний payload-байт всегда `return` (без fall-through).
+- Payload внутри `+IPD` — **бинарный**; на время тела `ModemUart` в `dataMode` (без line-framing URC).
+- **Selective discard mid-CIPSEND:** только non-`+IPD` путь; framed `ReadData` принимается (CONNACK/SUBACK/PINGRESP mid-send).
 
 ### 3а) CellularCore glue
 
 - После первого `service()` — settle **`GSM::POST_BOOT_SETTLE_MS` (20 s)** до `gsm.begin()`.
-- `mqtt.loop()` и reattach не вызываются, пока `gsm.tcpBusBusy()`.
+- `mqtt.loop()` вызывается всегда при READY (mid-CIPSEND TX no-op, RX ring дренируется); reattach — по политике bearer, не блокируется только из‑за mid-send.
 - Hypothesis `AT`/`CGMI`: пауза **`HYP_RETRY_GAP_MS`** между повторами.
 
 ### 4) MQTT поверх `Client`
@@ -131,6 +132,6 @@ MQTT реализован **в прошивке** как неблокирующ�
 **3) UI при SoftAP**
 
 - SoftAP UI и GSM/MQTT сосуществуют на ESP32-C3.
-- Cellular suspend только при SoftAP down (NORMAL) или OTA upload pressure.
+- Cellular suspend только в SETUP/EMERGENCY AP и `OTA_UPDATE` (не при SoftAP down в NORMAL).
 - Полный JSON status уходит без Instruction fault / IWDT.
 - Ожидание: в панели виден живой `gsmState` во время загрузки UI (без `/ui/ready`).
