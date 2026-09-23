@@ -19,8 +19,10 @@
       inputs: [],
       thermostat: {},
       battery_saver: {},
+      time: {},
       input_triggers: [],
       temperature_triggers: [],
+      schedule_triggers: [],
       setup_required: false,
     };
 
@@ -77,6 +79,7 @@
     out.add('inputs');
     out.add('input_triggers');
     out.add('temperature_triggers');
+    out.add('schedule_triggers');
 
     return Array.from(out);
   }
@@ -109,8 +112,9 @@
         }
       }
 
-      if (!out.triggers) out.triggers = ['input_triggers', 'temperature_triggers'];
+      if (!out.triggers) out.triggers = ['input_triggers', 'temperature_triggers', 'schedule_triggers'];
       if (!out.battery) out.battery = ['battery_saver'];
+      if (!out.time) out.time = ['time'];
       if (!out.sensors) out.sensors = ['sensors'];
       if (!out.inputs) out.inputs = ['inputs'];
 
@@ -178,8 +182,10 @@
       updateFromJSON(data) {
         if (!Array.isArray(this.input_triggers)) this.input_triggers = [];
         if (!Array.isArray(this.temperature_triggers)) this.temperature_triggers = [];
+        if (!Array.isArray(this.schedule_triggers)) this.schedule_triggers = [];
         if (!Array.isArray(this.sensors)) this.sensors = [];
         if (!Array.isArray(this.inputs)) this.inputs = [];
+        if (!this.time || typeof this.time !== 'object') this.time = {};
 
         for (let key in data) {
           if (!this.hasOwnProperty(key)) continue;
@@ -292,6 +298,7 @@
           if (config.inputs === undefined) config.inputs = this.inputs || {};
           if (config.input_triggers === undefined) config.input_triggers = Array.isArray(this.input_triggers) ? this.input_triggers : [];
           if (config.temperature_triggers === undefined) config.temperature_triggers = Array.isArray(this.temperature_triggers) ? this.temperature_triggers : [];
+          if (config.schedule_triggers === undefined) config.schedule_triggers = Array.isArray(this.schedule_triggers) ? this.schedule_triggers : [];
           return config;
         }
 
@@ -425,6 +432,7 @@
           const trig = schema.triggers || {};
           const inFields = Array.isArray(trig.inputFields) ? trig.inputFields : [];
           const tFields = Array.isArray(trig.tempFields) ? trig.tempFields : [];
+          const sFields = Array.isArray(trig.scheduleFields) ? trig.scheduleFields : [];
 
           const inOut = [];
           for (let idx = 0; idx < (this.input_triggers?.length || 0); idx++) {
@@ -453,6 +461,20 @@
             tOut.push(row);
           }
           out.temperature_triggers = tOut;
+
+          const sOut = [];
+          for (let idx = 0; idx < (this.schedule_triggers?.length || 0); idx++) {
+            const row = {};
+            for (const f of sFields) {
+              const bind = String(f?.bind || '');
+              if (!bind) continue;
+              const path = `schedule_triggers.${idx}.${bind}`;
+              const v = getByPath(this, path);
+              if (v !== undefined) row[bind] = v;
+            }
+            sOut.push(row);
+          }
+          out.schedule_triggers = sOut;
         } catch (e) {
           // best-effort; do not block save
         }
@@ -592,6 +614,24 @@
         this.recomputeDirty();
       },
       removeTempTrigger(index) { this.temperature_triggers.splice(index, 1); this.recomputeDirty(); },
+      addScheduleTrigger() {
+        const list = Array.isArray(this.schedule_triggers) ? this.schedule_triggers : [];
+        let maxId = 0;
+        for (const tr of list) {
+          const id = Number(tr?.id) || 0;
+          if (id > maxId) maxId = id;
+        }
+        this.schedule_triggers.push({
+          id: maxId + 1,
+          enabled: false,
+          hour: 7,
+          minute: 0,
+          days_mask: 127,
+          program_id: 0
+        });
+        this.recomputeDirty();
+      },
+      removeScheduleTrigger(index) { this.schedule_triggers.splice(index, 1); this.recomputeDirty(); },
       updateInputType(index) {}
     });
   };

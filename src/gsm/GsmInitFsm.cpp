@@ -1,8 +1,9 @@
 /**
- * @file GSMController.Fsm.Init.cpp
+ * @file GsmInitFsm.cpp
  * @brief INIT под-FSM: PreCfun @ UART_BAUD, baud search, NV IPR, resume CREG/CGATT/SAPBR, modem policy.
  */
 #include "gsm/GSMController.h"
+#include "gsm/GsmInitFsm.h"
 
 #include "gsm/GsmInitPhase.h"
 #include "config/Config.h"
@@ -14,14 +15,17 @@
 #include <string.h>
 
 namespace {
-constexpr uint8_t kBaudCandidateCount = 5;
-static const uint32_t kBaudCandidates[kBaudCandidateCount] = {
-    GSM::UART_BAUD,
-    57600,
-    38400,
-    19200,
-    9600,
-};
+constexpr uint8_t kBaudCandidateCount = GsmInitFsm::kBaudCandidateCount;
+inline const uint32_t* baudCandidates() {
+    static const uint32_t kTable[kBaudCandidateCount] = {
+        GSM::UART_BAUD,
+        57600,
+        38400,
+        19200,
+        9600,
+    };
+    return kTable;
+}
 
 /// Порог эскалации hypothesis: PreCfun или baud search.
 inline uint32_t hypEscalateAfterMs(bool didPreCfun) {
@@ -29,6 +33,19 @@ inline uint32_t hypEscalateAfterMs(bool didPreCfun) {
 }
 } // namespace
 
+uint32_t GsmInitFsm::baudCandidateAt(uint8_t idx) {
+    if (idx >= kBaudCandidateCount) return GSM::UART_BAUD;
+    return baudCandidates()[idx];
+}
+
+/// Public INIT entry used by GSMController::update (friend can call private handleInit).
+void GsmInitFsm::tick(GSMController& gsm) {
+    gsm.handleInit();
+}
+
+/**
+ * INIT body — kept as GSMController method for private-field access; defined in GsmInitFsm TU.
+ */
 void GSMController::handleInit() {
     const uint32_t now = millis();
 
@@ -70,8 +87,8 @@ void GSMController::handleInit() {
             _baudSearchBaudIdx = (kBaudCandidateCount > 1) ? 1 : 0;
             logger.log("[GSMController] baud search round %u start (from %lu)\n",
                        (unsigned)_baudSearchRound,
-                       (unsigned long)kBaudCandidates[_baudSearchBaudIdx]);
-            gsmOpenUart(kBaudCandidates[_baudSearchBaudIdx]);
+                       (unsigned long)baudCandidates()[_baudSearchBaudIdx]);
+            gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
             _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
             _initPhase = GsmInitPhase::BsSettle;
             return;
@@ -120,7 +137,7 @@ void GSMController::handleInit() {
                     _lastCommandTime = 0;
                     return;
                 }
-                gsmOpenUart(kBaudCandidates[_baudSearchBaudIdx]);
+                gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
                 _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
                 _initPhase = GsmInitPhase::BsSettle;
                 _lastCommandTime = 0;
@@ -144,7 +161,7 @@ void GSMController::handleInit() {
                     _lastCommandTime = 0;
                     return;
                 }
-                gsmOpenUart(kBaudCandidates[_baudSearchBaudIdx]);
+                gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
                 _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
                 _initPhase = GsmInitPhase::BsSettle;
                 _lastCommandTime = 0;
@@ -162,7 +179,7 @@ void GSMController::handleInit() {
                     _lastCommandTime = 0;
                     return;
                 }
-                gsmOpenUart(kBaudCandidates[_baudSearchBaudIdx]);
+                gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
                 _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
                 _initPhase = GsmInitPhase::BsSettle;
                 _lastCommandTime = 0;
@@ -180,7 +197,7 @@ void GSMController::handleInit() {
                         _lastCommandTime = 0;
                         return;
                     }
-                    gsmOpenUart(kBaudCandidates[_baudSearchBaudIdx]);
+                    gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
                     _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
                     _initPhase = GsmInitPhase::BsSettle;
                     _lastCommandTime = 0;
@@ -210,7 +227,7 @@ void GSMController::handleInit() {
                     _lastCommandTime = 0;
                     return;
                 }
-                gsmOpenUart(kBaudCandidates[_baudSearchBaudIdx]);
+                gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
                 _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
                 _initPhase = GsmInitPhase::BsSettle;
                 _lastCommandTime = 0;
@@ -584,6 +601,24 @@ void GSMController::handleInit() {
     case GsmInitPhase::ModCmee:
         if (_lastCommandTime == 0) {
             sendAt("AT+CMEE=2", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            return;
+        }
+        if (_awaitError || awaitTimedOut(now)) {
+            resetAwait();
+            clearResponse();
+        } else if (!_awaitOk) {
+            return;
+        } else {
+            resetAwait();
+            clearResponse();
+        }
+        _lastCommandTime = 0;
+        _initPhase = GsmInitPhase::ModClts;
+        return;
+    case GsmInitPhase::ModClts:
+        if (_lastCommandTime == 0) {
+            // Network time sync (NITZ) → modem CCLK; best-effort fallback if CNTP fails later.
+            sendAt("AT+CLTS=1", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {

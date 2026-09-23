@@ -7,7 +7,7 @@
 
 /// Canonical MQTT JSON status (see docs/modules/mqtt.md § StatusSnapshot).
 /// Full: leading `"full":true`, then uptime, mode, voltage, engineRunning, inputsById,
-/// relaysById, tempSensorsById, current_program?, last_program, runtime, last_error.
+/// relaysById, tempSensorsById, current_program?, last_program, runtime, optional last_err[].
 /// No schema field; fields are not truncated.
 void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p);
 

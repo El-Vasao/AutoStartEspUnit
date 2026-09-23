@@ -18,6 +18,9 @@ enum class ErrorCode : uint8_t {
     CONFIG_PARSE_FAIL,      ///< Ошибка парсинга JSON конфигурации
     FS_UNKNOWN,             ///< Неизвестная ошибка файловой системы
     WDT_RESET,              ///< Сброс по watchdog
+    PANIC_RESET,            ///< Сброс после panic/exception
+    BROWNOUT_RESET,         ///< Сброс по brownout
+    UNEXPECTED_RESET,       ///< Прочий нештатный reset reason
 
     GSM_NO_RESPONSE = 16,   ///< GSM-модем не отвечает
     GSM_REG_FAIL,           ///< Не удалось зарегистрироваться в сети
@@ -50,6 +53,9 @@ inline const char* errorCodeToString(ErrorCode err) {
         case ErrorCode::CONFIG_PARSE_FAIL: return "Config parse failed";
         case ErrorCode::FS_UNKNOWN:        return "Unknown FS error";
         case ErrorCode::WDT_RESET:         return "Watchdog reset";
+        case ErrorCode::PANIC_RESET:       return "Panic reset";
+        case ErrorCode::BROWNOUT_RESET:    return "Brownout reset";
+        case ErrorCode::UNEXPECTED_RESET:  return "Unexpected reset";
         case ErrorCode::GSM_NO_RESPONSE:   return "GSM not responding";
         case ErrorCode::GSM_REG_FAIL:      return "GSM registration failed";
         case ErrorCode::GSM_APN_FAIL:      return "GSM APN failed";

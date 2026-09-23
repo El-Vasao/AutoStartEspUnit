@@ -6,9 +6,14 @@
  * - Этот заголовок — единственная точка входа для остальных подсистем.
  * - Внутренняя реализация должна оставаться в `src/web/` (и подпапках) и не “просачиваться” наружу.
  *
- * Важно для памяти (ESP8266):
+ * Важно для памяти (ESP32-C3 SoftAP + SSE):
  * - Подсистема web чувствительна к heap/очередям lwIP. Любые изменения должны учитывать
  *   ограничения `WebSseLimits::*` и избегать `String`-чёрна в горячих путях.
+ *
+ * Compile fanout:
+ * - Публичный заголовок пока включает `ESPAsyncWebServer.h` / `WiFi.h`, потому что
+ *   `AsyncWebServer` и `AsyncEventSource` — члены класса. Thin-header (pimpl runtime-only)
+ *   — отдельный follow-up; не блокирует остальные P1-работы.
  *
  * Продукт (режим NORMAL):
  * - В `CoreMode::NORMAL` веб-сервер и доступный пользователю UI (HTTP + SSE) считаются **всегда включёнными**;
@@ -28,6 +33,7 @@
 
 enum class CoreMode : uint8_t;
 class WebServerRuntime;
+struct AppPorts;
 
 /**
  * @brief Веб-сервер для управления устройством.
@@ -42,6 +48,10 @@ class WebServerRuntime;
 class WebServer {
 public:
     WebServer();
+
+    /// Wired by Core::begin (composition root). Mutating API uses AppPorts, not global core getters.
+    void setAppPorts(const AppPorts* ports) { ports_ = ports; }
+    const AppPorts* appPorts() const { return ports_; }
 
     // Единый update для web-части (DNS+lease+SSE housekeeping).
     void update();
@@ -156,6 +166,8 @@ private:
     bool postedProgramJsonPending;
 
     AsyncEventSource events;  ///< встроенный обработчик событий SSE (путь "/events")
+
+    const AppPorts* ports_{nullptr};
 
     /// Unified status sender with queue cap.
     void sendStatus_(size_t maxQueueDepth);

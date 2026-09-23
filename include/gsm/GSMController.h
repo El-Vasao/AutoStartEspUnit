@@ -2,9 +2,11 @@
 #pragma once
 
 #include <Arduino.h>
+#include <time.h>
 #include "common/Constants.h"
 #include "gsm/GsmModemStack.h"
 #include "gsm/GsmInitPhase.h"
+#include "gsm/GsmInitFsm.h"
 
 // Состояния GSM-модема
 enum class GSMState : uint8_t {
@@ -76,11 +78,22 @@ public:
     /// True while modem TX/CIPSEND owns the bus.
     bool tcpBusBusy() const { return _stack.tcp.isBusBusy(); }
 
+    /// True while CIP TCP socket is up or connecting (NTP must not run).
+    bool tcpSocketActive() const {
+        return _stack.tcp.isConnected() || _stack.tcp.isConnecting();
+    }
+
     /// Sticky TCP RX ring overflow (MQTT must reconnect).
     bool takeTcpRxOverflow() { return _stack.tcp.takeRxOverflow(); }
 
     /// Legacy: always false — MQTT drains RX ring even mid-send.
     bool shouldDeferMqttRead() const { return _stack.tcp.shouldDeferMqttRead(); }
+
+    /// Non-blocking SIM800 NTP (AT+CNTP → CCLK). Returns false if busy / not ready / TCP active.
+    bool requestNtpSync(const char* ntpServer, int8_t tzOffsetHours);
+    bool ntpSyncBusy() const { return _ntpStep != NtpStep::Idle; }
+    /// Consumes a successful sync result (UTC epoch). Returns false if none pending.
+    bool takeNtpEpochUtc(time_t& epochUtcOut);
 
 private:
     static constexpr size_t RESPONSE_BUF_SIZE = GSM::RESPONSE_BUFFER_SIZE;
@@ -181,6 +194,28 @@ private:
     uint32_t _lastDiagMs{0};
     uint32_t _lastOperatorMs{0};
 
+    /// Modem NTP (AT+CNTP / CCLK) — only advanced from handleReady when AT bus idle.
+    enum class NtpStep : uint8_t {
+        Idle = 0,
+        Cntpcid,
+        CntpSet,
+        CntpRun,
+        WaitCntpUrc,
+        Cclk,
+        DoneOk,
+        DoneFail,
+    };
+    NtpStep _ntpStep{NtpStep::Idle};
+    char _ntpServer[TextBytes::TimeCfg::NTP_SERVER]{};
+    int8_t _ntpTzQuarters{0};
+    bool _ntpUrcOk{false};
+    bool _ntpUrcFail{false};
+    bool _ntpResultReady{false};
+    bool _ntpCmdSent{false};
+    time_t _ntpEpochUtc{0};
+    uint32_t _ntpDeadlineMs{0};
+    char _cclkSnap[48]{};
+
     /// Редкая диагностика «застряли»: снимок state/init/await не меняется дольше интервала.
     uint32_t _gsmStallPrevFp{0};
     uint32_t _gsmStallFpSinceMs{0};
@@ -234,5 +269,11 @@ private:
     void handleGprsGetIp();
     void handleReady();
     void handleError();
+
+    void serviceNtpSync(uint32_t now);
+    void ntpFail_(const char* why);
+    void ntpFinishOk_(time_t epochUtc);
+
+    friend class GsmInitFsm;
 };
 

@@ -86,6 +86,30 @@
         const secs = sec % 60;
         return `${mins} мин ${secs} с`;
       },
+      formatWallClock(st) {
+        try {
+          if (!st || !st.timeSynced || !st.epoch) return st?.timeSynced === false ? 'нет sync' : '—';
+          return this.formatWallClockPreview(st.tzOffsetHours, st);
+        } catch (e) {
+          return '—';
+        }
+      },
+      /** Preview using UI-selected TZ hours (may differ from saved/device TZ). */
+      formatWallClockPreview(tzHours, st) {
+        try {
+          if (!st || !st.timeSynced || !st.epoch) return st?.timeSynced === false ? 'нет sync (ожидание NTP)' : '—';
+          const offH = Number(tzHours);
+          const hours = Number.isFinite(offH) ? offH : (Number(st.tzOffsetHours) || 0);
+          const d = new Date((Number(st.epoch) + hours * 3600) * 1000);
+          const pad = (n) => String(n).padStart(2, '0');
+          const stamp = `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+          const sign = hours >= 0 ? '+' : '';
+          const label = `UTC${sign}${hours}`;
+          return st.timeStale ? `${stamp} (${label}, устарело)` : `${stamp} (${label})`;
+        } catch (e) {
+          return '—';
+        }
+      },
       spinnerSvg: `
 <svg class="animate-spin h-4 w-4 inline ml-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>

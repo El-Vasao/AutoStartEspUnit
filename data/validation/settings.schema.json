@@ -374,6 +374,33 @@
           "maximum": 255
         }
       }
+    },
+    "time": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ntp_server": { "type": "string", "maxLength": 47 },
+        "tz_offset_hours": { "type": "integer", "minimum": -12, "maximum": 14 },
+        "sync_interval_sec": { "type": "integer", "minimum": 300, "maximum": 604800 }
+      }
+    },
+    "schedule_triggers": {
+      "type": "array",
+      "default": [],
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "enabled": { "type": "boolean" },
+          "hour": { "type": "integer", "minimum": 0, "maximum": 23 },
+          "minute": { "type": "integer", "minimum": 0, "maximum": 59 },
+          "days_mask": { "type": "integer", "minimum": 0, "maximum": 127 },
+          "program_id": { "type": "integer", "minimum": 0, "maximum": 255 }
+        }
+      }
     }
   }
 }

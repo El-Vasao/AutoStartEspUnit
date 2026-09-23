@@ -314,6 +314,12 @@ bool MQTTClient::validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const
                 return false;
             }
             return true;
+        case MqttCommandKind::SetTime:
+            if (!cmd.hasEpoch || cmd.epoch < 1700000000UL) {
+                errOut = MqttCmdErr::Args;
+                return false;
+            }
+            return true;
         default:
             errOut = MqttCmdErr::Unknown;
             return false;
@@ -501,6 +507,17 @@ void MQTTClient::dispatchCommand_(const MqttCommand& cmd) {
             pr.kind = PendingKind::Thin;
             strlcpy(pr.id, cmd.id, sizeof(pr.id));
             pr.code = code;
+            logger.log("[MQTTClient] cmd final id=%s code=%u\n", pr.id, (unsigned)pr.code);
+            (void)stageReply_(pr);
+            return;
+        }
+        case MqttCommandKind::SetTime: {
+            logger.log("[MQTTClient] set_time epoch=%lu id=%s\n", (unsigned long)cmd.epoch, cmd.id);
+            core.applyWallClockEpoch(cmd.epoch);
+            PendingReply pr{};
+            pr.kind = PendingKind::Thin;
+            strlcpy(pr.id, cmd.id, sizeof(pr.id));
+            pr.code = MqttCmd::CODE_OK;
             logger.log("[MQTTClient] cmd final id=%s code=%u\n", pr.id, (unsigned)pr.code);
             (void)stageReply_(pr);
             return;

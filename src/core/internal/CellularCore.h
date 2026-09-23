@@ -7,6 +7,7 @@
 class GSMController;
 class MQTTClient;
 class WebServer;
+class TimeSyncManager;
 
 /**
  * @file CellularCore.h
@@ -27,7 +28,7 @@ class WebServer;
 class CellularCore {
 public:
     CellularCore() = default;
-    void init(GSMController& gsm, MQTTClient& mqtt, WebServer& web);
+    void init(GSMController& gsm, MQTTClient& mqtt, WebServer& web, TimeSyncManager& timeSync);
 
     void service();
     void suspend();
@@ -36,6 +37,7 @@ private:
     GSMController* _gsm{nullptr};
     MQTTClient* _mqtt{nullptr};
     WebServer* _web{nullptr};
+    TimeSyncManager* _timeSync{nullptr};
     bool _gsmStarted{false};
     bool _mqttStarted{false};
     /// One-shot settle after power-on / first service before gsm.begin().
@@ -44,4 +46,5 @@ private:
     uint32_t _lastSettleLogMs{0};
     uint32_t _lastReattachRequestMs{0};
     uint8_t _lastLoggedFailStreak{0};
+    bool _loggedBootNtpWait{false};
 };

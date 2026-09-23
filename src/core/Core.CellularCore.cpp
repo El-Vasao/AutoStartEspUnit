@@ -4,6 +4,7 @@
 #include "gsm/GSMController.h"
 #include "mqtt/MQTTClient.h"
 #include "web/WebServer.h"
+#include "core/TimeSyncManager.h"
 #include "common/Logger.h"
 #include "common/Constants.h"
 #include "core/Core.h"
@@ -15,27 +16,32 @@
  * Принципы:
  * - После бута — settle `GSM::POST_BOOT_SETTLE_MS` до первого `gsm.begin()`.
  * - Неблокирующее обслуживание: GSM тикает в `service()`, MQTT — когда модем READY.
+ * - First MQTT begin waits for boot NTP settle (CNTP before CIP).
  * - Cellular suspend только в SETUP / EMERGENCY / OTA (см. Core.Modes); SoftAP в NORMAL
  *   сосуществует с GSM/MQTT.
  */
 
-void CellularCore::init(GSMController& gsm, MQTTClient& mqtt, WebServer& web) {
+void CellularCore::init(GSMController& gsm, MQTTClient& mqtt, WebServer& web, TimeSyncManager& timeSync) {
     _gsm = &gsm;
     _mqtt = &mqtt;
     _web = &web;
+    _timeSync = &timeSync;
     _lastReattachRequestMs = 0;
     _lastLoggedFailStreak = 0;
     _bootSettlePending = true;
     _bootSettleUntilMs = 0;
     _lastSettleLogMs = 0;
+    _loggedBootNtpWait = false;
     _mqtt->setDeferMqttRx(
         [](void* ctx) -> bool {
             return static_cast<GSMController*>(ctx)->shouldDeferMqttRead();
         },
         _gsm);
+    // MQTT must not CIPSTART / CIPSEND while CNTP owns the IP stack.
     _mqtt->setCtrlPlaneBusy(
         [](void* ctx) -> bool {
-            return static_cast<GSMController*>(ctx)->tcpBusBusy();
+            auto* g = static_cast<GSMController*>(ctx);
+            return g->tcpBusBusy() || g->ntpSyncBusy();
         },
         _gsm);
 }
@@ -72,6 +78,19 @@ void CellularCore::service() {
         // WDT-safety is enforced at transport layer (pump + budgets) for SIM800.
         _mqtt->setReconnectEnabled(true);
 
+        // Serialize boot: CNTP before first MQTT CIPSTART.
+        if (_timeSync && !_timeSync->isBootNtpSettled()) {
+            if (!_loggedBootNtpWait) {
+                _loggedBootNtpWait = true;
+                logger.log("[Cellular] waiting boot NTP before MQTT\n");
+            }
+            return;
+        }
+        if (_loggedBootNtpWait) {
+            _loggedBootNtpWait = false;
+            logger.log("[Cellular] boot NTP settled, starting MQTT\n");
+        }
+
         if (!_mqttStarted) {
             _mqtt->begin();
             _mqttStarted = true;
@@ -88,7 +107,7 @@ void CellularCore::service() {
         if (failStreak >= 3) {
             const uint32_t now = millis();
             const bool canRequest = (_lastReattachRequestMs == 0) || (now - _lastReattachRequestMs >= 5000UL);
-            if (canRequest && !_gsm->tcpBusBusy()) {
+            if (canRequest && !_gsm->tcpBusBusy() && !_gsm->ntpSyncBusy()) {
                 _lastReattachRequestMs = now;
                 _gsm->requestReattach();
             }
@@ -133,4 +152,5 @@ void CellularCore::suspend() {
     // Keep _bootSettlePending false — only cold first start waits full settle.
     _lastReattachRequestMs = 0;
     _lastLoggedFailStreak = 0;
+    _loggedBootNtpWait = false;
 }

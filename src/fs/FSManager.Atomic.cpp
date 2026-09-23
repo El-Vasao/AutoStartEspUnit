@@ -1,10 +1,22 @@
 #include "fs/FSManager.h"
 #include "core/Core.h"
+#include "core/ErrorManager.h"
 #include "common/Constants.h"
+#include "common/ErrorCodes.h"
 #include "common/EspHal.h"
 #include "common/Logger.h"
 
 #include <WiFi.h>
+
+namespace {
+void noteFsUnknown_() {
+    // Sticky: do not overwrite a more specific boot/config/GSM error.
+    auto& err = core.getErrorManager();
+    if (err.get() == ErrorCode::NONE) {
+        err.set(ErrorCode::FS_UNKNOWN);
+    }
+}
+} // namespace
 
 bool FSManager::readFile(const char* path, char* buffer, size_t& len, size_t maxLen) {
 #ifdef SERIAL_DEBUG
@@ -115,6 +127,7 @@ bool FSManager::atomicWrite(const char* path, const char* data, size_t len) {
         logger.log("[FSManager] atomicWrite rename failed %s -> %s\n", pathBuffer, path);
         LittleFS.remove(pathBuffer);
         errorCount++;
+        noteFsUnknown_();
         return false;
     }
 

@@ -34,6 +34,7 @@ const char* gsmInitPhaseName(GsmInitPhase p) {
     case GsmInitPhase::CSapbrWait: return "CSapbrWait";
     case GsmInitPhase::ModAte: return "ModAte";
     case GsmInitPhase::ModCmee: return "ModCmee";
+    case GsmInitPhase::ModClts: return "ModClts";
     case GsmInitPhase::ModCreg2: return "ModCreg2";
     }
     return "?";

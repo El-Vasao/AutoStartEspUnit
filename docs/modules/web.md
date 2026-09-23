@@ -96,3 +96,46 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 
 - `WebServer::isFlashBusy()` блокирует write/delete до безопасной фазы.
 - POST JSON → tmp; apply deferred с `FlashCommitCoordinator`, чтобы не пересекаться с программой.
+
+## Concurrency: AsyncWebServer vs main `loop`
+
+ESP32-C3 Arduino: AsyncTCP/ESPAsyncWebServer callbacks могут выполняться **вне** `Core::update()` (отдельная задача / ISR-adjacent контекст). Прошивка опирается на одноядерный fair scheduling + явные отложенные точки, а не на мьютексы вокруг всего Core.
+
+### Разрешено из async-handlers
+
+| Операция | Контекст | Контракт |
+|----------|----------|----------|
+| `core.otaStreamFeed` / `otaStreamFinish` / `otaStreamAbort` | upload handler `POST /upload` | Пишет в FSM `OTAHandler`; не делает LittleFS commit всего пакета; режим `OTA_UPDATE` **откладывается** через `pendingDeferredOtaFromWebUpload` → drain в `Core::update` |
+| `core.onOtaHttpUploadStreamOpenedFromWeb` | upload index==0 | `prepareHttpUploadSession` + флаг deferred mode switch |
+| JSON body → tmp file | `jsonPostStreamOnBody` | Только stream write в `.tmp`; **apply** только из loop (`FlashCommitCoordinator`) |
+| `sendJsonBuffered` / static responses | GET handlers | Краткий `malloc` буфера ответа; не держать flash lock |
+| SSE connect / queue push | `/events` + `tickSseIncremental` | Soft/hard queue caps; tick статуса — из main (`WebServer::update` / Core) |
+
+### Только из main loop (`Core::update` / mode handlers)
+
+- `ModeManager::switchMode` (в т.ч. вход в `OTA_UPDATE` после deferred OTA flag)
+- `FlashCommitCoordinator` apply config/program
+- `config.save` / `writeJsonAtomicStream` commit rename
+- GSM/MQTT `tick` / cellular suspend
+- полный `handleOTAUpdate` progress (кроме feed байт из upload)
+
+### Shared globals (web)
+
+- `gUploadCtx` — один активный stream OTA; 409 если уже `active`
+- `gOtaHttpUploadAwaitTimedOut` — выставляется из Core timer, читается в upload handler
+- `gBootstrapInFlight` — сериализует тяжёлый `/bootstrap` (второй запрос → 409)
+- SSE payload/`gSse*` буферы — заполняются из main tick; async только подписывает клиентов
+
+### Logger → SSE
+
+`logger.log` → `sseBroadcastLog` может вызываться из async (upload/API) и из main. Очередь логов soft-gated: при переполнении дроп предпочтительнее зависания. Не полагаться на строгий порядок log vs status frames.
+
+### Stress checklist (ручная регрессия)
+
+1. SoftAP UI + SSE connected + GSM READY + MQTT status publish.
+2. Параллельно: `POST /config/save` (большой JSON) пока идёт программа — должен уйти в deferred, UI видит busy.
+3. `POST /upload` stream OTA при активном SSE — cellular suspend после deferred mode switch; feed не блокирует loop на весь файл.
+4. Двойной `/bootstrap` / второй `/upload` — 409 Busy.
+5. Шторм логов (SERIAL_DEBUG) при SSE — soft queue, без WDT.
+
+Код править при нарушении контракта (flash apply из async, mode switch из upload handler без deferred flag). Текущая реализация соответствует таблице выше.

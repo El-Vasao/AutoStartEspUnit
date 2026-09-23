@@ -45,7 +45,8 @@ enum class GsmInitPhase : uint8_t {
 
     ModAte = 40,
     ModCmee = 41,
-    ModCreg2 = 42,
+    ModClts = 42,
+    ModCreg2 = 43,
 };
 
 const char* gsmInitPhaseName(GsmInitPhase p);

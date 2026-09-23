@@ -1,4 +1,5 @@
 #include "config/Config.h"
+#include "common/ErrorCodes.h"
 #include "common/EspHal.h"
 #include "fs/FSManager.h"
 #include "common/Logger.h"
@@ -11,7 +12,7 @@
 
 Config config;
 
-Config::Config() : configCRC(0), loaded(false) {}
+Config::Config() : configCRC(0), loaded(false), lastLoadError_(ErrorCode::NONE) {}
 
 namespace {
 
@@ -26,6 +27,7 @@ bool Config::loadBaseFromFile(const char* path, BaseConfig& target, size_t& outL
     File f = fileSystem.openRead(path);
     if (!f) {
         logger.log("[Config] Failed to open file: %s\n", path);
+        lastLoadError_ = ErrorCode::CONFIG_MISSING;
         return false;
     }
 
@@ -33,6 +35,7 @@ bool Config::loadBaseFromFile(const char* path, BaseConfig& target, size_t& outL
     if (len == 0 || len >= Limits::CONFIG_JSON_SIZE) {
         logger.log("[Config] Invalid config file size: %u\n", (unsigned)len);
         f.close();
+        lastLoadError_ = ErrorCode::CONFIG_CRC_FAIL;
         return false;
     }
 #ifdef SERIAL_DEBUG
@@ -49,15 +52,18 @@ bool Config::loadBaseFromFile(const char* path, BaseConfig& target, size_t& outL
     if (!config_internal::parseBaseConfigStreamingFromFile(f, target)) {
         f.close();
         logger.log("[Config] JSON parse error (streaming)\n");
+        lastLoadError_ = ErrorCode::CONFIG_PARSE_FAIL;
         return false;
     }
     f.close();
 
     if (!validateCross(target)) {
         logger.log("[Config] Cross validation failed (unexpected)\n");
+        lastLoadError_ = ErrorCode::CONFIG_PARSE_FAIL;
         return false;
     }
 
+    lastLoadError_ = ErrorCode::NONE;
     return true;
 }
 
@@ -84,6 +90,7 @@ bool Config::saveBaseConfig(const BaseConfig& cfg) {
 
 ConfigLoadOutcome Config::loadWithOutcome() {
     logger.log("[Config] begin\n");
+    lastLoadError_ = ErrorCode::NONE;
 
     // Важно: `BaseConfig` большой; при ошибке файла вызываем `reset()`, где на стеке ещё один `BaseConfig`.
     // Держим `tmp` в отдельном блоке, чтобы к моменту `reset()` он уже был уничтожен — иначе stack smashing на ESP8266.
@@ -103,6 +110,9 @@ ConfigLoadOutcome Config::loadWithOutcome() {
     logger.log("[Config] Config load failed, resetting to defaults\n");
     if (!reset()) {
         logger.log("[Config] Reset failed\n");
+        if (lastLoadError_ == ErrorCode::NONE) {
+            lastLoadError_ = ErrorCode::CONFIG_MISSING;
+        }
         return ConfigLoadOutcome::Failed;
     }
     logger.log("[Config] Defaults written and loaded into RAM, CRC=%04X; rebooting for clean startup\n", configCRC);

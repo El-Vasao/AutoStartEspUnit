@@ -35,3 +35,8 @@ enum class ComparisonOp : uint8_t {
     Below = 1,
 };
 
+/// Single source for ActionId ↔ JSON/program string mapping.
+ActionId actionIdFromString(const char* action);
+/// Returns canonical action name, or "" for UNKNOWN / invalid.
+const char* actionIdToString(ActionId id);
+

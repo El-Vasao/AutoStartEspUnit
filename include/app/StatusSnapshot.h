@@ -37,6 +37,18 @@ struct StatusSnapshot {
     bool inputTriggerRuntime[Limits::MAX_TRIGGERS]{};
     bool tempTriggerRuntime[Limits::MAX_TRIGGERS]{};
 
-    char lastError[64]{0};
-};
+    bool timeSynced{false};
+    bool timeStale{false};
+    uint32_t epochUtc{0};
+    int16_t tzOffsetHours{0};
 
+    /// Undelivered MQTT error one-shot queue (newest first). Empty → omit `last_err` on wire.
+    struct ErrEntry {
+        uint8_t code{0};
+        bool active{false};
+        char msg[ErrorHistory::MSG_MAX]{};
+        uint32_t uptimeSec{0};
+    };
+    ErrEntry lastErr[ErrorHistory::CAPACITY]{};
+    uint8_t lastErrCount{0};
+};

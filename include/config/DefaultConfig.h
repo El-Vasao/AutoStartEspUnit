@@ -88,9 +88,17 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "max_attempts_per_day": 3,
     "program_id": 0
   },
+  "time": {
+    "enabled": true,
+    "ntp_server": "ru.pool.ntp.org",
+    "tz_offset_hours": 3,
+    "sync_interval_sec": 21600
+  },
   "input_triggers": [],
   "input_triggers_count": 0,
   "temperature_triggers": [],
-  "temperature_triggers_count": 0
+  "temperature_triggers_count": 0,
+  "schedule_triggers": [],
+  "schedule_triggers_count": 0
 })";
 

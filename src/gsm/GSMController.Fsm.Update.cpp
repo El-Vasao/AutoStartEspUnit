@@ -5,6 +5,7 @@
 #include "gsm/GSMController.h"
 
 #include "gsm/GsmInitPhase.h"
+#include "gsm/GsmInitFsm.h"
 #include "common/Logger.h"
 
 #include <stdint.h>
@@ -98,7 +99,7 @@ void GSMController::update() {
         handleIdle();
         break;
     case GSMState::INIT:
-        handleInit();
+        GsmInitFsm::tick(*this);
         break;
     case GSMState::REGISTERING:
         handleRegistering();

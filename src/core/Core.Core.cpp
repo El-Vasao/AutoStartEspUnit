@@ -92,6 +92,34 @@ static bool wakeWifiApThunk(void* ctx, bool en) {
     return static_cast<Core*>(ctx)->wakeWifiApFromSilent();
 }
 
+static void requestModemRebootThunk(void* ctx) {
+    static_cast<Core*>(ctx)->getGSM().requestModemReboot();
+}
+
+static void otaOnUploadOpenedThunk(void* ctx) {
+    static_cast<Core*>(ctx)->onOtaHttpUploadStreamOpenedFromWeb();
+}
+
+static bool otaFeedThunk(void* ctx, const uint8_t* data, size_t len) {
+    return static_cast<Core*>(ctx)->otaStreamFeed(data, len);
+}
+
+static bool otaFinishThunk(void* ctx) {
+    return static_cast<Core*>(ctx)->otaStreamFinish();
+}
+
+static void otaAbortThunk(void* ctx) {
+    static_cast<Core*>(ctx)->otaStreamAbort();
+}
+
+static void otaNotifyCompleteThunk(void* ctx, bool ok) {
+    static_cast<Core*>(ctx)->notifyOtaHttpUploadComplete(ok);
+}
+
+static bool otaIsModeThunk(void* ctx) {
+    return static_cast<Core*>(ctx)->getMode() == CoreMode::OTA_UPDATE;
+}
+
 static void logHeapTag_(const char* tag) {
     logger.log("[Core] heap %s: free=%u maxBlk=%u frag=%u%%\n", tag, (unsigned)espHalFreeHeap(),
                (unsigned)espHalMaxBlock(), (unsigned)0 /* heap frag N/A on ESP32 */);
@@ -160,7 +188,19 @@ bool Core::begin() {
         setInputTriggerThunk,
         setTempTriggerThunk,
         wakeWifiApThunk,
+        requestModemRebootThunk,
     };
+    impl.ports.ota = OtaStreamPort{
+        this,
+        otaOnUploadOpenedThunk,
+        otaFeedThunk,
+        otaFinishThunk,
+        otaAbortThunk,
+        otaNotifyCompleteThunk,
+        otaIsModeThunk,
+    };
+    impl.mqtt.setAppPorts(&impl.ports);
+    webServer.setAppPorts(&impl.ports);
     logger.log("[Core] begin() done\n");
     impl.modeManager.init(webServer, impl.gsm, impl.mqtt, config, impl.otaHandler);
     impl.modeManager.switchMode(CoreMode::BOOT);

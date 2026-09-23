@@ -17,36 +17,54 @@ inline bool floatChanged(float a, float b, float eps) {
     return fabsf(a - b) >= eps;
 }
 
-inline bool errorChanged(const char* a, const char* b) {
-    const char* aa = (a && a[0] && strcmp(a, "OK") != 0) ? a : "";
-    const char* bb = (b && b[0] && strcmp(b, "OK") != 0) ? b : "";
-    return strcmp(aa, bb) != 0;
+inline bool lastErrChanged(const StatusSnapshot& cur, const StatusSnapshot& prev) {
+    if (cur.lastErrCount != prev.lastErrCount) return true;
+    for (uint8_t i = 0; i < cur.lastErrCount && i < ErrorHistory::CAPACITY; i++) {
+        if (cur.lastErr[i].code != prev.lastErr[i].code) return true;
+        if (cur.lastErr[i].active != prev.lastErr[i].active) return true;
+        if (cur.lastErr[i].uptimeSec != prev.lastErr[i].uptimeSec) return true;
+    }
+    return false;
 }
 
-inline void printEscapedError(Print& p, const char* err) {
-    p.print("\"last_error\":\"");
-    if (err && err[0] && strcmp(err, "OK") != 0) {
-        for (const char* e = err; *e; e++) {
-            switch (*e) {
-                case '\\':
-                    p.print("\\\\");
-                    break;
-                case '"':
-                    p.print("\\\"");
-                    break;
-                case '\n':
-                    p.print("\\n");
-                    break;
-                case '\r':
-                    p.print("\\r");
-                    break;
-                default:
-                    p.write(static_cast<uint8_t>(*e));
-                    break;
-            }
+inline void escapeMsg(Print& p, const char* s) {
+    if (!s) return;
+    for (const char* e = s; *e; e++) {
+        switch (*e) {
+            case '\\':
+                p.print("\\\\");
+                break;
+            case '"':
+                p.print("\\\"");
+                break;
+            case '\n':
+                p.print("\\n");
+                break;
+            case '\r':
+                p.print("\\r");
+                break;
+            default:
+                p.write(static_cast<uint8_t>(*e));
+                break;
         }
     }
-    p.print('"');
+}
+
+/// Emit `last_err` array only when count > 0 (omit key when empty).
+inline void printLastErrArray(Print& p, const StatusSnapshot& s) {
+    if (s.lastErrCount == 0) return;
+    p.print("\"last_err\":[");
+    for (uint8_t i = 0; i < s.lastErrCount && i < ErrorHistory::CAPACITY; i++) {
+        if (i) p.print(',');
+        p.print("{\"code\":");
+        p.print((unsigned)s.lastErr[i].code);
+        p.print(",\"msg\":\"");
+        escapeMsg(p, s.lastErr[i].msg);
+        p.print("\",\"active\":");
+        p.print(s.lastErr[i].active ? "true" : "false");
+        p.print('}');
+    }
+    p.print(']');
 }
 
 inline void printTempSensorObject(Print& p, const StatusSnapshot::TempSensor& ts) {
@@ -133,7 +151,11 @@ bool mqttStatusHasSignificantChanges(const StatusSnapshot& cur, const StatusSnap
     if (anyTempChanged(cur, prev)) return true;
     if (programFieldsChanged(cur, prev)) return true;
     if (anyTriggerChanged(cur, prev, cfg)) return true;
-    if (errorChanged(cur.lastError, prev.lastError)) return true;
+    if (lastErrChanged(cur, prev)) return true;
+    if (cur.lastErrCount > 0) return true;
+    if (cur.timeSynced != prev.timeSynced) return true;
+    if (cur.tzOffsetHours != prev.tzOffsetHours) return true;
+    // Epoch ticks every second when synced — do not treat as significant (avoid MQTT spam).
     return false;
 }
 
@@ -147,6 +169,16 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
     comma(p, &c);
     p.print("\"uptime\":");
     p.print(static_cast<unsigned long>(s.uptimeSec));
+
+    comma(p, &c);
+    p.print("\"epoch\":");
+    p.print(static_cast<unsigned long>(s.epochUtc));
+    comma(p, &c);
+    p.print("\"synced\":");
+    p.print(s.timeSynced ? "true" : "false");
+    comma(p, &c);
+    p.print("\"tzOffsetHours\":");
+    p.print(static_cast<long>(s.tzOffsetHours));
 
     comma(p, &c);
     p.print("\"mode\":\"");
@@ -256,8 +288,10 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
 
     p.print('}');
 
-    comma(p, &c);
-    printEscapedError(p, s.lastError);
+    if (s.lastErrCount > 0) {
+        comma(p, &c);
+        printLastErrArray(p, s);
+    }
 
     p.print('}');
 }
@@ -274,6 +308,19 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
     comma(p, &c);
     p.print("\"uptime\":");
     p.print(static_cast<unsigned long>(cur.uptimeSec));
+
+    if (cur.epochUtc != prev.epochUtc || cur.timeSynced != prev.timeSynced ||
+        cur.tzOffsetHours != prev.tzOffsetHours) {
+        comma(p, &c);
+        p.print("\"epoch\":");
+        p.print(static_cast<unsigned long>(cur.epochUtc));
+        comma(p, &c);
+        p.print("\"synced\":");
+        p.print(cur.timeSynced ? "true" : "false");
+        comma(p, &c);
+        p.print("\"tzOffsetHours\":");
+        p.print(static_cast<long>(cur.tzOffsetHours));
+    }
 
     if (strcmp(cur.modeName, prev.modeName) != 0) {
         comma(p, &c);
@@ -419,9 +466,9 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
         p.print('}');
     }
 
-    if (errorChanged(cur.lastError, prev.lastError)) {
+    if (cur.lastErrCount > 0) {
         comma(p, &c);
-        printEscapedError(p, cur.lastError);
+        printLastErrArray(p, cur);
     }
 
     p.print('}');

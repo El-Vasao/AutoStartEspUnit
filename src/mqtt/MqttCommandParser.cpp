@@ -59,7 +59,7 @@ bool readJsonStringContent(const char*& p, char* out, size_t outCap) {
     return true;
 }
 
-enum class Key : uint8_t { None, Id, Cmd, Program, Name, Ref, Enabled };
+enum class Key : uint8_t { None, Id, Cmd, Program, Name, Ref, Enabled, Epoch };
 
 Key keyFrom(const char* k) {
     if (strcmp(k, "id") == 0) return Key::Id;
@@ -68,6 +68,7 @@ Key keyFrom(const char* k) {
     if (strcmp(k, "name") == 0) return Key::Name;
     if (strcmp(k, "ref") == 0) return Key::Ref;
     if (strcmp(k, "enabled") == 0) return Key::Enabled;
+    if (strcmp(k, "epoch") == 0) return Key::Epoch;
     return Key::None;
 }
 
@@ -87,6 +88,7 @@ MqttCommandKind cmdFrom(const char* c) {
     if (strcmp(c, "list") == 0) return MqttCommandKind::List;
     if (strcmp(c, "status") == 0) return MqttCommandKind::Status;
     if (strcmp(c, "set") == 0) return MqttCommandKind::Set;
+    if (strcmp(c, "set_time") == 0) return MqttCommandKind::SetTime;
     return MqttCommandKind::None;
 }
 
@@ -196,6 +198,14 @@ bool parseMqttCommandJson(const char* json, MqttCommand& out) {
             nbuf[nlen] = '\0';
             if (key == Key::Program) out.programId = parseU8(nbuf);
             else if (key == Key::Ref) out.ref = parseU16(nbuf);
+            else if (key == Key::Epoch) {
+                char* end = nullptr;
+                unsigned long n = strtoul(nbuf, &end, 10);
+                if (end && *end == '\0') {
+                    out.epoch = static_cast<uint32_t>(n);
+                    out.hasEpoch = true;
+                }
+            }
             else if (key == Key::Enabled) {
                 bool b = false;
                 if (!parseBoolToken(nbuf, &b)) return false;

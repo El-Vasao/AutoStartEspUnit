@@ -8,11 +8,13 @@
 #include <WiFi.h>
 #include <cstring>
 #include "common/Constants.h"
+#include "common/ErrorCodes.h"
 #include "common/EspHal.h"
 #include "common/Logger.h"
 #include "common/Pins.h"
 #include "common/Version.h"
 #include "core/Core.h"
+#include "core/TimeSyncManager.h"
 #include "io/SensorsController.h"
 #include "io/RelayController.h"
 #include "io/DigitalInputs.h"
@@ -118,7 +120,23 @@ void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
         s.tempTriggerRuntime[i] = core.getTempTriggerRuntime(i);
     }
 
-    strlcpy(s.lastError, err.getMessage(), sizeof(s.lastError));
+    {
+        const auto& ts = core.getTimeSync();
+        s.timeSynced = ts.isSynced();
+        s.timeStale = ts.isStale();
+        s.epochUtc = s.timeSynced ? static_cast<uint32_t>(ts.epochUtc()) : 0;
+        s.tzOffsetHours = ts.tzOffsetHours();
+    }
+
+    ErrorSnapshotEntry undeliv[ErrorHistory::CAPACITY]{};
+    const uint8_t n = err.copyUndelivered(undeliv, ErrorHistory::CAPACITY);
+    s.lastErrCount = n;
+    for (uint8_t i = 0; i < n; i++) {
+        s.lastErr[i].code = undeliv[i].code;
+        s.lastErr[i].active = undeliv[i].active;
+        s.lastErr[i].uptimeSec = undeliv[i].uptimeSec;
+        strlcpy(s.lastErr[i].msg, undeliv[i].msg, sizeof(s.lastErr[i].msg));
+    }
 }
 
 static constexpr uint32_t kMqttPublishBudgetMs = 10;
@@ -256,6 +274,9 @@ void MQTTClient::loop() {
             _awaitFirstStatus = _topicStatus[0] != '\0';
             _firstStatusAfterMs = millis() + 1500u;
             _havePublishedBaseline = false;
+            if (core.getErrorManager().get() == ErrorCode::MQTT_CONNECT_FAIL) {
+                core.getErrorManager().clear();
+            }
         }
 
         static constexpr uint32_t kSubackTimeoutMs = 8000u;
@@ -349,6 +370,10 @@ void MQTTClient::connect() {
         if (why && why[0]) {
             logger.log("[MQTTClient] connect after fail=%s streak=%u\n", why, (unsigned)_connectFailStreak);
         }
+        // Sticky diagnostic: first fail in a streak surfaces in SSE/MQTT lastError.
+        if (_connectFailStreak == 1) {
+            core.getErrorManager().set(ErrorCode::MQTT_CONNECT_FAIL);
+        }
     }
     if (_fsm.state() == MqttFsmClient::State::Idle) {
         logger.log("[MQTTClient] connect() broker=%s:%u\n", mqttCfg.broker, (unsigned)mqttCfg.port);
@@ -371,7 +396,9 @@ bool MQTTClient::publishStatus(bool forceFull) {
 
     // Full until first successful stage, on explicit force (first/get_status), else delta/skip.
     const bool needFull = forceFull || !_havePublishedBaseline;
-    if (!needFull && !mqttStatusHasSignificantChanges(snapshot, _lastPublished, cfg)) {
+    // Undelivered errors must force a status TX (periodic one-shot / retry).
+    if (!needFull && snapshot.lastErrCount == 0 &&
+        !mqttStatusHasSignificantChanges(snapshot, _lastPublished, cfg)) {
         return true; // unchanged — no TX
     }
 
@@ -387,7 +414,7 @@ bool MQTTClient::publishStatus(bool forceFull) {
             logger.log("[MQTTClient] publishStatus failed (busy/not connected/wire); measured=%u max=%u\n",
                        (unsigned)measured, (unsigned)JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES);
         }
-        return false;
+        return false; // keep undelivered for retry
     }
     const uint32_t dt = millis() - t0;
     if (dt > kMqttPublishBudgetMs) {
@@ -395,7 +422,20 @@ bool MQTTClient::publishStatus(bool forceFull) {
                    (unsigned)kMqttPublishBudgetMs);
     }
 
+    if (snapshot.lastErrCount > 0) {
+        ErrorSnapshotEntry sent[ErrorHistory::CAPACITY]{};
+        for (uint8_t i = 0; i < snapshot.lastErrCount && i < ErrorHistory::CAPACITY; i++) {
+            sent[i].code = snapshot.lastErr[i].code;
+            sent[i].active = snapshot.lastErr[i].active;
+            sent[i].uptimeSec = snapshot.lastErr[i].uptimeSec;
+            strlcpy(sent[i].msg, snapshot.lastErr[i].msg, sizeof(sent[i].msg));
+        }
+        core.getErrorManager().markDelivered(sent, snapshot.lastErrCount);
+    }
+
     _lastPublished = snapshot;
+    // After markDelivered, next capture will have empty lastErr — store cleared for delta compare.
+    _lastPublished.lastErrCount = 0;
     _havePublishedBaseline = true;
     logger.log("[MQTTClient] pub status %s bytes=%u\n", needFull ? "full" : "delta", (unsigned)measured);
     return true;

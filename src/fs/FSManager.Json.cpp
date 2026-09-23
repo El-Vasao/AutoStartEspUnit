@@ -1,11 +1,21 @@
 #include "fs/FSManager.h"
+#include "core/Core.h"
+#include "core/ErrorManager.h"
 #include "common/Constants.h"
+#include "common/ErrorCodes.h"
 #include "common/EspHal.h"
 #include "common/Logger.h"
 
 #include <errno.h>
 
 namespace {
+
+void noteFsUnknown_() {
+    auto& err = core.getErrorManager();
+    if (err.get() == ErrorCode::NONE) {
+        err.set(ErrorCode::FS_UNKNOWN);
+    }
+}
 
 /// Длинная сериализация в File: без частого yield; кормим WDT каждые 256 записанных байт.
 class JsonFilePrint final : public Print {
@@ -68,6 +78,7 @@ static bool commitTmpToPath_atomic_(const char* path, char* tmpPath, bool hadBac
         if (hadBackup) {
             (void)LittleFS.rename(bakPath, path);
         }
+        noteFsUnknown_();
         return false;
     }
 

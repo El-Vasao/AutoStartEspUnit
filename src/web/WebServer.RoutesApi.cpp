@@ -17,13 +17,11 @@
 #include "common/EspHal.h"
 #include "web/internal/WebServerInternal.h"
 #include "web/internal/WebServerRuntime.h"
+#include "app/AppPorts.h"
 #include "core/Core.h"
 #include "config/Config.h"
 #include "core/FlashCommitCoordinator.h"
-#include "io/DigitalInputs.h"
-#include "gsm/GSMController.h"
 #include "common/Pins.h"
-#include "program/ProgramExecutor.h"
 #include "io/SensorsController.h"
 
 using namespace web_internal;
@@ -31,6 +29,8 @@ using namespace web_internal;
 namespace {
 volatile bool gOtaHttpUploadAwaitTimedOut = false;
 volatile bool gBootstrapInFlight = false;
+
+const AppPorts* webPorts() { return webServer.appPorts(); }
 
 void emitBootstrapJson(Print& p) {
     p.print("{\"version\":\"");
@@ -200,8 +200,10 @@ void WebServer::setupApiRoutes_() {
             }
             if (index != 0 && gOtaHttpUploadAwaitTimedOut) {
                 gOtaHttpUploadAwaitTimedOut = false;
-                core.otaStreamAbort();
-                core.notifyOtaHttpUploadComplete(false);
+                if (const AppPorts* p = webPorts()) {
+                    if (p->ota.abort) p->ota.abort(p->ota.ctx);
+                    if (p->ota.notifyComplete) p->ota.notifyComplete(p->ota.ctx, false);
+                }
                 gUploadCtx = UploadContext{};
                 request->send(408, kContentTypeText, "OTA upload timed out");
                 return;
@@ -233,7 +235,11 @@ void WebServer::setupApiRoutes_() {
                 }
                 gUploadCtx = UploadContext{};
                 gUploadCtx.active = true;
-                core.onOtaHttpUploadStreamOpenedFromWeb();
+                // Async context: prepare stream FSM here; Core::update drains deferred OTA_UPDATE switch.
+                // See docs/modules/web.md § Concurrency.
+                if (const AppPorts* p = webPorts()) {
+                    if (p->ota.onUploadOpened) p->ota.onUploadOpened(p->ota.ctx);
+                }
             }
 
             if (!gUploadCtx.active) {
@@ -245,12 +251,16 @@ void WebServer::setupApiRoutes_() {
             }
 
             if (len > 0) {
-                if (!core.otaStreamFeed(data, len)) {
+                const AppPorts* p = webPorts();
+                const bool fed = p && p->ota.feed && p->ota.feed(p->ota.ctx, data, len);
+                if (!fed) {
                     logger.log("[WebServer] Stream feed failed at %u bytes\n",
                                (unsigned)(gUploadCtx.totalSize + len));
                     gUploadCtx.errored = true;
-                    core.otaStreamAbort();
-                    core.notifyOtaHttpUploadComplete(false);
+                    if (p) {
+                        if (p->ota.abort) p->ota.abort(p->ota.ctx);
+                        if (p->ota.notifyComplete) p->ota.notifyComplete(p->ota.ctx, false);
+                    }
                     gUploadCtx = UploadContext{};
                     request->send(500, kContentTypeText, "Stream error");
                     return;
@@ -260,8 +270,10 @@ void WebServer::setupApiRoutes_() {
                     logger.log("[WebServer] Upload rejected: too large (%u > %u)\n",
                                (unsigned)gUploadCtx.totalSize, (unsigned)OTA::FILE_MAX_SIZE);
                     gUploadCtx.errored = true;
-                    core.otaStreamAbort();
-                    core.notifyOtaHttpUploadComplete(false);
+                    if (p) {
+                        if (p->ota.abort) p->ota.abort(p->ota.ctx);
+                        if (p->ota.notifyComplete) p->ota.notifyComplete(p->ota.ctx, false);
+                    }
                     gUploadCtx = UploadContext{};
                     request->send(413, kContentTypeText, "Payload too large");
                     return;
@@ -271,15 +283,18 @@ void WebServer::setupApiRoutes_() {
             if (final) {
                 logger.log("[WebServer] Stream upload finished, total size: %u\n",
                            (unsigned)gUploadCtx.totalSize);
-                const bool ok = !gUploadCtx.errored && core.otaStreamFinish();
+                const AppPorts* p = webPorts();
+                const bool ok = !gUploadCtx.errored && p && p->ota.finish && p->ota.finish(p->ota.ctx);
                 if (!ok) {
-                    core.otaStreamAbort();
-                    core.notifyOtaHttpUploadComplete(false);
+                    if (p) {
+                        if (p->ota.abort) p->ota.abort(p->ota.ctx);
+                        if (p->ota.notifyComplete) p->ota.notifyComplete(p->ota.ctx, false);
+                    }
                     gUploadCtx = UploadContext{};
                     request->send(500, kContentTypeText, "Stream finalize failed");
                     return;
                 }
-                core.notifyOtaHttpUploadComplete(true);
+                if (p && p->ota.notifyComplete) p->ota.notifyComplete(p->ota.ctx, true);
                 gUploadCtx = UploadContext{};
                 request->send(200, kContentTypeJson, "{\"success\":true,\"rebooting\":true}");
             }
@@ -288,7 +303,8 @@ void WebServer::setupApiRoutes_() {
     server.on("/ota/start", HTTP_POST, [](AsyncWebServerRequest* request) {
         // Compatibility: stream OTA finishes on /upload; this is a no-op success if already in OTA.
         if (rejectIfFlashBusy(request)) return;
-        if (core.getMode() == CoreMode::OTA_UPDATE) {
+        const AppPorts* p = webPorts();
+        if (p && p->ota.isOtaMode && p->ota.isOtaMode(p->ota.ctx)) {
             sendJsonSuccess(request);
             return;
         }
@@ -298,12 +314,16 @@ void WebServer::setupApiRoutes_() {
 
     server.on("/reboot", HTTP_POST, [](AsyncWebServerRequest* request) {
         request->send(200, kContentTypeText, "Rebooting...");
-        core.requestReboot(Delays::REBOOT_HTTP_REPLY_MS);
+        if (const AppPorts* p = webPorts()) {
+            if (p->control.requestReboot) p->control.requestReboot(p->control.ctx, Delays::REBOOT_HTTP_REPLY_MS);
+        }
     });
 
     server.on("/modem/reboot", HTTP_POST, [](AsyncWebServerRequest* request) {
         request->send(200, kContentTypeText, "Modem reboot requested");
-        core.getGSM().requestModemReboot();
+        if (const AppPorts* p = webPorts()) {
+            if (p->control.requestModemReboot) p->control.requestModemReboot(p->control.ctx);
+        }
         webServer.broadcastStatusForce();
     });
 
@@ -320,7 +340,10 @@ void WebServer::setupApiRoutes_() {
         }
         if (request->hasParam("run", true)) {
             uint8_t id = request->getParam("run", true)->value().toInt();
-            if (core.getProgramExecutor().start(id)) {
+            const AppPorts* p = webPorts();
+            const bool started =
+                p && p->control.startProgram && p->control.startProgram(p->control.ctx, id);
+            if (started) {
                 sendJsonSuccess(request);
             } else {
                 request->send(400, kContentTypeJson, "{\"success\":false}");
@@ -361,13 +384,14 @@ void WebServer::setupApiRoutes_() {
             return;
         }
         const String& op = request->getParam("op", true)->value();
+        const AppPorts* p = webPorts();
         if (op == "thermostat") {
             bool en = false;
             if (!readEnabledBodyParam(request, &en)) {
                 request->send(400, kContentTypeText, "Missing enabled");
                 return;
             }
-            core.setThermostatRuntime(en);
+            if (p && p->control.setThermostat) p->control.setThermostat(p->control.ctx, en);
             sendJsonSuccess(request);
             return;
         }
@@ -377,7 +401,7 @@ void WebServer::setupApiRoutes_() {
                 request->send(400, kContentTypeText, "Missing enabled");
                 return;
             }
-            core.setBatterySaverRuntime(en);
+            if (p && p->control.setBatterySaver) p->control.setBatterySaver(p->control.ctx, en);
             sendJsonSuccess(request);
             return;
         }
@@ -388,12 +412,13 @@ void WebServer::setupApiRoutes_() {
                 request->send(400, kContentTypeText, "Missing parameters");
                 return;
             }
-            const int8_t idx = core.getInputs().findIndexById((uint16_t)id);
-            if (idx < 0) {
+            const bool ok =
+                p && p->control.setInputRuntime &&
+                p->control.setInputRuntime(p->control.ctx, (uint16_t)id, en);
+            if (!ok) {
                 request->send(400, kContentTypeText, "Input id not found");
                 return;
             }
-            core.getInputs().setRuntimeEnabled((uint8_t)idx, en);
             sendJsonSuccess(request);
             return;
         }

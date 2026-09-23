@@ -373,6 +373,14 @@
         { "bind": "comparison", "type": "select", "label": "Сравнение", "options": [ { "value": "above", "label": "Выше" }, { "value": "below", "label": "Ниже" } ], "helpTitle": "Что означает", "help": "Определяет, должна ли температура быть выше или ниже заданного порога." },
         { "bind": "threshold", "type": "number", "label": "Порог", "step": "0.1", "helpTitle": "Что означает", "help": "Температура, относительно которой срабатывает триггер." },
         { "bind": "program_id", "type": "select", "label": "Программа", "optionsFrom": "programs", "helpTitle": "Что делает", "help": "Программа, которая запускается при срабатывании триггера." }
+      ],
+      "scheduleFields": [
+        { "bind": "id", "type": "number", "label": "ID", "hidden": true, "helpTitle": "Служебное", "help": "Внутренний идентификатор расписания." },
+        { "bind": "enabled", "type": "toggle", "label": "Включён по умолчанию", "labelOn": "Расписание активно", "labelOff": "Расписание выключено", "helpTitle": "Как работает", "help": "Запуск программы по локальному времени (нужна синхронизация часов)." },
+        { "bind": "hour", "type": "number", "valueType": "int", "label": "Час (0–23)", "min": "0", "max": "23", "step": "1", "helpTitle": "Локальное время", "help": "Час локального времени устройства." },
+        { "bind": "minute", "type": "number", "valueType": "int", "label": "Минута (0–59)", "min": "0", "max": "59", "step": "1", "helpTitle": "Локальное время", "help": "Минута локального времени устройства." },
+        { "bind": "days_mask", "type": "number", "valueType": "int", "label": "Дни (битовая маска)", "min": "0", "max": "127", "step": "1", "helpTitle": "Маска дней", "help": "bit0=Пн … bit6=Вс. 127 = каждый день." },
+        { "bind": "program_id", "type": "select", "label": "Программа", "optionsFrom": "programs", "helpTitle": "Что делает", "help": "Программа, которая запускается по расписанию." }
       ]
     },
     "thermostat": {
@@ -399,6 +407,52 @@
         { "key": "min_time_between_attempts_sec", "path": "battery_saver.min_time_between_attempts_sec", "type": "number", "valueType": "int", "label": "Мин. интервал (сек)", "step": "1", "helpTitle": "Что означает", "help": "Минимальный интервал между двумя срабатываниями Battery Saver." },
         { "key": "max_attempts_per_day", "path": "battery_saver.max_attempts_per_day", "type": "number", "valueType": "int", "label": "Попыток в день", "step": "1", "helpTitle": "Что означает", "help": "Максимальное число срабатываний Battery Saver в течение суток." },
         { "key": "program_id", "path": "battery_saver.program_id", "type": "select", "label": "Программа", "optionsFrom": "programs", "helpTitle": "Что делает", "help": "Программа, которая выполняется при срабатывании Battery Saver." }
+      ]
+    },
+    "time": {
+      "title": "Время",
+      "fields": [
+        { "key": "enabled", "path": "time.enabled", "type": "toggle", "label": "Синхронизация", "labelOn": "NTP включён", "labelOff": "NTP выключен", "helpTitle": "Как работает", "help": "Синхронизация часов через SIM800 NTP (AT+CNTP) при готовности GPRS." },
+        { "key": "ntp_server", "path": "time.ntp_server", "type": "text", "label": "NTP сервер", "helpTitle": "Что указать", "help": "Имя или IP NTP-сервера для модема (например ru.pool.ntp.org)." },
+        {
+          "key": "tz_offset_hours",
+          "path": "time.tz_offset_hours",
+          "type": "select",
+          "valueType": "int",
+          "label": "Часовой пояс (UTC)",
+          "helpTitle": "Как выбрать",
+          "help": "Смещение локального времени от UTC в целых часах. Москва — UTC+3. Время ниже обновляется сразу по выбранному значению (ещё до сохранения).",
+          "options": [
+            { "value": -12, "label": "UTC−12" },
+            { "value": -11, "label": "UTC−11" },
+            { "value": -10, "label": "UTC−10" },
+            { "value": -9, "label": "UTC−9" },
+            { "value": -8, "label": "UTC−8" },
+            { "value": -7, "label": "UTC−7" },
+            { "value": -6, "label": "UTC−6" },
+            { "value": -5, "label": "UTC−5" },
+            { "value": -4, "label": "UTC−4" },
+            { "value": -3, "label": "UTC−3" },
+            { "value": -2, "label": "UTC−2" },
+            { "value": -1, "label": "UTC−1" },
+            { "value": 0, "label": "UTC±0" },
+            { "value": 1, "label": "UTC+1" },
+            { "value": 2, "label": "UTC+2" },
+            { "value": 3, "label": "UTC+3 (Москва)" },
+            { "value": 4, "label": "UTC+4" },
+            { "value": 5, "label": "UTC+5" },
+            { "value": 6, "label": "UTC+6" },
+            { "value": 7, "label": "UTC+7" },
+            { "value": 8, "label": "UTC+8" },
+            { "value": 9, "label": "UTC+9" },
+            { "value": 10, "label": "UTC+10" },
+            { "value": 11, "label": "UTC+11" },
+            { "value": 12, "label": "UTC+12" },
+            { "value": 13, "label": "UTC+13" },
+            { "value": 14, "label": "UTC+14" }
+          ]
+        },
+        { "key": "sync_interval_sec", "path": "time.sync_interval_sec", "type": "number", "valueType": "int", "label": "Интервал sync (сек)", "step": "60", "helpTitle": "Как часто", "help": "Период повторной синхронизации после успешного NTP." }
       ]
     }
   }

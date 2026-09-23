@@ -10,6 +10,7 @@
 #include "common/Constants.h"
 
 #include <esp_system.h>
+#include <time.h>
 
 namespace {
 
@@ -170,6 +171,18 @@ void Core::setTempTriggerRuntime(uint8_t index, bool en) {
     impl.triggerManager.setTempTriggerEnabled(index, en);
 }
 
+TimeSyncManager& Core::getTimeSync() {
+    return _impl->timeSyncManager;
+}
+
+const TimeSyncManager& Core::getTimeSync() const {
+    return _impl->timeSyncManager;
+}
+
+void Core::applyWallClockEpoch(uint32_t epochUtc) {
+    _impl->timeSyncManager.applyEpochUtc(static_cast<time_t>(epochUtc), "mqtt");
+}
+
 void Core::suspendDomainManagersForOta() {
     CorePrivate& impl = *_impl;
     impl.thermostatManager.setEnabled(false);
@@ -178,12 +191,16 @@ void Core::suspendDomainManagersForOta() {
         impl.triggerManager.setInputTriggerEnabled(i, false);
         impl.triggerManager.setTempTriggerEnabled(i, false);
     }
+    for (uint8_t i = 0; i < Limits::MAX_SCHEDULE_TRIGGERS; i++) {
+        impl.scheduleTriggerManager.setEnabled(i, false);
+    }
     logger.log("[Core] Domain managers suspended for OTA\n");
 }
 
 void Core::restoreDomainManagersAfterOta() {
     CorePrivate& impl = *_impl;
     impl.triggerManager.begin();
+    impl.scheduleTriggerManager.begin();
     impl.batterySaverManager.begin();
     impl.thermostatManager.begin();
     logger.log("[Core] Domain managers restored after OTA\n");

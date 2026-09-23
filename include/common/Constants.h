@@ -47,14 +47,21 @@ namespace HardwareLimits {
 // ============================================================
 namespace Limits {
     /// Максимальный размер `/config.json` (байт).
-    constexpr size_t CONFIG_JSON_SIZE = 4096;
+    constexpr size_t CONFIG_JSON_SIZE = 5120;
 
     constexpr uint8_t MAX_STEPS_PER_PROGRAM = 15;
     constexpr uint8_t MAX_TRIGGERS = 8;
+    constexpr uint8_t MAX_SCHEDULE_TRIGGERS = 8;
     constexpr uint8_t MAX_PROGRAMS = 10;
 
     /// Пароль SoftAP WPA2-PSK: 8..63 символа (здесь фиксируем только максимум).
     constexpr uint8_t MAX_PASSWORD_LEN = 63;
+}
+
+/// MQTT/SSE error history ring (undelivered one-shot delivery).
+namespace ErrorHistory {
+    constexpr uint8_t CAPACITY = 5;
+    constexpr size_t MSG_MAX = 40; ///< enough for errorCodeToString
 }
 
 // ============================================================
@@ -116,6 +123,11 @@ namespace TextBytes {
         /// "RELAY_PULSE_ON_OFF_ON" и т.п.
         constexpr size_t STEP_ACTION = 24;
         constexpr size_t NAME = 32;
+    }
+
+    namespace TimeCfg {
+        /// NTP host for AT+CNTP (SIM800).
+        constexpr size_t NTP_SERVER = 48;
     }
 }
 
@@ -184,6 +196,11 @@ namespace Timing {
     constexpr uint32_t OTA_HTTP_UPLOAD_IDLE_MS = 180000;
 
     constexpr uint32_t MILLIS_PER_DAY = 86400000UL;
+
+    /// TimeSync: retry CNTP after failure.
+    constexpr uint32_t TIME_SYNC_RETRY_MS = 120000;
+    /// UI/status: mark sync stale after this age (still keep soft clock).
+    constexpr uint32_t TIME_SYNC_STALE_MS = 172800000UL; // 48 h
 }
 
 // ============================================================
@@ -485,6 +502,15 @@ namespace GSM {
     constexpr uint32_t TCP_CLOSED_REATTACH_WINDOW_MS = 60000; // 1 min
     constexpr uint8_t TCP_CLOSED_REATTACH_THRESHOLD = 3;      // 3 drops within window
     constexpr uint32_t ERROR_RECOVERY_DELAY_MS = 30000;
+
+    /// Modem NTP (AT+CNTP): accept timeout for setup commands.
+    constexpr uint32_t CNTP_AT_TIMEOUT_MS = 10000;
+    /// Wait for +CNTP: URC after AT+CNTP kick.
+    constexpr uint32_t CNTP_SYNC_TIMEOUT_MS = 60000;
+    /// AT+CCLK? read after successful NTP.
+    constexpr uint32_t CCLK_TIMEOUT_MS = 5000;
+    /// CellularCore: max wait for first NTP attempt before starting MQTT.
+    constexpr uint32_t BOOT_NTP_BUDGET_MS = CNTP_AT_TIMEOUT_MS * 3UL + CNTP_SYNC_TIMEOUT_MS + 15000UL;
 
     // RX ring for waiter/diagnostic snippets. Keep compact to save RAM.
     constexpr size_t RESPONSE_BUFFER_SIZE = 128;

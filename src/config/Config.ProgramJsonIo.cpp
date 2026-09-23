@@ -41,29 +41,6 @@ uint8_t parseU8(const char* v, uint8_t def) {
     return static_cast<uint8_t>(n);
 }
 
-static ActionId compileActionLocal(const char* action) {
-    if (!action || !*action) return ActionId::UNKNOWN;
-    if (strcmp(action, "WAIT") == 0) return ActionId::WAIT;
-    if (strcmp(action, "RELAY_PULSE_ON_OFF_ON") == 0) return ActionId::RELAY_PULSE_ON_OFF_ON;
-    if (strcmp(action, "RELAY_PULSE_OFF_ON_OFF") == 0) return ActionId::RELAY_PULSE_OFF_ON_OFF;
-    if (strcmp(action, "STARTER_TIMED") == 0) return ActionId::STARTER_TIMED;
-    if (strcmp(action, "STARTER_WAIT_INPUT") == 0) return ActionId::STARTER_WAIT_INPUT;
-    if (strcmp(action, "RELAY_ON") == 0) return ActionId::RELAY_ON;
-    if (strcmp(action, "RELAY_OFF") == 0) return ActionId::RELAY_OFF;
-    if (strcmp(action, "RELAY_TOGGLE") == 0) return ActionId::RELAY_TOGGLE;
-    if (strcmp(action, "INPUT_ENABLE") == 0) return ActionId::INPUT_ENABLE;
-    if (strcmp(action, "INPUT_DISABLE") == 0) return ActionId::INPUT_DISABLE;
-    if (strcmp(action, "INPUT_TRIGGER_ENABLE") == 0) return ActionId::INPUT_TRIGGER_ENABLE;
-    if (strcmp(action, "INPUT_TRIGGER_DISABLE") == 0) return ActionId::INPUT_TRIGGER_DISABLE;
-    if (strcmp(action, "TEMP_TRIGGER_ENABLE") == 0) return ActionId::TEMP_TRIGGER_ENABLE;
-    if (strcmp(action, "TEMP_TRIGGER_DISABLE") == 0) return ActionId::TEMP_TRIGGER_DISABLE;
-    if (strcmp(action, "BATTERY_SAVER_ON") == 0) return ActionId::BATTERY_SAVER_ON;
-    if (strcmp(action, "BATTERY_SAVER_OFF") == 0) return ActionId::BATTERY_SAVER_OFF;
-    if (strcmp(action, "THERMOSTAT_ON") == 0) return ActionId::THERMOSTAT_ON;
-    if (strcmp(action, "THERMOSTAT_OFF") == 0) return ActionId::THERMOSTAT_OFF;
-    return ActionId::UNKNOWN;
-}
-
 static ComparisonOp parseComparisonLocal(const char* s) {
     if (!s || !*s) return ComparisonOp::Above;
     if (strcmp(s, "below") == 0) return ComparisonOp::Below;
@@ -617,7 +594,7 @@ public:
         }
     }
     void onStepValue(const char* v) {
-        if (streq(pending_, "action")) cur_.action = compileActionLocal(v);
+        if (streq(pending_, "action")) cur_.action = actionIdFromString(v);
         else if (streq(pending_, "relay_id")) cur_.relay_id = parseU16(v, 0);
         else if (streq(pending_, "ms")) cur_.ms = parseU32(v, 0);
         else if (streq(pending_, "timeout_ms")) cur_.timeout_ms = parseU32(v, 0);

@@ -7,10 +7,12 @@
 #include "config/Config.h"
 #include "common/Logger.h"
 #include "common/Pins.h"
+#include "common/ErrorCodes.h"
 #include "fs/FSManager.h"
 #include "web/WebServer.h"
 
 #include <WiFi.h>
+#include "esp_system.h"
 
 const char* Core::getModeName() const {
     const CorePrivate& impl = *_impl;
@@ -93,6 +95,37 @@ void Core::handleBoot() {
                     break;
                 }
                 impl.errorManager.loadFromRtc();
+                {
+                    // Any abnormal reboot → undelivered fact for first MQTT full (see docs/modules/mqtt.md).
+                    const esp_reset_reason_t rr = esp_reset_reason();
+                    ErrorCode bootCode = ErrorCode::NONE;
+                    switch (rr) {
+                        case ESP_RST_POWERON:
+                        case ESP_RST_SW:
+                        case ESP_RST_DEEPSLEEP:
+                            break;
+                        case ESP_RST_TASK_WDT:
+                        case ESP_RST_INT_WDT:
+                        case ESP_RST_WDT:
+                            bootCode = ErrorCode::WDT_RESET;
+                            break;
+                        case ESP_RST_PANIC:
+                            bootCode = ErrorCode::PANIC_RESET;
+                            break;
+                        case ESP_RST_BROWNOUT:
+                            bootCode = ErrorCode::BROWNOUT_RESET;
+                            break;
+                        case ESP_RST_EXT:
+                        case ESP_RST_SDIO:
+                        case ESP_RST_UNKNOWN:
+                        default:
+                            bootCode = ErrorCode::UNEXPECTED_RESET;
+                            break;
+                    }
+                    if (bootCode != ErrorCode::NONE) {
+                        impl.errorManager.recordBootReset(bootCode);
+                    }
+                }
                 impl.bootStage = CorePrivate::BootStage::LoadOrCreateConfig;
                 break;
             }
@@ -100,6 +133,10 @@ void Core::handleBoot() {
                 logger.log("[Core] BOOT: LoadOrCreateConfig\n");
                 const ConfigLoadOutcome lo = config.loadWithOutcome();
                 if (lo == ConfigLoadOutcome::OkAfterFactoryDefaultsWrittenRebootRecommended) {
+                    // Preserve why load failed before factory defaults (RTC survives soft reboot).
+                    if (config.lastLoadError() != ErrorCode::NONE) {
+                        impl.errorManager.set(config.lastLoadError());
+                    }
                     logger.log("[Core] Factory defaults written; rebooting on next tick\n");
                     impl.bootConfigLoaded = true;
                     impl.bootStage = CorePrivate::BootStage::Done;
@@ -108,7 +145,10 @@ void Core::handleBoot() {
                     break;
                 }
                 if (lo == ConfigLoadOutcome::Failed) {
-                    impl.errorManager.set(ErrorCode::CONFIG_MISSING);
+                    const ErrorCode cfgErr = (config.lastLoadError() != ErrorCode::NONE)
+                                                 ? config.lastLoadError()
+                                                 : ErrorCode::CONFIG_MISSING;
+                    impl.errorManager.set(cfgErr);
                     logger.log("[Core] Config load and factory reset failed. Entering EMERGENCY_AP.\n");
                     impl.bootTargetMode = CoreMode::EMERGENCY_AP;
                     impl.bootStage = CorePrivate::BootStage::SelectInitialMode;
@@ -152,10 +192,12 @@ void Core::handleBoot() {
                 logger.log("[Core] BOOT: InitManagers\n");
                 impl.mqtt.setAppPorts(&impl.ports);
                 impl.programExecutor.setLifecycleCallback(&MQTTClient::onProgramLifecycleThunk, &impl.mqtt);
-                impl.cellular.init(impl.gsm, impl.mqtt, webServer);
+                impl.cellular.init(impl.gsm, impl.mqtt, webServer, impl.timeSyncManager);
                 impl.triggerManager.begin();
                 impl.batterySaverManager.begin();
                 impl.thermostatManager.begin();
+                impl.timeSyncManager.begin();
+                impl.scheduleTriggerManager.begin();
                 impl.engineRunning = false;
                 updateEngineRunning();
                 impl.bootStage = CorePrivate::BootStage::SelectInitialMode;
@@ -214,8 +256,10 @@ void Core::handleNormal() {
     impl.programExecutor.update();
     impl.relay.update();
     impl.triggerManager.update();
+    impl.scheduleTriggerManager.update();
     impl.batterySaverManager.update();
     impl.thermostatManager.update();
+    impl.timeSyncManager.update();
     // SoftAP + cellular coexist on ESP32-C3. Same cellular policy as NORMAL_SILENT.
     serviceCellularLink();
 
@@ -251,8 +295,10 @@ void Core::handleNormalSilent() {
     impl.programExecutor.update();
     impl.relay.update();
     impl.triggerManager.update();
+    impl.scheduleTriggerManager.update();
     impl.batterySaverManager.update();
     impl.thermostatManager.update();
+    impl.timeSyncManager.update();
     serviceCellularLink();
 }
 

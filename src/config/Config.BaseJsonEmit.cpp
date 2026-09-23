@@ -199,6 +199,14 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
     comma(o, &c), o.print("\"program_id\":"), o.print(cfg.battery_saver.program_id);
     o.print('}');
 
+    comma(o, &c), o.print("\"time\":");
+    o.print('{'), c = false;
+    comma(o, &c), o.print("\"enabled\":"), cfg.time.enabled ? o.print("true") : o.print("false");
+    comma(o, &c), o.print("\"ntp_server\":"), writeEscaped(o, cfg.time.ntp_server);
+    comma(o, &c), o.print("\"tz_offset_hours\":"), o.print(static_cast<int>(cfg.time.tz_offset_hours));
+    comma(o, &c), o.print("\"sync_interval_sec\":"), o.print(static_cast<unsigned long>(cfg.time.sync_interval_sec));
+    o.print('}');
+
     comma(o, &c), o.print("\"input_triggers\":[");
     for (uint8_t i = 0; i < cfg.input_triggers_count; i++) {
         const TriggerConfig& tc = cfg.input_triggers[i];
@@ -225,6 +233,21 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         comma(o, &c), o.print("\"comparison\":"), writeEscaped(o, tt.comparison);
         comma(o, &c), o.print("\"threshold\":"), o.print(tt.threshold);
         comma(o, &c), o.print("\"program_id\":"), o.print(tt.program_id);
+        o.print('}');
+    }
+    o.print(']');
+
+    comma(o, &c), o.print("\"schedule_triggers\":[");
+    for (uint8_t i = 0; i < cfg.schedule_triggers_count; i++) {
+        const ScheduleTriggerConfig& sc = cfg.schedule_triggers[i];
+        if (i != 0) o.print(',');
+        o.print('{'), c = false;
+        if (sc.id) comma(o, &c), o.print("\"id\":"), o.print(sc.id);
+        comma(o, &c), o.print("\"enabled\":"), sc.enabled ? o.print("true") : o.print("false");
+        comma(o, &c), o.print("\"hour\":"), o.print(sc.hour);
+        comma(o, &c), o.print("\"minute\":"), o.print(sc.minute);
+        comma(o, &c), o.print("\"days_mask\":"), o.print(sc.days_mask);
+        comma(o, &c), o.print("\"program_id\":"), o.print(sc.program_id);
         o.print('}');
     }
     o.print(']');

@@ -348,6 +348,7 @@
             const sec = schema.triggers || {};
             const inFields = Array.isArray(sec.inputFields) ? sec.inputFields : [];
             const tFields = Array.isArray(sec.tempFields) ? sec.tempFields : [];
+            const sFields = Array.isArray(sec.scheduleFields) ? sec.scheduleFields : [];
 
             const inLen = st.input_triggers?.length || 0;
             for (let idx = 0; idx < inLen; idx++) {
@@ -367,6 +368,15 @@
                 addPath(`temperature_triggers.${idx}.${bind}`);
               }
             }
+            const sLen = st.schedule_triggers?.length || 0;
+            for (let idx = 0; idx < sLen; idx++) {
+              for (const f of sFields) {
+                if (f && f.hidden) continue;
+                const bind = String(f?.bind || '');
+                if (!bind) continue;
+                addPath(`schedule_triggers.${idx}.${bind}`);
+              }
+            }
           } catch (e4) {}
         } catch (e) {}
         return Array.from(out);
@@ -381,9 +391,10 @@
           vehicle: ['vehicle.'],
           thermostat: ['thermostat.'],
           battery: ['battery_saver.'],
+          time: ['time.'],
           sensors: ['sensors.'],
           inputs: ['inputs.'],
-          triggers: ['input_triggers.', 'temperature_triggers.']
+          triggers: ['input_triggers.', 'temperature_triggers.', 'schedule_triggers.']
         };
         const prefixes = prefixMap[k] || [];
         if (!prefixes.length) return false;

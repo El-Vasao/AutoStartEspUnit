@@ -4,9 +4,8 @@
  *
  * Память/устойчивость:
  * - Горячий цикл `update()` не должен аллоцировать heap.
+ * - OneWire/Dallas живут в этом TU (публичный заголовок их не тянет).
  * - Чтение DS18B20 асинхронное (конверсия занимает время) — не блокируем loop.
- * - “Нет датчика” определяется константой `DS18B20::DISCONNECTED` (держим её в `Constants.h`,
- *   чтобы не тянуть DallasTemperature по всему проекту).
  *
  * Запрещено:
  * - Делать `String` операции внутри циклов опроса.
@@ -15,13 +14,35 @@
 #include "io/SensorsController.h"
 #include "config/Config.h"
 #include "core/Core.h"
+#include "core/ErrorManager.h"
 #include "common/Logger.h"
 #include "common/Constants.h"
+#include "common/ErrorCodes.h"
+
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+namespace {
+
+constexpr uint8_t kOwTimeoutFailStreak = 3;
+constexpr uint8_t kAdcSatFailStreak = 8;
+
+struct SensorsOwBackend {
+    OneWire bus;
+    DallasTemperature dallas;
+    SensorsOwBackend() : bus(Pin::ONEWIRE), dallas(&bus) {}
+};
+
+// Single-controller product: Ow stack is TU-local (keeps include/io/SensorsController.h thin).
+SensorsOwBackend& owBackend() {
+    static SensorsOwBackend ow;
+    return ow;
+}
+
+} // namespace
 
 SensorsController::SensorsController()
-    : _oneWire(Pin::ONEWIRE)
-    , _sensors(&_oneWire)
-    , _sensorCount(0)
+    : _sensorCount(0)
     , _conversionInProgress(false)
     , _conversionStartTime(0)
     , _lastTemperatureRequest(0)
@@ -30,6 +51,28 @@ SensorsController::SensorsController()
     , _lastVoltageRead(0)
 {
     memset(_voltageBuffer, 0, sizeof(_voltageBuffer));
+    memset(_foundAddresses, 0, sizeof(_foundAddresses));
+    memset(_sensorData, 0, sizeof(_sensorData));
+}
+
+void SensorsController::noteOneWireBusError_() {
+    if (_owTimeoutStreak < 255) _owTimeoutStreak++;
+    if (_owTimeoutStreak == kOwTimeoutFailStreak) {
+        core.getErrorManager().set(ErrorCode::ONEWIRE_BUS_ERR);
+    }
+}
+
+void SensorsController::noteAdcReadFail_() {
+    if (_adcSatStreak < 255) _adcSatStreak++;
+    if (_adcSatStreak == kAdcSatFailStreak) {
+        core.getErrorManager().set(ErrorCode::ADC_READ_FAIL);
+    }
+}
+
+void SensorsController::clearSensorErrorIf_(ErrorCode code) {
+    if (core.getErrorManager().get() == code) {
+        core.getErrorManager().clear();
+    }
 }
 
 void SensorsController::begin() {
@@ -40,14 +83,15 @@ void SensorsController::begin() {
     analogSetAttenuation(ADC_0db);
     analogReadResolution(12);
 
-    _sensors.begin();
+    auto& ow = owBackend();
+    ow.dallas.begin();
     _sensorCount = discoverSensors();
 
     logger.log("[SensorsController] Found %u DS18B20 sensors\n", _sensorCount);
     printAllAddresses();
 
     for (uint8_t i = 0; i < _sensorCount; i++) {
-        _sensors.setResolution(_foundAddresses[i], DS18B20::RESOLUTION);
+        ow.dallas.setResolution(_foundAddresses[i], DS18B20::RESOLUTION);
     }
 
     requestTemperatures();
@@ -82,6 +126,8 @@ void SensorsController::updateTemperatures() {
     const uint32_t tempInterval =
         _pollIdle ? Timing::TEMPERATURE_READ_INTERVAL_IDLE_MS : Timing::TEMPERATURE_READ_INTERVAL_MS;
 
+    auto& dallas = owBackend().dallas;
+
     if (!_conversionInProgress &&
         (now - _lastTemperatureRequest >= tempInterval)) {
         // DS18B20 конвертирует температуру не мгновенно. Запускаем конверсию и вернёмся за результатом позже.
@@ -89,9 +135,9 @@ void SensorsController::updateTemperatures() {
         _lastTemperatureRequest = now;
     }
 
-    if (_conversionInProgress && _sensors.isConversionComplete()) {
+    if (_conversionInProgress && dallas.isConversionComplete()) {
         for (uint8_t i = 0; i < _sensorCount; i++) {
-            float temp = _sensors.getTempC(_foundAddresses[i]);
+            float temp = dallas.getTempC(_foundAddresses[i]);
             if (temp != DS18B20::DISCONNECTED) {
                 // Apply per-sensor calibration by ROM match (not by slot index).
                 float coeff = 0.0f;
@@ -117,17 +163,22 @@ void SensorsController::updateTemperatures() {
             yield();
         }
         _conversionInProgress = false;
+        _owTimeoutStreak = 0;
+        clearSensorErrorIf_(ErrorCode::ONEWIRE_BUS_ERR);
     }
 
     if (_conversionInProgress && (now - _conversionStartTime > DS18B20::CONVERSION_TIMEOUT_MS)) {
         logger.log("[SensorsController] Temperature conversion timeout\n");
         _conversionInProgress = false;
+        if (_sensorCount > 0) {
+            noteOneWireBusError_();
+        }
     }
 }
 
 void SensorsController::requestTemperatures() {
     if (_sensorCount == 0) return;
-    _sensors.requestTemperatures();
+    owBackend().dallas.requestTemperatures();
     _conversionInProgress = true;
     _conversionStartTime = millis();
 }
@@ -135,14 +186,15 @@ void SensorsController::requestTemperatures() {
 uint8_t SensorsController::discoverSensors() {
     uint8_t count = 0;
     DeviceAddress addr;
+    auto& ow = owBackend();
 
-    _oneWire.reset_search();
-    while (_oneWire.search(addr) && count < HardwareLimits::SENSORS) {
+    ow.bus.reset_search();
+    while (ow.bus.search(addr) && count < HardwareLimits::SENSORS) {
         core.feedWatchdog();
         core.cooperate();
         if (OneWire::crc8(addr, 7) == addr[7]) {
-            memcpy(_foundAddresses[count], addr, sizeof(DeviceAddress));
-            memcpy(_sensorData[count].address, addr, sizeof(DeviceAddress));
+            memcpy(_foundAddresses[count], addr, 8);
+            memcpy(_sensorData[count].address, addr, 8);
             count++;
         }
     }
@@ -205,6 +257,7 @@ void SensorsController::updateVoltage() {
 
     _voltageBuffer[_voltageIndex] = raw;
     _voltageIndex = (_voltageIndex + 1) % ADC::SAMPLES;
+    if (_adcFillCount < ADC::SAMPLES) _adcFillCount++;
 
     uint32_t sum = 0;
     for (uint8_t i = 0; i < ADC::SAMPLES; i++) {
@@ -215,10 +268,20 @@ void SensorsController::updateVoltage() {
     _voltageData.voltage = calculateVoltage(avg);
     _voltageData.valid = true;
     _voltageData.lastReadTime = now;
+
+    // Sustained rail/open ADC after the filter window is full — sticky diagnostic only.
+    if (_adcFillCount >= ADC::SAMPLES) {
+        const bool saturated = (raw == 0) || (raw >= (uint16_t)ADC::MAX_RAW);
+        if (saturated) {
+            noteAdcReadFail_();
+        } else {
+            _adcSatStreak = 0;
+            clearSensorErrorIf_(ErrorCode::ADC_READ_FAIL);
+        }
+    }
 }
 
 float SensorsController::calculateVoltage(uint16_t raw) const {
     float coeff = config.getBase().vehicle.adc_voltage_coeff;
     return raw * (ADC::VREF / ADC::MAX_RAW) * ADC::DIVIDER_RATIO * coeff;
 }
-

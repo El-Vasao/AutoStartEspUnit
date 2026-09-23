@@ -50,6 +50,16 @@ float parseF(const char* v, float def) {
     return strtof(v, nullptr);
 }
 
+int16_t parseI16(const char* v, int16_t def) {
+    if (!v || !*v) return def;
+    char* end = nullptr;
+    long n = strtol(v, &end, 10);
+    if (!end || *end != '\0') return def;
+    if (n > 32767) return 32767;
+    if (n < -32768) return -32768;
+    return static_cast<int16_t>(n);
+}
+
 void initBaseLikeFillBasic(BaseConfig& t) {
     for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
         t.sensors[i].id = 0;
@@ -68,7 +78,9 @@ void initBaseLikeFillBasic(BaseConfig& t) {
     }
     t.input_triggers_count = 0;
     t.temperature_triggers_count = 0;
+    t.schedule_triggers_count = 0;
     t.setup_required = false;
+    t.time = TimeConfig{}; // disabled + empty NTP until JSON `time` (or factory DefaultConfig) fills it
 }
 
 enum class St : uint8_t {
@@ -85,10 +97,13 @@ enum class St : uint8_t {
     PulseObj,
     Thermostat,
     BatterySaver,
+    TimeCfg,
     InTrigArr,
     InTrigObj,
     TempTrigArr,
     TempTrigObj,
+    SchedTrigArr,
+    SchedTrigObj,
 };
 
 class BaseConfigListener final : public JsonListener {
@@ -112,6 +127,7 @@ public:
         seenActive_ = false;
         trig_ = TriggerConfig{};
         ttrig_ = TempTriggerConfig{};
+        strig_ = ScheduleTriggerConfig{};
     }
 
     void endDocument() override {}
@@ -136,6 +152,7 @@ public:
                 else if (streq(pending_, "vehicle")) push(St::Vehicle);
                 else if (streq(pending_, "thermostat")) push(St::Thermostat);
                 else if (streq(pending_, "battery_saver")) push(St::BatterySaver);
+                else if (streq(pending_, "time")) push(St::TimeCfg);
                 else {
                     push(St::Junk);
                     junkNest_ = 1;
@@ -180,6 +197,11 @@ public:
                 push(St::TempTrigObj);
                 break;
             }
+            case St::SchedTrigArr: {
+                strig_ = ScheduleTriggerConfig{};
+                push(St::SchedTrigObj);
+                break;
+            }
             default:
                 break;
         }
@@ -208,6 +230,11 @@ public:
                 t_->temperature_triggers[t_->temperature_triggers_count++] = ttrig_;
             }
         }
+        if (closing == St::SchedTrigObj) {
+            if (t_->schedule_triggers_count < Limits::MAX_SCHEDULE_TRIGGERS) {
+                t_->schedule_triggers[t_->schedule_triggers_count++] = strig_;
+            }
+        }
         pop();
     }
 
@@ -232,6 +259,8 @@ public:
                 push(St::InTrigArr);
             } else if (streq(pending_, "temperature_triggers")) {
                 push(St::TempTrigArr);
+            } else if (streq(pending_, "schedule_triggers")) {
+                push(St::SchedTrigArr);
             }
         }
     }
@@ -379,6 +408,20 @@ public:
                 else if (streq(pending_, "program_id"))
                     t_->battery_saver.program_id = parseU8(v, 0);
                 break;
+            case St::TimeCfg:
+                if (streq(pending_, "enabled")) t_->time.enabled = parseBool(v, true);
+                else if (streq(pending_, "ntp_server"))
+                    strlcpy(t_->time.ntp_server, v ? v : "pool.ntp.org", sizeof t_->time.ntp_server);
+                else if (streq(pending_, "tz_offset_hours"))
+                    t_->time.tz_offset_hours = static_cast<int8_t>(parseI16(v, 3));
+                else if (streq(pending_, "tz_offset_min")) {
+                    // Legacy minutes → whole hours (truncate toward zero).
+                    const int16_t mins = parseI16(v, 180);
+                    t_->time.tz_offset_hours = static_cast<int8_t>(mins / 60);
+                }
+                else if (streq(pending_, "sync_interval_sec"))
+                    t_->time.sync_interval_sec = parseU32(v, 21600);
+                break;
             case St::InTrigObj:
                 if (streq(pending_, "id")) trig_.id = parseU16(v, 0);
                 else if (streq(pending_, "enabled"))
@@ -401,6 +444,19 @@ public:
                     ttrig_.threshold = parseF(v, 0.0f);
                 else if (streq(pending_, "program_id"))
                     ttrig_.program_id = parseU8(v, 0);
+                break;
+            case St::SchedTrigObj:
+                if (streq(pending_, "id")) strig_.id = parseU16(v, 0);
+                else if (streq(pending_, "enabled"))
+                    strig_.enabled = parseBool(v, false);
+                else if (streq(pending_, "hour"))
+                    strig_.hour = parseU8(v, 0);
+                else if (streq(pending_, "minute"))
+                    strig_.minute = parseU8(v, 0);
+                else if (streq(pending_, "days_mask"))
+                    strig_.days_mask = parseU8(v, 0x7F);
+                else if (streq(pending_, "program_id"))
+                    strig_.program_id = parseU8(v, 0);
                 break;
             case St::Root:
                 if (streq(pending_, "setup_required")) t_->setup_required = parseBool(v, false);
@@ -433,6 +489,7 @@ private:
     bool seenActive_{false};
     TriggerConfig trig_;
     TempTriggerConfig ttrig_;
+    ScheduleTriggerConfig strig_;
 
     int junkNest_{0};
 

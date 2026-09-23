@@ -8,6 +8,7 @@
 
 #include "app/AppPorts.h"
 #include "config/ConfigTypes.h"
+#include "common/ErrorCodes.h"
 #include "program/CompiledStep.h"
 
 enum class ConfigLoadOutcome : uint8_t {
@@ -23,6 +24,9 @@ public:
     const BaseConfig& getBase() const { return baseCache; }
     uint16_t getCRC() const { return configCRC; }
     bool isLoaded() const { return loaded; }
+
+    /// Last distinct load failure (CONFIG_*), or NONE after successful load.
+    ErrorCode lastLoadError() const { return lastLoadError_; }
 
     void setWdtPort(const WdtPort& port) { wdtPort_ = port; }
     const WdtPort& wdtPort() const { return wdtPort_; }
@@ -59,6 +63,7 @@ private:
     BaseConfig baseCache;
     uint16_t configCRC{};
     bool loaded{};
+    ErrorCode lastLoadError_{ErrorCode::NONE};
     WdtPort wdtPort_{};
 
     bool loadBaseFromFile(const char* path, BaseConfig& target, size_t& outLen, uint16_t* outFileCrc = nullptr);

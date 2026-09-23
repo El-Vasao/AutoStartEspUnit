@@ -24,6 +24,10 @@
     Alpine.store('deviceStatus', {
       mode: '—',
       uptime: 0,
+      epoch: 0,
+      timeSynced: false,
+      timeStale: false,
+      tzOffsetHours: 3,
       voltage: null,
       tempSensors: [],
       relays: [],
@@ -113,7 +117,8 @@
           atPerf: (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(),
           uptime: Number(uptime) || 0,
           timerRemaining: Math.max(0, Number(timerRemaining) || 0),
-          programRunning: !!programRunning
+          programRunning: !!programRunning,
+          epoch: Number(this.epoch) || 0
         };
         this.uptime = this._clockBaseline.uptime;
         this.timerRemaining = this._clockBaseline.timerRemaining;
@@ -127,6 +132,9 @@
           (((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0) / 1000
         );
         this.uptime = b.uptime + Math.max(0, elapsedSec);
+        if (this.timeSynced && this.epoch) {
+          this.epoch = (Number(this._clockBaseline.epoch) || this.epoch) + Math.max(0, elapsedSec);
+        }
         if (b.programRunning && b.timerRemaining > 0) {
           const next = b.timerRemaining - elapsedSec;
           this.timerRemaining = next > 0 ? next : 0;
@@ -171,6 +179,10 @@
             }
             if (data.freeHeap !== undefined) this.freeHeap = data.freeHeap;
             if (Object.prototype.hasOwnProperty.call(data, 'lastError')) this.lastError = data.lastError || '—';
+            if (typeof data.epoch === 'number') this.epoch = data.epoch;
+            if (data.synced !== undefined) this.timeSynced = !!data.synced;
+            if (data.stale !== undefined) this.timeStale = !!data.stale;
+            if (typeof data.tzOffsetHours === 'number') this.tzOffsetHours = data.tzOffsetHours;
             this._applyClockBaseline(data.uptime, data.timerRemaining, data.programRunning);
             this.startClockExtrapolation();
             break;

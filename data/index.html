@@ -454,6 +454,10 @@
                                 <span class="info-value" x-text="$store.uiFormat.formatUptime($store.deviceStatus.uptime)"></span>
                             </div>
                             <div class="info-row">
+                                <span class="info-label">Время:</span>
+                                <span class="info-value" x-text="$store.uiFormat.formatWallClock($store.deviceStatus)"></span>
+                            </div>
+                            <div class="info-row">
                                 <span class="info-label">Последняя программа:</span>
                                 <span class="info-value" x-text="$store.deviceStatus.lastProgramName || '—'"></span>
                             </div>
@@ -652,14 +656,15 @@
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'triggers', invalid: $store.settingsForm.subtabHasErrors('triggers'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('triggers') && !$store.settingsForm.subtabHasErrors('triggers') }" @click="$store.uiState.activeSubTab = 'triggers'" :disabled="$store.deviceOta.started">Триггеры</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'thermostat', invalid: $store.settingsForm.subtabHasErrors('thermostat'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('thermostat') && !$store.settingsForm.subtabHasErrors('thermostat') }" @click="$store.uiState.activeSubTab = 'thermostat'" :disabled="$store.deviceOta.started">Термостат</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'battery', invalid: $store.settingsForm.subtabHasErrors('battery'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('battery') && !$store.settingsForm.subtabHasErrors('battery') }" @click="$store.uiState.activeSubTab = 'battery'" :disabled="$store.deviceOta.started">Battery Saver</button>
+                    <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'time', invalid: $store.settingsForm.subtabHasErrors('time'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('time') && !$store.settingsForm.subtabHasErrors('time') }" @click="$store.uiState.activeSubTab = 'time'" :disabled="$store.deviceOta.started">Время</button>
                 </nav>
 
                 <template x-if="$store.settings.loaded">
                     <div>
                         <!-- Универсальный рендерер "простых" табов по schema.fields -->
-                        <template x-for="tabKey in ['wifi','gsm','mqtt','vehicle','thermostat','battery']" :key="tabKey">
+                        <template x-for="tabKey in ['wifi','gsm','mqtt','vehicle','thermostat','battery','time']" :key="tabKey">
                             <div :class="{ active: $store.uiState.activeSubTab === tabKey }" class="settings-subtab-pane">
-                                <div class="card" :id="tabKey === 'thermostat' ? 'settings-thermostat' : (tabKey === 'battery' ? 'settings-battery' : null)">
+                                <div class="card" :id="tabKey === 'thermostat' ? 'settings-thermostat' : (tabKey === 'battery' ? 'settings-battery' : (tabKey === 'time' ? 'settings-time' : null))">
                                     <template x-for="field in ($store.settingsUiSchema.settings?.[tabKey]?.fields || [])" :key="field.path">
                                         <div class="form-group" x-data="$store.settingsForm.fieldRow(field, field.path)" x-show="(!field.hidden) && (!field.showIf || field.showIf($store))">
                                             <label class="form-label" x-text="field.label"></label>
@@ -744,6 +749,10 @@
                                             <p class="error-text m-0" x-show="$store.settings.isSchemaInvalid()" x-text="'Валидация недоступна: ' + ($store.settingsValidator?._lastInitError || 'ошибка загрузки схемы')"></p>
                                         </div>
                                     </template>
+                                    <div class="info-row mt-16" x-show="tabKey === 'time'" style="border-top: 1px solid rgba(127,127,127,.25); padding-top: 12px; margin-top: 8px;">
+                                        <span class="info-label">Сейчас (по выбранной TZ):</span>
+                                        <span class="info-value" x-text="$store.uiFormat.formatWallClockPreview($store.settings.time?.tz_offset_hours, $store.deviceStatus)"></span>
+                                    </div>
                                 </div>
                             </div>
                         </template>
@@ -1060,6 +1069,65 @@
                                     </template>
                                 </div>
                                 <div class="button-group mt-16"><button class="btn" type="button" @click="$store.settings.addTempTrigger()">➕ Добавить температурный триггер</button></div>
+                            </div>
+                            <div class="card">
+                                <div id="settings-schedule-triggers-config">
+                                    <h4 class="mt-0">Расписание</h4>
+                                    <template x-for="(trigger, idx) in $store.settings.schedule_triggers" :key="idx">
+                                        <div class="temp-trigger-item" :id="'settings-schedule-trigger-' + idx">
+                                            <div class="trigger-header">
+                                                <h4 x-text="'Расписание ' + (idx+1)"></h4>
+                                                <button class="btn danger trigger-delete" type="button" @click="$store.settings.removeScheduleTrigger(idx)">✕</button>
+                                            </div>
+                                            <template x-for="field in ($store.settingsUiSchema.settings?.triggers?.scheduleFields || [])" :key="field.bind">
+                                                <div class="form-group" x-data="$store.settingsForm.fieldRow(field, 'schedule_triggers.' + String(idx) + '.' + String(field.bind))" x-show="!field.hidden">
+                                                    <label class="form-label" x-text="field.label"></label>
+                                                    <div class="control-row" :style="field.type === 'toggle' ? 'align-items: center;' : ''">
+                                                        <div class="control-main">
+                                                            <template x-if="field.type === 'toggle'">
+                                                                <label class="toggle-row">
+                                                                    <button
+                                                                        type="button"
+                                                                        class="toggle-switch"
+                                                                        role="switch"
+                                                                        :aria-checked="value"
+                                                                        :class="{ on: value }"
+                                                                        :disabled="$store.deviceOta.started"
+                                                                        @click="onToggleClick"
+                                                                    ></button>
+                                                                    <span x-text="toggleText()"></span>
+                                                                </label>
+                                                            </template>
+                                                            <template x-if="field.type === 'number'">
+                                                                <input type="text" :inputmode="(field.valueType === 'int') ? 'numeric' : 'decimal'" class="form-control"
+                                                                       :step="field.step || '1'"
+                                                                       :value="APP.utils.numberToPlainString(value)"
+                                                                       @input="onNumberInput">
+                                                            </template>
+                                                            <template x-if="field.type === 'select'">
+                                                                <select class="form-control" :value="value" @change="onSelectChange">
+                                                                    <template x-for="opt in options()" :key="String(opt.value)">
+                                                                        <option :value="opt.value" x-text="opt.label"></option>
+                                                                    </template>
+                                                                </select>
+                                                            </template>
+                                                        </div>
+                                                        <button type="button" class="help-btn" :class="helpBtnClass()" @click="openHelp = !openHelp" aria-label="Справка">?</button>
+                                                    </div>
+                                                    <div class="help-inline-wrap" x-show="openHelp && (field.help || hasError())" x-collapse x-transition.opacity.duration.120ms @click.outside="openHelp = false" x-cloak>
+                                                        <div class="help-popover">
+                                                            <div class="help-popover-title help-popover-title-error" x-show="hasError()">Ошибка</div>
+                                                            <p class="help-popover-text-error" x-show="hasError()" x-text="errorText()"></p>
+                                                            <div class="help-popover-title" x-text="field.helpTitle || 'Справка'"></div>
+                                                            <p x-text="field.help || ('Поле: ' + (field.label || ''))"></p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="button-group mt-16"><button class="btn" type="button" @click="$store.settings.addScheduleTrigger()">➕ Добавить расписание</button></div>
                             </div>
                         </div>
 

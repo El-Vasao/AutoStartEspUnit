@@ -6,6 +6,7 @@
 #include "program/ProgramExecutor.h"
 
 class Config;
+class TimeSyncManager;
 
 /**
  * @brief Менеджер функции Battery Saver.
@@ -15,34 +16,29 @@ class Config;
  * - `voltage_abort_threshold`: немедленный abort попыток и stop программы battery saver;
  * - минимальная длительность низкого напряжения до старта;
  * - минимальный интервал между попытками;
- * - лимит попыток в сутки (псевдо-“день” считается от первого запуска, без RTC/реального времени).
+ * - лимит попыток в сутки (календарные сутки при synced wall-clock; иначе псевдо-день от millis).
  */
 class BatterySaverManager {
 public:
-    // Конструктор с зависимостями
-    BatterySaverManager(Config& config, SensorsController& sensors, ProgramExecutor& executor);
+    BatterySaverManager(Config& config, SensorsController& sensors, ProgramExecutor& executor,
+                        TimeSyncManager& timeSync);
 
-    // Инициализация runtime-флага из конфига
     void begin();
-
-    // Проверка условий (вызывается периодически)
     void update();
 
-    // Включить/выключить Battery Saver в рантайме
     void setEnabled(bool en) { _runtimeEnabled = en; }
-
-    // Проверить, включён ли Battery Saver в рантайме
     bool isEnabled() const { return _runtimeEnabled; }
 
 private:
-    Config& _config;                    ///< ссылка на конфигурацию
-    SensorsController& _sensors;        ///< ссылка на контроллер сенсоров (для напряжения)
-    ProgramExecutor& _executor;          ///< ссылка на исполнитель программ
+    Config& _config;
+    SensorsController& _sensors;
+    ProgramExecutor& _executor;
+    TimeSyncManager& _timeSync;
 
-    bool _runtimeEnabled;                ///< включён ли Battery Saver (может отключаться через веб)
-    uint32_t _lastAttempt;                ///< время последней попытки запуска (мс)
-    uint8_t _attemptsToday;               ///< количество попыток за текущий день
-    uint32_t _dayStart;                   ///< время начала текущего дня (мс)
-    uint32_t _lowStartTime;               ///< время начала низкого напряжения (мс)
+    bool _runtimeEnabled;
+    uint32_t _lastAttempt;
+    uint8_t _attemptsToday;
+    uint32_t _dayStart;
+    uint32_t _calendarDayKey;
+    uint32_t _lowStartTime;
 };
-

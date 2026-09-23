@@ -15,6 +15,7 @@ class ProgramExecutor;
 class GSMController;
 class MQTTClient;
 class ErrorManager;
+class TimeSyncManager;
 
 struct CorePrivate;
 
@@ -124,6 +125,10 @@ public:
 
     bool getTempTriggerRuntime(uint8_t index) const;
     void setTempTriggerRuntime(uint8_t index, bool en);
+
+    TimeSyncManager& getTimeSync();
+    const TimeSyncManager& getTimeSync() const;
+    void applyWallClockEpoch(uint32_t epochUtc);
 
     /// OTA enter: stop domain automations (triggers / battery saver / thermostat).
     void suspendDomainManagersForOta();

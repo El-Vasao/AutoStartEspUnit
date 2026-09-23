@@ -116,7 +116,42 @@ retained `"offline"` / `"online"`.
 ### 4) StatusSnapshot (`{prefix}/status`)
 `emitMqttStatusJson` / delta. QoS 0. Маркер `full` true/false. Периодика / first после connect. `cmd=status` отвечает fat `/reply`, Tele не форсирует.
 
-Значимые изменения: `mode`, `engineRunning`, `last_error`, relays/inputs, triggers, program fields; `voltage` / temp — ε из `JsonBytes::Mqtt`.
+Значимые изменения: `mode`, `engineRunning`, `last_err` (undelivered queue), relays/inputs, triggers, program fields; `voltage` / temp — ε из `JsonBytes::Mqtt`.
+
+#### `last_err` (breaking vs legacy `last_error` string)
+
+One-shot undelivered error queue (newest first). Key omitted when empty.
+
+```json
+"last_err":[
+  {"code":21,"msg":"Panic reset","active":true},
+  {"code":48,"msg":"MQTT connection failed","active":false}
+]
+```
+
+| Field | Meaning |
+|-------|---------|
+| `code` | `ErrorCode` as uint8 |
+| `msg` | Stable short string (`errorCodeToString`) |
+| `active` | Still current uncleared error |
+
+**Delivery:**
+
+1. Boot/RTC undelivered → first `full` after MQTT connect
+2. New runtime errors → once on next periodic status
+3. Mark delivered only after successful status PUBLISH stage; retry next send on failure
+
+**Abnormal reboot fact** (always undelivered on boot, except clean reasons):
+
+| `esp_reset_reason` | `code` / msg |
+|--------------------|--------------|
+| WDT / task WDT / int WDT | Watchdog reset |
+| PANIC | Panic reset |
+| BROWNOUT | Brownout reset |
+| EXT / UNKNOWN / SDIO / other | Unexpected reset |
+| POWERON / SW / DEEPSLEEP | not recorded (clean power / OTA / `/reboot`) |
+
+Clean soft reboot: LWT offline→online + `uptime` reset only. Power-cut may clear RTC → no `last_err`.
 
 ### Вне scope
 QoS1, текстовые `err` на wire, persist LRU, ACL, legacy API.

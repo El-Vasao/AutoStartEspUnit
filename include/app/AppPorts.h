@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>
 
 /**
  * Embedded-friendly dependency injection without virtuals/heap.
@@ -41,9 +42,22 @@ struct AppControlPort {
     bool (*setTempTrigger)(void* ctx, uint16_t id, bool en){nullptr};
     /// NORMAL_SILENT → NORMAL SoftAP wake. Returns false if not silent or enabled==false.
     bool (*wakeWifiAp)(void* ctx, bool en){nullptr};
+    void (*requestModemReboot)(void* ctx){nullptr};
+};
+
+/// Stream OTA from HTTP upload handlers (async-safe feed; mode switch deferred in Core::update).
+struct OtaStreamPort {
+    void* ctx{nullptr};
+    void (*onUploadOpened)(void* ctx){nullptr};
+    bool (*feed)(void* ctx, const uint8_t* data, size_t len){nullptr};
+    bool (*finish)(void* ctx){nullptr};
+    void (*abort)(void* ctx){nullptr};
+    void (*notifyComplete)(void* ctx, bool ok){nullptr};
+    bool (*isOtaMode)(void* ctx){nullptr};
 };
 
 struct AppPorts {
     WdtPort wdt;
     AppControlPort control;
+    OtaStreamPort ota;
 };

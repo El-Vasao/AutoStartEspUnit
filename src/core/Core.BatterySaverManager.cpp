@@ -1,31 +1,35 @@
 // src/core/Core.BatterySaverManager.cpp
 #include "core/BatterySaverManager.h"
+#include "core/TimeSyncManager.h"
 #include "config/Config.h"
 #include "common/Utils.h"
 #include "common/Logger.h"
 
+#include <time.h>
+
 /**
  * @file Core.BatterySaverManager.cpp
  * @brief Логика battery-saver (реакция на низкое напряжение, лимиты попыток/сутки).
- *
- * Инварианты:
- * - Полностью неблокирующий `update()`.
- * - Без heap/`String`.
- *
- * Запрещено:
- * - Выполнять долгие действия синхронно (всё через ProgramExecutor).
  */
 
-BatterySaverManager::BatterySaverManager(Config& config, SensorsController& sensors, ProgramExecutor& executor) :
-    _config(config),
-    _sensors(sensors),
-    _executor(executor),
-    _runtimeEnabled(false),
-    _lastAttempt(0),
-    _attemptsToday(0),
-    _dayStart(0),
-    _lowStartTime(0)
-{}
+namespace {
+uint32_t calendarDayKey(const struct tm& t) {
+    return (static_cast<uint32_t>(t.tm_year & 0x1FF) << 9) | static_cast<uint32_t>(t.tm_yday & 0x1FF);
+}
+} // namespace
+
+BatterySaverManager::BatterySaverManager(Config& config, SensorsController& sensors, ProgramExecutor& executor,
+                                         TimeSyncManager& timeSync)
+    : _config(config),
+      _sensors(sensors),
+      _executor(executor),
+      _timeSync(timeSync),
+      _runtimeEnabled(false),
+      _lastAttempt(0),
+      _attemptsToday(0),
+      _dayStart(0),
+      _calendarDayKey(0),
+      _lowStartTime(0) {}
 
 void BatterySaverManager::begin() {
     logger.log("[BatterySaverManager] begin\n");
@@ -44,13 +48,25 @@ void BatterySaverManager::update() {
 
     uint32_t now = millis();
 
-    if (_dayStart == 0) {
-        _dayStart = now;
-    }
-    // “День” здесь условный: мы не используем RTC/реальные даты, поэтому сутки отсчитываются от первого старта.
-    if (now - _dayStart >= Timing::MILLIS_PER_DAY) {
-        _attemptsToday = 0;
-        _dayStart = now;
+    struct tm local {};
+    if (_timeSync.isSynced() && _timeSync.localBrokenDown(local)) {
+        const uint32_t key = calendarDayKey(local);
+        if (_calendarDayKey == 0) {
+            _calendarDayKey = key;
+        } else if (key != _calendarDayKey) {
+            _attemptsToday = 0;
+            _calendarDayKey = key;
+            _dayStart = now;
+        }
+    } else {
+        if (_dayStart == 0) {
+            _dayStart = now;
+        }
+        if (now - _dayStart >= Timing::MILLIS_PER_DAY) {
+            _attemptsToday = 0;
+            _dayStart = now;
+            _calendarDayKey = 0;
+        }
     }
 
     float voltage = _sensors.getVoltage();
@@ -60,7 +76,6 @@ void BatterySaverManager::update() {
     float abortThreshold = bs.voltage_abort_threshold;
     float hysteresis = bs.hysteresis;
 
-    // Critical low: stop attempts and abort the battery-saver program if it is running.
     if (voltage < abortThreshold) {
         _lowStartTime = 0;
         if (bs.program_id != 0 && _executor.isRunning() &&
@@ -94,8 +109,6 @@ void BatterySaverManager::update() {
             _lowStartTime = 0;
         }
     } else if (voltage > startThreshold + hysteresis) {
-        // Гистерезис защищает от дребезга вокруг порога: “низкое напряжение” должно закончиться уверенно.
         _lowStartTime = 0;
     }
 }
-

@@ -99,6 +99,33 @@ void GSMController::handleUrc(const char* line) {
         }
         return;
     }
+    if (strncmp(line, "+CNTP:", 6) == 0) {
+        // SIMCom: 1=ok, 61=network, 62=DNS, 63=connect, 64=response, 65=timeout
+        int code = -1;
+        if (sscanf(line, "+CNTP: %d", &code) == 1) {
+            if (code == 1) {
+                _ntpUrcOk = true;
+            } else {
+                _ntpUrcFail = true;
+            }
+            const char* why = "?";
+            switch (code) {
+                case 1: why = "ok"; break;
+                case 61: why = "network"; break;
+                case 62: why = "dns"; break;
+                case 63: why = "connect"; break;
+                case 64: why = "response"; break;
+                case 65: why = "timeout"; break;
+                default: break;
+            }
+            logger.log("[GSMController] CNTP URC code=%d (%s)\n", code, why);
+        }
+        return;
+    }
+    if (strncmp(line, "+CCLK:", 6) == 0) {
+        strlcpy(_cclkSnap, line, sizeof(_cclkSnap));
+        return;
+    }
     if (strcmp(line, "RDY") == 0 || strcmp(line, "Call Ready") == 0 || strcmp(line, "SMS Ready") == 0) {
         _modemRestartedSeen = true;
         ev(10);

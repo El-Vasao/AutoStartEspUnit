@@ -6,58 +6,83 @@
 #include "common/ErrorCodes.h"
 
 /**
- * @brief Структура для хранения ошибки в RTC-памяти.
+ * One slot in the error history ring (RAM; mirrored to RTC without `delivered`).
  */
-struct RtcErrorRecord {
-    uint32_t magic;        ///< магическое число для проверки валидности (0xDEADBEEF)
-    ErrorCode code;        ///< код ошибки
-    uint32_t uptime;       ///< время возникновения ошибки (секунды с момента запуска)
-    uint16_t crc;          ///< контрольная сумма для проверки целостности
+struct ErrorHistoryEntry {
+    ErrorCode code{ErrorCode::NONE};
+    uint32_t uptimeSec{0};
+    bool active{false};
+    bool delivered{false};
+    bool fromRtc{false};
+};
+
+/**
+ * Wire/snapshot POD for one undelivered error (no ErrorCodes.h dependency beyond uint8).
+ */
+struct ErrorSnapshotEntry {
+    uint8_t code{0};
+    bool active{false};
+    char msg[ErrorHistory::MSG_MAX]{};
+    uint32_t uptimeSec{0}; ///< fingerprint for markDelivered
+};
+
+/**
+ * RTC block: full history ring + current active code.
+ * Survives soft reset; not reliable across full power loss.
+ */
+struct RtcErrorBlock {
+    uint32_t magic;
+    uint8_t count;
+    ErrorCode current;
+    uint32_t currentUptime;
+    struct PackedEntry {
+        ErrorCode code;
+        uint32_t uptimeSec;
+        uint8_t flags; ///< bit0 = active
+    } entries[ErrorHistory::CAPACITY];
+    uint16_t crc;
 } __attribute__((aligned(4)));
 
 /**
- * @brief Менеджер ошибок с сохранением в RTC.
- * Хранит текущую ошибку и время её возникновения, дублирует в RTC_DATA_ATTR
- * (переживает deep sleep / soft reset; не переживает полное отключение питания).
- *
- * Зачем RTC:
- * - если устройство перезагрузилось (WDT/OOM), последняя “важная” ошибка остаётся доступной после старта,
- *   и её можно показать в UI/логах.
- *
- * Ограничение:
- * - RTC retention маленькая и не предназначена для частых/больших записей; здесь хранится только один рекорд.
+ * Error manager: current error + history ring + RTC persist + MQTT delivery flags.
  */
 class ErrorManager {
 public:
     ErrorManager();
 
-    // Установить текущую ошибку (автоматически сохраняется в RTC)
     void set(ErrorCode err);
-
-    // Очистить текущую ошибку и стереть запись в RTC
     void clear();
 
-    // Получить текущий код ошибки
+    /// Boot-only: always append undelivered fact (does not erase prior RTC history).
+    void recordBootReset(ErrorCode err);
+
     ErrorCode get() const { return _lastError; }
-
-    // Получить строковое описание текущей ошибки
     const char* getMessage() const { return errorCodeToString(_lastError); }
-
-    // Время возникновения текущей ошибки (секунды аптайма)
     uint32_t getTime() const { return _errorTime; }
 
-    // Загрузить ошибку из RTC-памяти (вызывается в конструкторе)
     void loadFromRtc();
-
-    // Сохранить текущую ошибку в RTC
     void saveToRtc();
-
-    // Очистить запись в RTC
     void clearRtc();
 
-private:
-    ErrorCode _lastError;           ///< текущий код ошибки
-    uint32_t _errorTime;            ///< время возникновения (секунды)
+    /// Newest-first undelivered copy for MQTT status. Returns count written.
+    uint8_t copyUndelivered(ErrorSnapshotEntry* out, uint8_t cap) const;
 
-    static constexpr uint32_t RTC_MAGIC = 0xDEADBEEF;
+    /// Mark matching entries delivered after successful status PUBLISH stage.
+    void markDelivered(const ErrorSnapshotEntry* sent, uint8_t n);
+
+    uint8_t historyCount() const { return _count; }
+    const ErrorHistoryEntry& historyAt(uint8_t i) const; ///< i=0 newest
+
+private:
+    ErrorCode _lastError;
+    uint32_t _errorTime;
+
+    ErrorHistoryEntry _ring[ErrorHistory::CAPACITY]{};
+    uint8_t _count{0}; ///< valid entries, newest at index 0
+
+    void pushFront_(ErrorHistoryEntry e);
+    void deactivateActives_();
+    void persist_();
+
+    static constexpr uint32_t RTC_MAGIC = 0xE11A70CCu; ///< bumped vs single-record layout
 };

@@ -3,28 +3,28 @@
  * @brief Публичный интерфейс контроллера сенсоров (DS18B20 + ADC).
  *
  * Инварианты по памяти:
- * - Публичный заголовок не должен тянуть лишние зависимости (особенно `Config.h` и тяжёлые JSON-DOM библиотеки),
- *   чтобы не раздувать include-граф и время компиляции.
+ * - Публичный заголовок не тянет OneWire/DallasTemperature (compile fanout).
  * - Горячие методы (`update`) не должны требовать динамических аллокаций.
  *
  * Запрещено:
  * - Добавлять сюда инклюды “для удобства” (только то, что реально нужно по типам/полям).
  */
-// include/io/SensorsController.h
 #pragma once
 
 #include <Arduino.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
 #include "common/Pins.h"
 #include "common/Constants.h"
+#include "common/ErrorCodes.h"
+
+/// ROM / 1-Wire address (8 bytes). Kept as raw bytes so public headers stay free of Dallas types.
+using SensorRomAddress = uint8_t[8];
 
 // Структура для хранения данных одного температурного датчика
 struct TemperatureSensorData {
     float temperature = -127.0f;    ///< последнее измеренное значение
     uint32_t lastReadTime = 0;       ///< время последнего чтения (мс)
     bool valid = false;              ///< флаг валидности последнего значения
-    DeviceAddress address = {0};     ///< уникальный адрес датчика
+    SensorRomAddress address = {0};  ///< уникальный адрес датчика
 };
 
 /**
@@ -95,18 +95,16 @@ public:
     uint32_t getLastVoltageTime() const { return _voltageData.lastReadTime; }
 
 private:
-    // Температура
-    OneWire _oneWire;                              ///< объект OneWire
-    DallasTemperature _sensors;                    ///< объект DallasTemperature
-
     TemperatureSensorData _sensorData[HardwareLimits::SENSORS]; ///< данные датчиков
-    DeviceAddress _foundAddresses[HardwareLimits::SENSORS];     ///< адреса найденных датчиков
+    SensorRomAddress _foundAddresses[HardwareLimits::SENSORS];  ///< адреса найденных датчиков
     uint8_t _sensorCount;                           ///< количество найденных датчиков
 
     bool _conversionInProgress;                     ///< флаг ожидания преобразования
     uint32_t _conversionStartTime;                   ///< время запуска преобразования (мс)
     uint32_t _lastTemperatureRequest;                ///< время последнего запроса (мс)
     bool _pollIdle{false};                           ///< растянутые интервалы опроса
+    uint8_t _owTimeoutStreak{0};                     ///< consecutive DS18B20 conversion timeouts
+    uint8_t _adcSatStreak{0};                        ///< consecutive saturated/zero ADC samples
 
     // Обновление температуры (опрос датчиков)
     void updateTemperatures();
@@ -124,11 +122,15 @@ private:
     uint16_t _voltageBuffer[ADC::SAMPLES];  ///< буфер для скользящего среднего
     uint8_t _voltageIndex;                   ///< текущий индекс в буфере
     uint32_t _lastVoltageRead;                ///< время последнего чтения АЦП (мс)
+    uint8_t _adcFillCount{0};                 ///< samples collected toward a full filter window
 
     // Обновление напряжения (чтение АЦП, скользящее среднее)
     void updateVoltage();
 
     // Расчёт напряжения из сырого значения АЦП
     float calculateVoltage(uint16_t raw) const;
-};
 
+    void noteOneWireBusError_();
+    void noteAdcReadFail_();
+    void clearSensorErrorIf_(ErrorCode code);
+};

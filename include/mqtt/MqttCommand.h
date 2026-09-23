@@ -11,6 +11,7 @@ enum class MqttCommandKind : uint8_t {
     List,
     Status,
     Set,
+    SetTime,
 };
 
 enum class MqttSetName : uint8_t {
@@ -43,6 +44,8 @@ struct MqttCommand {
     uint16_t ref{0};
     bool enabled{false};
     bool hasEnabled{false};
+    uint32_t epoch{0};
+    bool hasEpoch{false};
 };
 
 inline uint16_t mqttErrToHttpCode(MqttCmdErr e) {
@@ -66,6 +69,7 @@ inline const char* mqttCmdKindStr(MqttCommandKind k) {
         case MqttCommandKind::List: return "list";
         case MqttCommandKind::Status: return "status";
         case MqttCommandKind::Set: return "set";
+        case MqttCommandKind::SetTime: return "set_time";
         default: return "";
     }
 }

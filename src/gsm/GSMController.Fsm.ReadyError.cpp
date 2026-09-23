@@ -95,8 +95,13 @@ void GSMController::handleReady() {
 
     // Diagnostics should be sparse: do not constantly poke the modem.
     // Never enqueue CSQ/COPS while TCP owns the AT bus (CIPSEND / CIPSTART / recover).
+    // Prefer in-flight NTP over sparse CSQ/COPS.
     const uint32_t now = millis();
     if (!_stack.tcp.isBusBusy()) {
+        if (_ntpStep != NtpStep::Idle) {
+            serviceNtpSync(now);
+            return;
+        }
         if (now - _lastDiagMs >= GSM::READY_SIGNAL_INTERVAL_MS) {
             _lastDiagMs = now;
             updateSignalQuality();

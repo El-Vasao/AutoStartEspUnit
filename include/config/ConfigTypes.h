@@ -221,6 +221,45 @@ struct BatterySaverConfig {
 };
 
 // ------------------------------------------------------------------
+// Wall clock / NTP (SIM800 CNTP)
+// ------------------------------------------------------------------
+struct TimeConfig {
+    bool enabled;
+    char ntp_server[TextBytes::TimeCfg::NTP_SERVER];
+    int8_t tz_offset_hours; ///< UTC offset in whole hours (MSK = +3)
+    uint32_t sync_interval_sec;
+
+    /// RAM/parse defaults: sync off until config (or DefaultConfig factory JSON) enables it.
+    /// Avoids surprise NTP on old /config.json without a `time` section.
+    TimeConfig()
+        : enabled(false),
+          tz_offset_hours(3),
+          sync_interval_sec(21600) {
+        ntp_server[0] = '\0';
+    }
+};
+
+// ------------------------------------------------------------------
+// Schedule triggers (local HH:MM → program)
+// ------------------------------------------------------------------
+struct ScheduleTriggerConfig {
+    uint16_t id;
+    bool enabled;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t days_mask; // bit0=Mon … bit6=Sun; 0x7F = every day
+    uint8_t program_id;
+
+    ScheduleTriggerConfig()
+        : id(0),
+          enabled(false),
+          hour(0),
+          minute(0),
+          days_mask(0x7F),
+          program_id(0) {}
+};
+
+// ------------------------------------------------------------------
 // Шаг программы
 // ------------------------------------------------------------------
 struct Step {
@@ -290,6 +329,7 @@ struct BaseConfig {
     VehicleConfig vehicle;
     ThermostatConfig thermostat;
     BatterySaverConfig battery_saver;
+    TimeConfig time;
 
     SensorConfig sensors[HardwareLimits::SENSORS];
     InputConfig inputs[HardwareLimits::INPUTS];
@@ -298,6 +338,8 @@ struct BaseConfig {
     uint8_t input_triggers_count;
     TempTriggerConfig temperature_triggers[Limits::MAX_TRIGGERS];
     uint8_t temperature_triggers_count;
+    ScheduleTriggerConfig schedule_triggers[Limits::MAX_SCHEDULE_TRIGGERS];
+    uint8_t schedule_triggers_count;
 
     BaseConfig() = default;
 };
