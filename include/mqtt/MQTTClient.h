@@ -26,10 +26,15 @@ public:
         _deferMqttRx = fn;
         _deferMqttRxCtx = ctx;
     }
-    /// True while modem CIPSEND/TX owns the bus — gate Ctrl replies (ack then final).
+    /// Modem control-plane busy (CIPSEND and/or CNTP) — gate Ctrl replies and new CIPSTART.
     void setCtrlPlaneBusy(bool (*fn)(void*), void* ctx) {
         _ctrlPlaneBusy = fn;
         _ctrlPlaneBusyCtx = ctx;
+    }
+    /// Optional: transport/SoftAP forensic when MQTT RX assemble stalls incomplete.
+    void setOnRxIncomplete(void (*fn)(void*, const uint8_t*, uint16_t, uint32_t), void* ctx) {
+        _onRxIncomplete = fn;
+        _onRxIncompleteCtx = ctx;
     }
 
     void loop();
@@ -66,6 +71,8 @@ private:
     void* _deferMqttRxCtx{nullptr};
     bool (*_ctrlPlaneBusy)(void*){nullptr};
     void* _ctrlPlaneBusyCtx{nullptr};
+    void (*_onRxIncomplete)(void*, const uint8_t*, uint16_t, uint32_t){nullptr};
+    void* _onRxIncompleteCtx{nullptr};
 
     MqttFsmClient _fsm;
     bool _subscribeQueued{false};

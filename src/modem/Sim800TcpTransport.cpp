@@ -38,12 +38,18 @@ static bool isControlLine_(const char* s, size_t len) {
     return false;
 }
 
+void Sim800TcpTransport::clearIpConfigFlags_() {
+    _ipConfigDone = false;
+    _ipConfigEnqueued = false;
+    _ipConfigOkMask = 0;
+}
+
 void Sim800TcpTransport::reset() {
     _connected = false;
     _connecting = false;
     _sendInProgress = false;
     _modemTxLocked = false;
-    _ipConfigDone = false;
+    clearIpConfigFlags_();
     _didInitialCipShut = false;
     _closeQueued = false;
     _recoverQueued = false;
@@ -103,6 +109,26 @@ bool Sim800TcpTransport::takeRxOverflow() {
     return true;
 }
 
+void Sim800TcpTransport::fillRxForensic(RxForensic& out) const {
+    out.ipState = static_cast<uint8_t>(_ipState);
+    out.ipLen = _ipLen;
+    out.ipRead = _ipRead;
+    out.rxCount = _rxCount;
+    out.sendInProgress = _sendInProgress;
+    out.modemTxLocked = _modemTxLocked;
+    out.connected = _connected;
+    out.ipConfigDone = _ipConfigDone;
+}
+
+void Sim800TcpTransport::logRxForensic(const char* why) const {
+    logger.log(
+        "[Sim800Tcp] RX forensic (%s): ipState=%u ipLen=%u ipRead=%u rxRing=%u "
+        "send=%u txLock=%u conn=%u ciphead=%u\n",
+        why ? why : "?", (unsigned)_ipState, (unsigned)_ipLen, (unsigned)_ipRead,
+        (unsigned)_rxCount, (unsigned)_sendInProgress, (unsigned)_modemTxLocked,
+        (unsigned)_connected, (unsigned)_ipConfigDone);
+}
+
 bool Sim800TcpTransport::discardingTcpPayload_(bool fromIpd) const {
     // Requires CIPHEAD=1 (see startConnect_): framed +IPD is real TCP and must arrive mid-CIPSEND.
     // Raw (non-+IPD) bytes during send-epoch are modem echo/URC — keep them out of MQTT RX.
@@ -122,7 +148,7 @@ void Sim800TcpTransport::forceStackRecover_(const char* reason) {
         return;
     }
     _lastStackRecoverMs = now;
-    _ipConfigDone = false;
+    clearIpConfigFlags_();
     _didInitialCipShut = false;
     _closeQueued = false;
     if (!_recoverQueued) {
@@ -202,6 +228,34 @@ void Sim800TcpTransport::stop(const char* reason) {
     }
 }
 
+bool Sim800TcpTransport::enqueueIpConfig_() {
+    // Order: CIPRXGET=0 → CIPHEAD=1 → CIPMUX=0. CIPHEAD is required for discardingTcpPayload_.
+    if (!_at.enqueue({ "AT+CIPRXGET=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPRXGET0" })) {
+        return false;
+    }
+    if (!_at.enqueue({ "AT+CIPHEAD=1", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPHEAD1" })) {
+        return false;
+    }
+    if (!_at.enqueue({ "AT+CIPMUX=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPMUX0" })) {
+        return false;
+    }
+    _ipConfigEnqueued = true;
+    _ipConfigOkMask = 0;
+    _ipConfigDone = false;
+    logger.log("[Sim800Tcp] IP config enqueue (await CIPHEAD OK)\n");
+    return true;
+}
+
+bool Sim800TcpTransport::enqueueCipStart_() {
+    // CIPMUX=0: CIPSTART without link id.
+    snprintf(_cmdStart, sizeof(_cmdStart), "AT+CIPSTART=\"TCP\",\"%s\",%u", _host, (unsigned)_port);
+    if (!_at.enqueue({ _cmdStart, Sim800Tcp::CIPSTART_ACCEPT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok),
+                       nullptr, "CIPSTART" })) {
+        return false;
+    }
+    return true;
+}
+
 bool Sim800TcpTransport::startConnect_() {
     // Warm modem after ESP-only reboot may still hold a stale TCP session — clear once.
     if (!_didInitialCipShut) {
@@ -209,31 +263,21 @@ bool Sim800TcpTransport::startConnect_() {
             return false;
         }
         _didInitialCipShut = true;
+        clearIpConfigFlags_();
         logger.log("[Sim800Tcp] CIPSHUT (initial, warm-safe)\n");
+        // CIPSTART after CIPSHUT OK → consumeAtResult continues config.
+        return true;
     }
 
-    // One-time IP stack: push RX + length prefix + single socket.
-    // Order: CIPRXGET=0 → CIPHEAD=1 → CIPMUX=0. CIPHEAD is required for discardingTcpPayload_.
     if (!_ipConfigDone) {
-        if (!_at.enqueue({ "AT+CIPRXGET=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPRXGET0" })) {
-            return false;
+        if (!_ipConfigEnqueued) {
+            if (!enqueueIpConfig_()) return false;
         }
-        if (!_at.enqueue({ "AT+CIPHEAD=1", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPHEAD1" })) {
-            return false;
-        }
-        if (!_at.enqueue({ "AT+CIPMUX=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPMUX0" })) {
-            return false;
-        }
-        _ipConfigDone = true;
+        // Wait for all three OK bits before CIPSTART (see consumeAtResult).
+        return true;
     }
 
-    // CIPMUX=0: CIPSTART without link id.
-    snprintf(_cmdStart, sizeof(_cmdStart), "AT+CIPSTART=\"TCP\",\"%s\",%u", _host, (unsigned)_port);
-    // We will detect CONNECT OK via URC; here we only wait for OK/ERROR from command acceptance.
-    if (!_at.enqueue({ _cmdStart, Sim800Tcp::CIPSTART_ACCEPT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSTART" })) {
-        return false;
-    }
-    return true;
+    return enqueueCipStart_();
 }
 
 void Sim800TcpTransport::tick(uint32_t nowMs) {
@@ -280,6 +324,14 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
     if (strcmp(r.tag, "CIPSHUT") == 0) {
         _recoverQueued = false;
         _modemTxLocked = false; // recover completed — release send-epoch lock
+        clearIpConfigFlags_();
+        // After warm CIPSHUT (or recover), re-apply CIPHEAD before CIPSTART.
+        if (_connecting && !_ipConfigDone) {
+            if (!enqueueIpConfig_()) {
+                _connecting = false;
+                logger.log("[Sim800Tcp] IP config enqueue failed after CIPSHUT\n");
+            }
+        }
         return true;
     }
     if (strcmp(r.tag, "CIPSTART") == 0) {
@@ -317,9 +369,39 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
         return true;
     }
     if (strcmp(r.tag, "CIPRXGET0") == 0 || strcmp(r.tag, "CIPHEAD1") == 0 ||
-        strcmp(r.tag, "CIPMUX0") == 0 || strcmp(r.tag, "CIPMODE") == 0 ||
-        strcmp(r.tag, "CIPQSEND") == 0) {
-        return true; // drain TCP stack config replies
+        strcmp(r.tag, "CIPMUX0") == 0) {
+        uint8_t bit = 0;
+        if (strcmp(r.tag, "CIPRXGET0") == 0) bit = 0x01;
+        else if (strcmp(r.tag, "CIPHEAD1") == 0) bit = 0x02;
+        else bit = 0x04;
+
+        if (r.timedOut || r.error || !r.ok) {
+            logger.log("[Sim800Tcp] IP config fail tag=%s timeout=%u error=%u ok=%u\n", r.tag,
+                       (unsigned)r.timedOut, (unsigned)r.error, (unsigned)r.ok);
+            clearIpConfigFlags_();
+            _connecting = false;
+            _connected = false;
+            _connectStartMs = 0;
+            forceStackRecover_("ip_config");
+            return true;
+        }
+        _ipConfigOkMask = (uint8_t)(_ipConfigOkMask | bit);
+        if (_ipConfigOkMask == 0x07) {
+            _ipConfigDone = true;
+            _ipConfigEnqueued = false;
+            logger.log("[Sim800Tcp] IP config OK (CIPHEAD=1 confirmed)\n");
+            if (_connecting) {
+                if (!enqueueCipStart_()) {
+                    logger.log("[Sim800Tcp] CIPSTART enqueue failed after IP config\n");
+                    _connecting = false;
+                    forceStackRecover_("cipstart_after_cfg");
+                }
+            }
+        }
+        return true;
+    }
+    if (strcmp(r.tag, "CIPMODE") == 0 || strcmp(r.tag, "CIPQSEND") == 0) {
+        return true; // drain leftover TCP stack config replies
     }
     return false;
 }
@@ -590,6 +672,9 @@ bool Sim800TcpTransport::flushSend() {
 void Sim800TcpTransport::startSend_() {
     if (_sendInProgress) return;
     if (_txLen == 0) return;
+    // Do not start CIPSEND while +IPD framing owns the UART byte stream —
+    // interleaving AT+CIPSEND with mid-payload ReadData risks truncating inbound MQTT.
+    if (_ipState != IpState::Idle) return;
     _sendLen = _txLen;
     // CIPMUX=0: CIPSEND without link id.
     snprintf(_cmdSend, sizeof(_cmdSend), "AT+CIPSEND=%u", (unsigned)_sendLen);

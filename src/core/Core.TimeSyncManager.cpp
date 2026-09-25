@@ -11,7 +11,7 @@
 
 /**
  * @file Core.TimeSyncManager.cpp
- * @brief Soft wall clock + SIM800 CNTP orchestration (TCP-serialized with MQTT).
+ * @brief Soft wall clock + SIM800 time cascade (CCLK → CIPGSMLOC → CNTP).
  */
 
 namespace {
@@ -24,6 +24,15 @@ struct RtcTimePod {
 } __attribute__((aligned(4)));
 
 RTC_DATA_ATTR RtcTimePod s_rtcTime;
+
+const char* sourceFromGsm(GSMController::TimeSource s) {
+    switch (s) {
+        case GSMController::TimeSource::Cclk: return "cclk";
+        case GSMController::TimeSource::Cipgsmloc: return "cipgsmloc";
+        case GSMController::TimeSource::Cntp: return "cntp";
+        default: return "modem";
+    }
+}
 } // namespace
 
 TimeSyncManager::TimeSyncManager(Config& config, GSMController& gsm)
@@ -34,21 +43,25 @@ void TimeSyncManager::begin() {
     loadFromRtc_();
     _forceRequest = true;
     _nextAttemptMs = 0;
-    _bootNtpAttemptStarted = false;
-    _bootNtpDeadlineMs = 0;
+    _bootAttemptStarted = false;
+    _bootDeadlineMs = 0;
 
     const auto& tcfg = _config.getBase().time;
-    if (!tcfg.enabled || !tcfg.ntp_server[0]) {
-        markBootNtpSettled_("disabled_or_empty");
+    if (!tcfg.enabled) {
+        markBootTimeSettled_("disabled");
     } else {
-        _bootNtpSettled = false;
+        _bootTimeSettled = false;
     }
 }
 
-void TimeSyncManager::markBootNtpSettled_(const char* why) {
-    if (_bootNtpSettled) return;
-    _bootNtpSettled = true;
-    logger.log("[TimeSync] boot NTP settled (%s)\n", why ? why : "?");
+void TimeSyncManager::setLastSource_(const char* source) {
+    strlcpy(_lastSource, source ? source : "", sizeof(_lastSource));
+}
+
+void TimeSyncManager::markBootTimeSettled_(const char* why) {
+    if (_bootTimeSettled) return;
+    _bootTimeSettled = true;
+    logger.log("[TimeSync] boot time settled (%s)\n", why ? why : "?");
 }
 
 bool TimeSyncManager::isStale() const {
@@ -96,10 +109,11 @@ void TimeSyncManager::applyEpochInternal_(time_t epochUtc, const char* source, b
     settimeofday(&tv, nullptr);
     _synced = true;
     _lastSyncMs = millis();
+    setLastSource_(source);
     if (persistRtc) saveToRtc_();
     logger.log("[TimeSync] synced epoch=%ld tz=%+dh source=%s\n", (long)epochUtc, (int)tzOffsetHours(),
                source ? source : "?");
-    markBootNtpSettled_("ok");
+    markBootTimeSettled_("ok");
 }
 
 void TimeSyncManager::loadFromRtc_() {
@@ -115,6 +129,7 @@ void TimeSyncManager::loadFromRtc_() {
     settimeofday(&tv, nullptr);
     _synced = true;
     _lastSyncMs = millis();
+    setLastSource_("rtc");
     logger.log("[TimeSync] restored from RTC epoch=%ld\n", (long)rec.epoch);
 }
 
@@ -132,55 +147,57 @@ void TimeSyncManager::update() {
     const auto& tcfg = _config.getBase().time;
     const uint32_t now = millis();
 
-    if (!_bootNtpSettled) {
-        if (!tcfg.enabled || !tcfg.ntp_server[0]) {
-            markBootNtpSettled_("disabled_or_empty");
-        } else if (_bootNtpDeadlineMs != 0 && (int32_t)(now - _bootNtpDeadlineMs) >= 0) {
-            markBootNtpSettled_("budget");
+    if (!_bootTimeSettled) {
+        if (!tcfg.enabled) {
+            markBootTimeSettled_("disabled");
+        } else if (_bootDeadlineMs != 0 && (int32_t)(now - _bootDeadlineMs) >= 0) {
+            markBootTimeSettled_("budget");
         }
     }
 
-    // Always drain modem result so a mid-flight disable cannot stick the GSM NTP FSM.
+    // Always drain modem result so a mid-flight disable cannot stick the GSM time FSM.
     time_t got = 0;
-    if (_gsm.takeNtpEpochUtc(got)) {
-        if (tcfg.enabled && tcfg.ntp_server[0]) {
-            applyEpochInternal_(got, "cntp", true);
+    GSMController::TimeSource src = GSMController::TimeSource::None;
+    if (_gsm.takeTimeEpochUtc(got, &src)) {
+        if (tcfg.enabled) {
+            applyEpochInternal_(got, sourceFromGsm(src), true);
             _forceRequest = false;
             const uint32_t intervalMs =
                 tcfg.sync_interval_sec ? (tcfg.sync_interval_sec * 1000UL) : 21600000UL;
             _nextAttemptMs = now + intervalMs;
         } else {
-            logger.log("[TimeSync] discard CNTP result (disabled or empty server)\n");
-            markBootNtpSettled_("discard");
+            logger.log("[TimeSync] discard modem time result (disabled)\n");
+            markBootTimeSettled_("discard");
         }
         return;
     }
 
-    // Boot attempt finished without success (URC fail / tcp_taken / etc.).
-    if (!_bootNtpSettled && _bootNtpAttemptStarted && !_gsm.ntpSyncBusy()) {
-        markBootNtpSettled_("attempt_done");
+    // Boot cascade finished without success.
+    if (!_bootTimeSettled && _bootAttemptStarted && !_gsm.timeSyncBusy()) {
+        markBootTimeSettled_("attempt_done");
     }
 
-    if (!tcfg.enabled || !tcfg.ntp_server[0]) return;
+    if (!tcfg.enabled) return;
 
-    if (_gsm.ntpSyncBusy()) return;
+    if (_gsm.timeSyncBusy()) return;
 
     if (!_forceRequest && _nextAttemptMs != 0 && (int32_t)(now - _nextAttemptMs) < 0) return;
 
     if (!_gsm.isReady()) return;
-    // Hard serialize with MQTT CIP — no NTP while TCP is up/connecting.
+    // Hard serialize with MQTT CIP — no cascade while TCP is up/connecting.
     if (_gsm.tcpSocketActive() || _gsm.tcpBusBusy()) return;
 
-    if (!_bootNtpSettled && _bootNtpDeadlineMs == 0) {
-        _bootNtpDeadlineMs = now + GSM::BOOT_NTP_BUDGET_MS;
-        logger.log("[TimeSync] boot NTP budget %u ms\n", (unsigned)GSM::BOOT_NTP_BUDGET_MS);
+    if (!_bootTimeSettled && _bootDeadlineMs == 0) {
+        _bootDeadlineMs = now + GSM::BOOT_TIME_BUDGET_MS;
+        logger.log("[TimeSync] boot time budget %u ms\n", (unsigned)GSM::BOOT_TIME_BUDGET_MS);
     }
 
-    if (!_gsm.requestNtpSync(tcfg.ntp_server, tcfg.tz_offset_hours)) {
+    // ntp_server may be empty: CCLK + CIPGSMLOC still run; CNTP skipped inside GSM.
+    if (!_gsm.requestTimeSync(tcfg.ntp_server, tcfg.tz_offset_hours)) {
         _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
         return;
     }
-    _bootNtpAttemptStarted = true;
+    _bootAttemptStarted = true;
     _forceRequest = false;
     _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
 }

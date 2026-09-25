@@ -64,6 +64,7 @@ static SseStatusPort makeStatusPort() {
         st.timeStale = ts.isStale();
         st.epochUtc = st.timeSynced ? static_cast<uint32_t>(ts.epochUtc()) : 0;
         st.tzOffsetHours = ts.tzOffsetHours();
+        strlcpy(st.timeSource, ts.lastSource(), sizeof(st.timeSource));
     }
     st.getTriggerRuntime = triggerRuntimeThunk;
     st.getTempTriggerRuntime = tempTriggerRuntimeThunk;

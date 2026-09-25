@@ -315,6 +315,10 @@ void emitClocksPayload(Print& p, const SseStatusPort& st) {
     commaOut(p, &c);
     p.print("\"tzOffsetHours\":");
     p.print(static_cast<long>(st.tzOffsetHours));
+    commaOut(p, &c);
+    p.print("\"timeSource\":\"");
+    escapeJsonString(p, st.timeSource);
+    p.print('"');
     p.print('}');
 }
 

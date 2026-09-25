@@ -86,14 +86,39 @@ public:
     /// Sticky TCP RX ring overflow (MQTT must reconnect).
     bool takeTcpRxOverflow() { return _stack.tcp.takeRxOverflow(); }
 
+    /// Log Sim800 +IPD / send-epoch snapshot (MQTT rx_incomplete forensics).
+    void logTcpRxForensic(const char* why) { _stack.tcp.logRxForensic(why); }
+
     /// Legacy: always false — MQTT drains RX ring even mid-send.
     bool shouldDeferMqttRead() const { return _stack.tcp.shouldDeferMqttRead(); }
 
-    /// Non-blocking SIM800 NTP (AT+CNTP → CCLK). Returns false if busy / not ready / TCP active.
-    bool requestNtpSync(const char* ntpServer, int8_t tzOffsetHours);
-    bool ntpSyncBusy() const { return _ntpStep != NtpStep::Idle; }
+    /// Who produced the last successful modem time sync (for status/debug).
+    enum class TimeSource : uint8_t { None = 0, Cclk, Cipgsmloc, Cntp };
+
+    /// Wall-clock cascade steps (public so busy check can inline).
+    enum class TimeStep : uint8_t {
+        Idle = 0,
+        CclkProbe,
+        Cipgsmloc,
+        Cntpcid,
+        CntpSet,
+        CntpRun,
+        WaitCntpUrc,
+        CclkAfterCntp,
+    };
+
+    /// Non-blocking cascade: CCLK/NITZ → CIPGSMLOC → CNTP. Returns false if busy / not ready / TCP active.
+    /// `ntpServer` may be empty to skip CNTP after CCLK/CIPGSMLOC fail.
+    bool requestTimeSync(const char* ntpServer, int8_t tzOffsetHours);
+    /// Alias → requestTimeSync (legacy name).
+    bool requestNtpSync(const char* ntpServer, int8_t tzOffsetHours) {
+        return requestTimeSync(ntpServer, tzOffsetHours);
+    }
+    bool timeSyncBusy() const { return _timeStep != TimeStep::Idle; }
+    bool ntpSyncBusy() const { return timeSyncBusy(); }
     /// Consumes a successful sync result (UTC epoch). Returns false if none pending.
-    bool takeNtpEpochUtc(time_t& epochUtcOut);
+    bool takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut = nullptr);
+    bool takeNtpEpochUtc(time_t& epochUtcOut) { return takeTimeEpochUtc(epochUtcOut, nullptr); }
 
 private:
     static constexpr size_t RESPONSE_BUF_SIZE = GSM::RESPONSE_BUFFER_SIZE;
@@ -194,27 +219,19 @@ private:
     uint32_t _lastDiagMs{0};
     uint32_t _lastOperatorMs{0};
 
-    /// Modem NTP (AT+CNTP / CCLK) — only advanced from handleReady when AT bus idle.
-    enum class NtpStep : uint8_t {
-        Idle = 0,
-        Cntpcid,
-        CntpSet,
-        CntpRun,
-        WaitCntpUrc,
-        Cclk,
-        DoneOk,
-        DoneFail,
-    };
-    NtpStep _ntpStep{NtpStep::Idle};
+    /// Wall-clock cascade (CCLK → CIPGSMLOC → CNTP) — advanced from handleReady when AT bus idle.
+    TimeStep _timeStep{TimeStep::Idle};
     char _ntpServer[TextBytes::TimeCfg::NTP_SERVER]{};
     int8_t _ntpTzQuarters{0};
     bool _ntpUrcOk{false};
     bool _ntpUrcFail{false};
-    bool _ntpResultReady{false};
-    bool _ntpCmdSent{false};
-    time_t _ntpEpochUtc{0};
-    uint32_t _ntpDeadlineMs{0};
+    bool _timeResultReady{false};
+    bool _timeCmdSent{false};
+    time_t _timeEpochUtc{0};
+    TimeSource _timeSource{TimeSource::None};
+    uint32_t _timeDeadlineMs{0};
     char _cclkSnap[48]{};
+    char _cipgsmlocSnap[64]{};
 
     /// Редкая диагностика «застряли»: снимок state/init/await не меняется дольше интервала.
     uint32_t _gsmStallPrevFp{0};
@@ -270,9 +287,11 @@ private:
     void handleReady();
     void handleError();
 
-    void serviceNtpSync(uint32_t now);
-    void ntpFail_(const char* why);
-    void ntpFinishOk_(time_t epochUtc);
+    void serviceTimeSync(uint32_t now);
+    void timeFailStep_(const char* why);
+    void timeFinishOk_(time_t epochUtc, TimeSource src);
+    void timeAdvanceToCipgsmloc_(uint32_t now);
+    void timeAdvanceToCntpOrFail_(uint32_t now, const char* why);
 
     friend class GsmInitFsm;
 };

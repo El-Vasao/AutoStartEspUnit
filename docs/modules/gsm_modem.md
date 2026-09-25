@@ -57,10 +57,13 @@
 - **`SEND FAIL` / CIPSEND accept fail / CIPSTART accept fail** — fail-closed: session down + CIPSHUT recover (как send WD). MQTT RX всегда drain (mid-CIPSEND +IPD безопасен; post-send quiet нет).
 - После `STACK_RECOVER_REATTACH_THRESHOLD` CIPSHUT-recover без успешного `CONNECT OK` — `needsBearerReattach` → GSM `requestReattach` (status-first `SAPBR=2,1`).
 - Единый `takeResult`: TCP CIP* теги → `Sim800TcpTransport::consumeAtResult`, иначе GSM await absorb.
-- RX: **`AT+CIPRXGET=0` → `AT+CIPHEAD=1` → `AT+CIPMUX=0`**. `CIPHEAD=1` обязателен: без него inbound TCP сырой и **дропается mid-CIPSEND** (`discardingTcpPayload_`) → обрезанный MQTT PUBLISH.
+- RX: **`AT+CIPRXGET=0` → `AT+CIPHEAD=1` → `AT+CIPMUX=0`**. `CIPHEAD=1` обязателен: без него inbound TCP сырой и **дропается mid-CIPSEND** (`discardingTcpPayload_`) → обрезанный MQTT PUBLISH. Флаги ставятся только после **OK** на все три команды; `CIPSTART` — только после подтверждённого `CIPHEAD`. После `CIPSHUT` конфиг сбрасывается и переигрывается.
+- **CIPSEND payload TX:** `ModemUart::writeBytes` пишет чанками по 32 байта с `pollRx()` между ними — иначе длинный status full (~400B) забивает HW RX FIFO и режет хвост `+IPD` (`rx_incomplete have≪need`).
+- **CIPSEND vs +IPD:** `startSend_` не стартует, пока `_ipState != Idle`; MQTT Tele не flush'ится, пока в FSM собирается валидный неполный inbound кадр.
 - Инвариант `onByte`: пока `_ipState != Idle`, raw CRLF-sniffer не трогает байт; после конца `+IPD` payload сбрасывается `_rawLineLen`; последний payload-байт всегда `return` (без fall-through).
 - Payload внутри `+IPD` — **бинарный**; на время тела `ModemUart` в `dataMode` (без line-framing URC).
 - **Selective discard mid-CIPSEND:** только non-`+IPD` путь; framed `ReadData` принимается (CONNACK/SUBACK/PINGRESP mid-send).
+- При `rx_incomplete`: hex головы MQTT + `[Sim800Tcp] RX forensic` (`ipState`/`ipLen`/`ipRead`/send-epoch) + SoftAP UI count.
 
 ### 3а) CellularCore glue
 
@@ -95,23 +98,29 @@ MQTT реализован **в прошивке** как неблокирующ�
 
 ### Политика логирования (SSE)
 
+Каждая строка `logger.log` / `logSerialOnly` начинается с префикса **`[Nms]`** (`millis()`), затем тег модуля.
+
+**Sinks:** debug (`SERIAL_DEBUG`) — SSE + UART; release — только SSE.
+
 **Всегда в потоке** (нарратив «что делает система»): смены состояний FSM (`changeState`), `begin()`/`stop()`, успешное завершение INIT (`INIT OK -> …`), поиск baud (старт раунда / лимит раундов), ошибки AT и recovery (уровни L1–L4), reattach/backoff, решения пользователя (ребут модема), редкие события READY (PDP/TCP streak). Успешные промежуточные шаги bring-up (например только что выполнен SAPBR) **не** дублируются строками — их видно по переходу состояния.
 
-**Тихий парсинг URC:** `+CREG`/`+CGATT` обновляют состояние без спама. **`+CSQ`** логируется только при заметном изменении RSSI (порог `GSM::URC_RSSI_LOG_DELTA` в [`Constants.h`](../../include/common/Constants.h)); **`+COPS`** — только при смене строки оператора.
+**UART text mirror (`ModemUart`):** весь текстовый обмен MCU↔модем через `logger.log` — `[AT] >> cmd` на `writeLine`, `[AT] << line` на каждую framed RX-строку и lone `>`. Тело **`CIPSEND`** (`writeBytes`) и байты в **`dataMode` (`+IPD`)** не логируются. `AtSession` дополнительно пишет только `[AT] << TIMEOUT …` (ответа на проводе нет).
+
+**Тихий парсинг URC:** `+CREG`/`+CGATT` обновляют состояние без спама. **`+CSQ`** логируется только при заметном изменении RSSI (порог `GSM::URC_RSSI_LOG_DELTA` в [`Constants.h`](../../include/common/Constants.h)); **`+COPS`** — только при смене строки оператора. (Сами URC-строки при этом уже видны в AT mirror.)
 
 **TCP (`Sim800Tcp`):** подключение/обрыв/ошибка accept — краткие фиксированные строки (без периодического heartbeat `TCP: connected=1`). Детали (**`+IPD`**, «CIPSTART accepted») включаются только при сборке с **`SERIAL_DEBUG`** или если **`Sim800Tcp::TCP_VERBOSE_LOG`** в `Constants.h` выставлен в `true`.
 
 ### Логи и Serial monitor
 
-- Ключевые логи — редкие, событийные (смена состояния, итоги TCP up/down).
+- Ключевые логи — редкие, событийные (смена состояния, итоги TCP up/down), плюс AT wire mirror в SSE.
 - Если модем делит **UART0 (`Serial`)** с USB-UART адаптером, в монитор могут попадать произвольные байты MQTT (`CIPSEND`), не интерпретируйте их как текстовые логи прошивки.
 
-Предпочтительно: прикладной лог через UI/SSE; низкий уровень — структурные сообщения вида `[Sim800Tcp]`, `[GSMController]`.
+Предпочтительно: прикладной лог через UI/SSE; низкий уровень — структурные сообщения вида `[AT]`, `[Sim800Tcp]`, `[GSMController]`.
 
 ### Анти-шторм в reconnect сценариях
 
 - Повторы `MQTT connect fails -> GSM reattach` должны быть rate-limited (не каждый тик цикла).
-- High-frequency RX snippets (`GSMController` ring tail) выводятся в `logSerialOnly`, а не в SSE, чтобы не забивать очередь `/events`.
+- High-frequency RX snippets (`GSMController` ring tail) — `logSerialOnly`. AT text mirror идёт в SSE; soft queue `SSE_SOFT_QUEUE_MAX=20` + hard `SSE_MAX_QUEUED_MESSAGES=21` (1 reserved): при переполнении soft копится счётчик, затем `[SSE] dropped N log messages` через reserved slot.
 - Heap: периодический снимок не чаще `Timing::HEAP_SNAPSHOT_INTERVAL_MS` (5 мин) и только при сдвиге ≥ `HEAP_SNAPSHOT_DELTA_BYTES`; на деградации (`mqtt_connect_fail`, OTA/mode, `gsm_ready`) — tagged `Core::logHeapSnapshot`.
 - MQTT исходящие: краткие `[MQTTClient] pub avail online` / `pub status full|delta bytes=N` / `pub reply bytes=N` (без PING/SEND OK spam).
 

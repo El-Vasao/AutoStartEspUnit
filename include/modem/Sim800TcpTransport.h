@@ -47,6 +47,20 @@ public:
     /// Sticky until consumed: RX ring overflow (would have desynced MQTT stream).
     bool takeRxOverflow();
 
+    /// Forensic snapshot for MQTT rx_incomplete / +IPD truncation diagnosis.
+    struct RxForensic {
+        uint8_t ipState{0};
+        uint16_t ipLen{0};
+        uint16_t ipRead{0};
+        uint16_t rxCount{0};
+        bool sendInProgress{false};
+        bool modemTxLocked{false};
+        bool connected{false};
+        bool ipConfigDone{false};
+    };
+    void fillRxForensic(RxForensic& out) const;
+    void logRxForensic(const char* why) const;
+
     int available() const;
     int read();
     int peek() const;
@@ -68,6 +82,10 @@ private:
     /// Held from CIPSEND enqueue until SEND OK/FAIL/watchdog/recover done (survives AtSession Idle after '>').
     bool _modemTxLocked{false};
     bool _ipConfigDone{false};
+    /// Config AT cmds enqueued; wait for OK bits before CIPSTART.
+    bool _ipConfigEnqueued{false};
+    /// Bit0=CIPRXGET0 OK, bit1=CIPHEAD1 OK, bit2=CIPMUX0 OK. Need 0x07 for Done.
+    uint8_t _ipConfigOkMask{0};
     /// One-shot CIPSHUT before first CIPSTART after reset (warm modem / leftover socket).
     bool _didInitialCipShut{false};
     bool _closeQueued{false};
@@ -123,11 +141,14 @@ private:
     bool discardingTcpPayload_(bool fromIpd) const;
     void clearRx_();
     bool startConnect_();
+    bool enqueueIpConfig_();
+    bool enqueueCipStart_();
     void startSend_();
     void clearTx_();
     void endSendEpoch_();
     void forceStackRecover_(const char* reason);
     void noteConnectOk_();
+    void clearIpConfigFlags_();
 };
 
 // Arduino Client adapter around Sim800TcpTransport

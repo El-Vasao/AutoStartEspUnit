@@ -411,9 +411,11 @@ namespace WebUi {
 namespace WebSseLimits {
     /// Максимум одновременных SSE `/events` клиентов (ESP32-C3).
     constexpr uint8_t MAX_SSE_CLIENTS = 4;
-    /// Общий мягкий порог avgPacketsWaiting() перед send (SSE log и incremental статус одной очередью).
-    /// Держать ниже SSE_MAX_QUEUED_MESSAGES (platformio.ini), иначе soft gate бесполезен.
-    constexpr size_t SSE_SOFT_QUEUE_MAX = 8;
+    /// Мягкий порог avgPacketsWaiting() для обычных log/status (одна очередь `/events`).
+    /// Hard = SSE_MAX_QUEUED_MESSAGES в platformio.ini (= soft + 1 reserved под drop-notice).
+    constexpr size_t SSE_SOFT_QUEUE_MAX = 20;
+    /// +1 reserved slot: soft+1 == hard; drop-notice может уйти, когда soft уже заполнен логикой soft gate.
+    constexpr size_t SSE_QUEUE_RESERVED = 1;
     constexpr size_t STATUS_QUEUE_MAX = SSE_SOFT_QUEUE_MAX;
     constexpr size_t STATUS_FORCE_QUEUE_MAX = 8;
 }
@@ -507,10 +509,15 @@ namespace GSM {
     constexpr uint32_t CNTP_AT_TIMEOUT_MS = 10000;
     /// Wait for +CNTP: URC after AT+CNTP kick.
     constexpr uint32_t CNTP_SYNC_TIMEOUT_MS = 60000;
-    /// AT+CCLK? read after successful NTP.
+    /// AT+CCLK? read (NITZ probe or after successful NTP).
     constexpr uint32_t CCLK_TIMEOUT_MS = 5000;
-    /// CellularCore: max wait for first NTP attempt before starting MQTT.
-    constexpr uint32_t BOOT_NTP_BUDGET_MS = CNTP_AT_TIMEOUT_MS * 3UL + CNTP_SYNC_TIMEOUT_MS + 15000UL;
+    /// AT+CIPGSMLOC=2,1 (GSM location time) — can be slow.
+    constexpr uint32_t CIPGSMLOC_TIMEOUT_MS = 45000;
+    /// CellularCore: max wait for boot time cascade (CCLK→CIPGSMLOC→CNTP) before MQTT.
+    constexpr uint32_t BOOT_TIME_BUDGET_MS =
+        CCLK_TIMEOUT_MS + CIPGSMLOC_TIMEOUT_MS + CNTP_AT_TIMEOUT_MS * 3UL + CNTP_SYNC_TIMEOUT_MS + 15000UL;
+    /// Alias kept for older call sites.
+    constexpr uint32_t BOOT_NTP_BUDGET_MS = BOOT_TIME_BUDGET_MS;
 
     // RX ring for waiter/diagnostic snippets. Keep compact to save RAM.
     constexpr size_t RESPONSE_BUFFER_SIZE = 128;

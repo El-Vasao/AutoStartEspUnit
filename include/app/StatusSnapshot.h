@@ -41,6 +41,7 @@ struct StatusSnapshot {
     bool timeStale{false};
     uint32_t epochUtc{0};
     int16_t tzOffsetHours{0};
+    char timeSource[12]{0};
 
     /// Undelivered MQTT error one-shot queue (newest first). Empty → omit `last_err` on wire.
     struct ErrEntry {

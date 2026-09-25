@@ -31,9 +31,16 @@ void Logger::begin() {
 void Logger::log(const char* format, ...) {
     // Сообщение должно содержать префикс модуля `[...]` — политика в Logger.h.
     char buffer[Logging::MAX_MESSAGE_LENGTH];
+    int prefixLen = snprintf(buffer, sizeof(buffer), "[%lums] ", (unsigned long)millis());
+    if (prefixLen < 0) {
+        prefixLen = 0;
+    }
+    if ((size_t)prefixLen >= sizeof(buffer)) {
+        prefixLen = (int)(sizeof(buffer) - 1);
+    }
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    vsnprintf(buffer + (size_t)prefixLen, sizeof(buffer) - (size_t)prefixLen, format, args);
     va_end(args);
 
     // Отправляем сообщение всем подключённым SSE-клиентам.
@@ -49,7 +56,14 @@ void Logger::logSerialOnly(const char* format, ...) {
     va_start(args, format);
 #ifdef SERIAL_DEBUG
     char buffer[Logging::MAX_MESSAGE_LENGTH];
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    int prefixLen = snprintf(buffer, sizeof(buffer), "[%lums] ", (unsigned long)millis());
+    if (prefixLen < 0) {
+        prefixLen = 0;
+    }
+    if ((size_t)prefixLen >= sizeof(buffer)) {
+        prefixLen = (int)(sizeof(buffer) - 1);
+    }
+    vsnprintf(buffer + (size_t)prefixLen, sizeof(buffer) - (size_t)prefixLen, format, args);
     va_end(args);
     Serial.print(buffer);
 #else

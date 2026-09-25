@@ -314,10 +314,46 @@ void WebServerRuntime::broadcastLog(WebServer& ws, const char* message) {
     if (!message) return;
     static char s_lastLog[Logging::MAX_MESSAGE_LENGTH];
     static bool s_haveLast;
+    static uint32_t s_dropped;
+
+    // Dedup identical consecutive lines — not counted as a drop.
     if (s_haveLast && strcmp(s_lastLog, message) == 0) return;
     strlcpy(s_lastLog, message, sizeof s_lastLog);
     s_haveLast = true;
-    if (!sseLogChannelAllowsSend(ws, WebSseLimits::SSE_SOFT_QUEUE_MAX)) return;
+
+    const bool hasViewer =
+        ws.activeUiSessionCount_ != 0 && refreshSseClientCount(ws) != 0;
+    if (!hasViewer) {
+        // No UI/SSE client: do not accumulate drop stats or send.
+        return;
+    }
+
+    const size_t soft = WebSseLimits::SSE_SOFT_QUEUE_MAX;
+    const size_t reservedCap = soft + WebSseLimits::SSE_QUEUE_RESERVED;
+    const size_t q = ws.events.avgPacketsWaiting();
+
+    if (q >= soft) {
+        // Soft full: count drop; reserved slot kept for a future drop-notice flush.
+        s_dropped++;
+        return;
+    }
+
+    // Soft has room: flush drop notice first (uses reserved headroom vs hard=soft+1).
+    if (s_dropped >= 1) {
+        if (q < reservedCap) {
+            char notice[80];
+            snprintf(notice, sizeof(notice), "[SSE] dropped %lu log messages\n",
+                     (unsigned long)s_dropped);
+            s_dropped = 0;
+            ws.events.send(notice, "log", millis());
+        }
+        // If reserved somehow unavailable, keep s_dropped and still try the message below.
+    }
+
+    if (ws.events.avgPacketsWaiting() >= soft) {
+        s_dropped++;
+        return;
+    }
     ws.events.send(message, "log", millis());
 }
 

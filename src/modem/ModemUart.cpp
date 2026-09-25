@@ -1,5 +1,17 @@
 #include "modem/ModemUart.h"
 
+#include "common/Logger.h"
+
+namespace {
+
+void emitFramedLine_(ModemUart::LineHandler handler, void* ctx, char* line) {
+    if (!line || !line[0]) return;
+    logger.log("[AT] << %s\n", line);
+    if (handler) handler(ctx, line);
+}
+
+} // namespace
+
 void ModemUart::flushInput() {
     uint16_t n = 0;
     while (_serial.available()) {
@@ -21,14 +33,26 @@ void ModemUart::writeLine(const char* line) {
     if (!line) line = "";
     _serial.print(line);
     _serial.print("\r\n");
+    // Text control-plane only; CIPSEND body uses writeBytes (not logged).
+    logger.log("[AT] >> %s\n", line);
     // No Serial.flush(): blocks long enough to trip WDT under AT load.
 }
 
 void ModemUart::writeBytes(const uint8_t* data, size_t len) {
     if (!data || len == 0) return;
-    // Continuous CIPSEND burst; yield once after so SoftAP can run.
-    _serial.write(data, len);
-    yield();
+    // Chunk CIPSEND payload and poll RX between chunks. A single large write
+    // (status full ~400B) blocks UART long enough for the HW RX FIFO to overflow
+    // mid-+IPD → MQTT PUBLISH truncated (rx_incomplete have≪need).
+    // Payload bytes are intentionally not logged.
+    constexpr size_t kChunk = 32;
+    size_t off = 0;
+    while (off < len) {
+        const size_t n = ((len - off) > kChunk) ? kChunk : (len - off);
+        _serial.write(data + off, n);
+        off += n;
+        pollRx();
+        yield();
+    }
 }
 
 void ModemUart::writeByte(uint8_t b) {
@@ -41,6 +65,7 @@ void ModemUart::pollRx() {
         const char c = (char)_serial.read();
         if (_byteHandler) _byteHandler(_byteHandlerCtx, c);
         if (_dataMode) {
+            // Binary +IPD / payload path: no line framing, no AT log.
             if ((++n & 0x3F) == 0) {
                 yield();
             }
@@ -50,15 +75,20 @@ void ModemUart::pollRx() {
         if (c == '\n') {
             if (_lineLen == 0) continue;
             _lineBuf[_lineLen] = '\0';
-            if (_handler) _handler(_handlerCtx, _lineBuf);
+            emitFramedLine_(_handler, _handlerCtx, _lineBuf);
             _lineLen = 0;
             continue;
+        }
+
+        // CIPSEND prompt arrives without CRLF.
+        if (c == '>' && _lineLen == 0) {
+            logger.log("[AT] << >\n");
         }
 
         if (_lineLen + 1 >= LINE_BUF_SIZE) {
             // Truncate the line to keep framing intact.
             _lineBuf[_lineLen] = '\0';
-            if (_handler) _handler(_handlerCtx, _lineBuf);
+            emitFramedLine_(_handler, _handlerCtx, _lineBuf);
             _lineLen = 0;
         }
         _lineBuf[_lineLen++] = c;

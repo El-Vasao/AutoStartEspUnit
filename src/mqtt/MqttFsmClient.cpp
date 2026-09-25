@@ -3,8 +3,10 @@
 #include "json/JsonCountingPrint.h"
 
 #include "common/Constants.h"
-#include <string.h>
 #include "common/Logger.h"
+
+#include <stdio.h>
+#include <string.h>
 
 namespace {
 
@@ -294,6 +296,11 @@ bool MqttFsmClient::ensureTcp_() {
         _state = State::Idle;
     }
     if (_state == State::Idle) {
+        // Hold CIPSTART while modem control plane is busy (e.g. CNTP).
+        if (_budgets.shouldBlockConnect &&
+            _budgets.shouldBlockConnect(_budgets.shouldBlockConnectCtx)) {
+            return false;
+        }
         if (_net.connected()) {
             _tcpConnectStartMs = now;
             _mqttHandshakeStartMs = 0;
@@ -373,6 +380,14 @@ void MqttFsmClient::pumpWrite_(uint16_t maxBytes, uint32_t deadlineMs) {
         return;
     }
 
+    // Hold Tele while a valid inbound frame is still assembling. CIPSEND payload
+    // TX without interleaved RX poll used to truncate +IPD (rx_incomplete); even
+    // with chunked TX, avoid starting a large Tele send mid-PUBLISH assemble.
+    if (_txOff == 0 && _txQClass[_txQHead] == OutClass::Tele) {
+        uint32_t need = 0;
+        if (stallIsValidIncomplete_(need)) return;
+    }
+
     // Stage the entire remaining frame into the transport buffer, then flush one CIPSEND.
     // Partial CIPSEND of an MQTT packet desyncs the broker stream.
     (void)maxBytes;
@@ -430,6 +445,21 @@ void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uin
             // Fail-closed: do not byte-hunt from a real PUBLISH head (eats "car/..." forever).
             logger.log("[MqttFsm] RX stall incomplete type=%u have=%u need=%u — resync session\n",
                        (unsigned)(_rx[0] >> 4), (unsigned)_rxLen, (unsigned)need);
+            // Hex head for truncation forensics (before buffer cleared).
+            {
+                char hex[48];
+                const uint16_t n = (_rxLen < 16u) ? _rxLen : 16u;
+                size_t hp = 0;
+                for (uint16_t i = 0; i < n && hp + 3 < sizeof(hex); ++i) {
+                    hp += (size_t)snprintf(hex + hp, sizeof(hex) - hp, "%02X", (unsigned)_rx[i]);
+                    if (i + 1u < n && hp + 1 < sizeof(hex)) hex[hp++] = ' ';
+                }
+                hex[hp < sizeof(hex) ? hp : sizeof(hex) - 1] = '\0';
+                logger.log("[MqttFsm] RX stall hex[%u]=%s\n", (unsigned)n, hex);
+            }
+            if (_budgets.onRxIncomplete) {
+                _budgets.onRxIncomplete(_budgets.onRxIncompleteCtx, _rx, _rxLen, need);
+            }
             _rxLen = 0;
             _rxAssembleStartMs = 0;
             setError_("rx_incomplete");

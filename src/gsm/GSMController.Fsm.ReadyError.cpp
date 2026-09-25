@@ -98,8 +98,8 @@ void GSMController::handleReady() {
     // Prefer in-flight NTP over sparse CSQ/COPS.
     const uint32_t now = millis();
     if (!_stack.tcp.isBusBusy()) {
-        if (_ntpStep != NtpStep::Idle) {
-            serviceNtpSync(now);
+        if (_timeStep != TimeStep::Idle) {
+            serviceTimeSync(now);
             return;
         }
         if (now - _lastDiagMs >= GSM::READY_SIGNAL_INTERVAL_MS) {

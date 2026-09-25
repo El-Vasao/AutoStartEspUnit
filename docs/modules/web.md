@@ -87,10 +87,11 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 Лимиты:
 
 - `WebSseLimits::MAX_SSE_CLIENTS = 4`;
-- soft queue `SSE_SOFT_QUEUE_MAX = 8`, hard `SSE_MAX_QUEUED_MESSAGES` (`platformio.ini`);
+- soft queue `SSE_SOFT_QUEUE_MAX = 20`, hard `SSE_MAX_QUEUED_MESSAGES = 21` (`platformio.ini`; +1 reserved);
+- при soft overflow логи копятся в счётчик дропов; перед следующей успешной отправкой — `[SSE] dropped N log messages` (если N≥1);
 - период tick: `Timing::SSE_STATUS_INTERVAL_MS = 500`.
 
-При шторме логов: дроп по soft queue предпочтительнее зависания loop.
+При шторме логов: дроп по soft queue + drop-notice предпочтительнее зависания loop. Логи и status делят одну очередь `/events`.
 
 ## Flash busy / deferred
 

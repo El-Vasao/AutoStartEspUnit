@@ -35,6 +35,7 @@ struct SseStatusPort {
     bool timeStale{false};
     uint32_t epochUtc{0};
     int16_t tzOffsetHours{0};
+    char timeSource[12]{0};
 
     bool (*getTriggerRuntime)(void* ctx, uint8_t index){nullptr};
     bool (*getTempTriggerRuntime)(void* ctx, uint8_t index){nullptr};

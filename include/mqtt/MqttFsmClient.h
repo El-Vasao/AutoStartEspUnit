@@ -54,6 +54,12 @@ public:
         /// Optional: after pumpWrite, skip RX if transport TX/CIPSEND still owns the bus.
         bool (*shouldDeferRead)(void* ctx){nullptr};
         void* shouldDeferReadCtx{nullptr};
+        /// Optional: block Idle→CIPSTART (e.g. modem NTP / CNTP owns IP stack).
+        bool (*shouldBlockConnect)(void* ctx){nullptr};
+        void* shouldBlockConnectCtx{nullptr};
+        /// Optional: called just before fail-closed on incomplete MQTT frame (hex dump site).
+        void (*onRxIncomplete)(void* ctx, const uint8_t* head, uint16_t have, uint32_t need){nullptr};
+        void* onRxIncompleteCtx{nullptr};
     };
 
     // Callback for incoming publish QoS0.

@@ -126,6 +126,7 @@ void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
         s.timeStale = ts.isStale();
         s.epochUtc = s.timeSynced ? static_cast<uint32_t>(ts.epochUtc()) : 0;
         s.tzOffsetHours = ts.tzOffsetHours();
+        strlcpy(s.timeSource, ts.lastSource(), sizeof(s.timeSource));
     }
 
     ErrorSnapshotEntry undeliv[ErrorHistory::CAPACITY]{};
@@ -235,8 +236,10 @@ void MQTTClient::loop() {
     // Still drain clean disconnect even when reconnect is disabled (suspend path).
     if (!_reconnectEnabled && !_fsm.isDisconnectPending()) return;
 
+    const bool modemCtrlBusy = _ctrlPlaneBusy && _ctrlPlaneBusy(_ctrlPlaneBusyCtx);
+
     const uint32_t now = millis();
-    if (_reconnectEnabled && !_fsm.isConnected() &&
+    if (_reconnectEnabled && !_fsm.isConnected() && !modemCtrlBusy &&
         (now - _lastReconnectAttempt > NetTiming::MQTT_RECONNECT_INTERVAL_MS)) {
         if (_fsm.state() == MqttFsmClient::State::Idle || _fsm.state() == MqttFsmClient::State::Error) {
             _lastReconnectAttempt = now;
@@ -252,6 +255,11 @@ void MQTTClient::loop() {
     // Always drain RX ring (shouldDeferMqttRead is false on SIM800).
     b.shouldDeferRead = _deferMqttRx;
     b.shouldDeferReadCtx = _deferMqttRxCtx;
+    // Block new CIPSTART while CNTP / CIPSEND owns the modem IP stack.
+    b.shouldBlockConnect = _ctrlPlaneBusy;
+    b.shouldBlockConnectCtx = _ctrlPlaneBusyCtx;
+    b.onRxIncomplete = _onRxIncomplete;
+    b.onRxIncompleteCtx = _onRxIncompleteCtx;
     _fsm.tick(b);
 
     if (_fsm.isConnected()) {
@@ -362,6 +370,10 @@ bool MQTTClient::needsDisconnectDrain() const {
 }
 
 void MQTTClient::connect() {
+    // Do not request connect while CNTP (or CIPSEND) owns the stack — CIPSTART would race NTP.
+    if (_ctrlPlaneBusy && _ctrlPlaneBusy(_ctrlPlaneBusyCtx)) {
+        return;
+    }
     const auto& mqttCfg = config.getBase().mqtt;
     // Count any Error (tcp_drop / keepalive / connack / SEND-path recover → Error) toward GSM reattach.
     if (_fsm.state() == MqttFsmClient::State::Error) {

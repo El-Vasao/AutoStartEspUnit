@@ -168,8 +168,8 @@ void GSMController::changeState(GSMState newState) {
     if (_state != newState) {
         logger.log("[GSMController] state: %s -> %s\n", getStateString(), gsmStateToString(newState));
     }
-    if (_state == GSMState::READY && newState != GSMState::READY && _ntpStep != NtpStep::Idle) {
-        ntpFail_("left READY");
+    if (_state == GSMState::READY && newState != GSMState::READY && _timeStep != TimeStep::Idle) {
+        timeFailStep_("left READY");
     }
     _state = newState;
     _stateStartTime = millis();

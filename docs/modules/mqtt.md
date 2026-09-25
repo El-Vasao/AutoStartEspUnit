@@ -55,7 +55,8 @@ MQTT-публикация статуса и подписка на команды
 - Один MQTT-кадр = один атомарный `AT+CIPSEND` (`write` только буферизует, `flush`/`flushSend` стартует send).
 - RX ring overflow → reconnect (не drop-oldest — иначе desync framing).
 - `+IPD` framing exclusive while matching/reading; last payload byte never falls through to raw sniffer; `CIPHEAD=1` required.
-- MQTT RX stall: валидный неполный кадр → fail-closed reconnect (`rx_incomplete`); junk head → byte-hunt.
+- MQTT RX stall: валидный неполный кадр → fail-closed reconnect (`rx_incomplete`); junk head → byte-hunt. Лог: hex головы + transport forensic (см. `gsm_modem.md`).
+- Tele не стартует CIPSEND, пока inbound assemble ждёт хвост кадра (снижает truncation mid-send).
 - `mqtt.loop()` always when READY; mid-CIPSEND TX no-op, RX drained.
 - Keepalive dead-man: no MQTT RX for `1.5 × keepAliveSec` → `keepalive_timeout` Error → reconnect.
 - TCP drop / SEND FAIL path → `tcp_drop` Error (counts toward GSM reattach streak ≥3).

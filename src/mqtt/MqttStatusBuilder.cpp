@@ -155,6 +155,7 @@ bool mqttStatusHasSignificantChanges(const StatusSnapshot& cur, const StatusSnap
     if (cur.lastErrCount > 0) return true;
     if (cur.timeSynced != prev.timeSynced) return true;
     if (cur.tzOffsetHours != prev.tzOffsetHours) return true;
+    if (strcmp(cur.timeSource, prev.timeSource) != 0) return true;
     // Epoch ticks every second when synced — do not treat as significant (avoid MQTT spam).
     return false;
 }
@@ -179,6 +180,10 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
     comma(p, &c);
     p.print("\"tzOffsetHours\":");
     p.print(static_cast<long>(s.tzOffsetHours));
+    comma(p, &c);
+    p.print("\"timeSource\":\"");
+    p.print(s.timeSource);
+    p.print('"');
 
     comma(p, &c);
     p.print("\"mode\":\"");
@@ -310,7 +315,7 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
     p.print(static_cast<unsigned long>(cur.uptimeSec));
 
     if (cur.epochUtc != prev.epochUtc || cur.timeSynced != prev.timeSynced ||
-        cur.tzOffsetHours != prev.tzOffsetHours) {
+        cur.tzOffsetHours != prev.tzOffsetHours || strcmp(cur.timeSource, prev.timeSource) != 0) {
         comma(p, &c);
         p.print("\"epoch\":");
         p.print(static_cast<unsigned long>(cur.epochUtc));
@@ -320,6 +325,10 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
         comma(p, &c);
         p.print("\"tzOffsetHours\":");
         p.print(static_cast<long>(cur.tzOffsetHours));
+        comma(p, &c);
+        p.print("\"timeSource\":\"");
+        p.print(cur.timeSource);
+        p.print('"');
     }
 
     if (strcmp(cur.modeName, prev.modeName) != 0) {

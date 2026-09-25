@@ -122,6 +122,16 @@ void GSMController::handleUrc(const char* line) {
         }
         return;
     }
+    if (strncmp(line, "+CIPGSMLOC:", 11) == 0) {
+        strlcpy(_cipgsmlocSnap, line, sizeof(_cipgsmlocSnap));
+        int code = -1;
+        if (sscanf(line, "+CIPGSMLOC: %d", &code) == 1) {
+            logger.log("[GSMController] CIPGSMLOC code=%d\n", code);
+        } else {
+            logger.log("[GSMController] CIPGSMLOC %s\n", line);
+        }
+        return;
+    }
     if (strncmp(line, "+CCLK:", 6) == 0) {
         strlcpy(_cclkSnap, line, sizeof(_cclkSnap));
         return;

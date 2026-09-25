@@ -30,7 +30,7 @@ public:
     // Poll RX and emit complete lines (without CR/LF).
     void pollRx();
 
-    // TX helpers (do not log here; logging policy is higher-level).
+    // TX helpers. Text AT lines are mirrored via logger.log; writeBytes payload is not.
     void writeRaw(const char* s);
     void writeLine(const char* line); // appends \r\n
     void writeBytes(const uint8_t* data, size_t len);

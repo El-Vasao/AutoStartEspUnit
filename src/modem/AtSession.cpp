@@ -1,5 +1,7 @@
 #include "modem/AtSession.h"
 
+#include "common/Logger.h"
+
 void AtSession::reset() {
     _state = State::Idle;
     _qHead = 0;
@@ -43,7 +45,7 @@ void AtSession::startNext_(uint32_t nowMs) {
     _deadlineMs = nowMs + (_active.timeoutMs ? _active.timeoutMs : 1);
     _state = State::Waiting;
 
-    // Send command line.
+    // TX text logged in ModemUart::writeLine.
     _uart.writeLine(_active.cmd ? _active.cmd : "");
 }
 
@@ -53,6 +55,16 @@ void AtSession::finish_(bool ok, bool err, bool timeout) {
     _res.timedOut = timeout;
     _res.tag = _active.tag;
     _state = State::Done;
+
+    // Wire RX is logged in ModemUart; only TIMEOUT has no on-wire response.
+    if (!timeout) return;
+    const char* tag = (_active.tag && _active.tag[0]) ? _active.tag : nullptr;
+    const char* cmd = (_active.cmd && _active.cmd[0]) ? _active.cmd : "";
+    if (tag) {
+        logger.log("[AT] << TIMEOUT for %s (%s)\n", cmd, tag);
+    } else {
+        logger.log("[AT] << TIMEOUT for %s\n", cmd);
+    }
 }
 
 void AtSession::tick(uint32_t nowMs) {
@@ -99,6 +111,10 @@ void AtSession::onLine(const char* line) {
             return;
         }
         if (strcmp(line, "ERROR") == 0 || strstr(line, "+CME ERROR") != nullptr) {
+            if (!_res.hasCapturedLine) {
+                strlcpy(_res.capturedLine, line, sizeof(_res.capturedLine));
+                _res.hasCapturedLine = true;
+            }
             finish_(false, true, false);
             return;
         }
@@ -118,9 +134,6 @@ AtSession::Result AtSession::takeResult() {
     if (_state != State::Done) return Result{};
     Result r = _res;
     _res = Result{};
-    _active = Request{};
-    _deadlineMs = 0;
     _state = State::Idle;
     return r;
 }
-
