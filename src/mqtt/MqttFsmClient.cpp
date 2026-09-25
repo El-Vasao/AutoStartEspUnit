@@ -1,7 +1,5 @@
 #include "mqtt/MqttFsmClient.h"
 
-#include "json/JsonCountingPrint.h"
-
 #include "common/Constants.h"
 #include "common/Logger.h"
 
@@ -832,25 +830,11 @@ bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn 
     if (_state != State::Connected) return false;
 
     const OutClass cls = control ? OutClass::Ctrl : OutClass::Tele;
-
-    JsonCountingPrint measure;
-    const size_t mj = encoder(measure, ctx);
-    if (measuredBytesOut) {
-        *measuredBytesOut = mj;
-    }
-    if (mj == 0 || mj > maxPayloadBytes) {
-        logger.log("[MqttFsm] publishJson: measurePrint=%u maxPayload=%u%s\n", (unsigned)mj,
-                   (unsigned)maxPayloadBytes, mj == 0 ? " (empty encode)" : " (oversize)");
-        return false;
-    }
-
     const uint16_t topicLen = (uint16_t)strnlen(topic, 255);
     if (topicLen == 0 || topicLen > 255) return false;
 
-    const uint32_t remLen = 2U + (uint32_t)topicLen + (uint32_t)mj;
-    uint8_t rl[4];
-    const uint8_t rlLen = encodeRemainingLen_(remLen, rl);
-    const uint16_t total = (uint16_t)(1U + (uint32_t)rlLen + 2U + (uint32_t)topicLen + (uint32_t)mj);
+    // Single encode pass: reserve max remaining-length (4 B), encode payload, then pack header.
+    const uint16_t hdrMax = (uint16_t)(1U + 4U + 2U + (uint32_t)topicLen);
 
     uint8_t* slot = nullptr;
     uint16_t cap = 0;
@@ -859,10 +843,37 @@ bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn 
     if (!coalesce) {
         if (!beginQueueSlot_(cls, slot, cap)) return false;
     }
-    if (total > cap) {
-        logger.log("[MqttFsm] publishJson: packet too large total=%u txMax=%u topicLen=%u json=%u\n",
-                   (unsigned)total, (unsigned)TX_MAX, (unsigned)topicLen, (unsigned)mj);
+    if (hdrMax >= cap) {
+        logger.log("[MqttFsm] publishJson: header reserve %u >= cap %u\n", (unsigned)hdrMax, (unsigned)cap);
         return false;
+    }
+
+    JsonIntoBufferPrint jp(slot + hdrMax, (size_t)(cap - hdrMax));
+    const size_t mj = encoder(jp, ctx);
+    if (measuredBytesOut) {
+        *measuredBytesOut = mj;
+    }
+    if (jp.overflowed() || mj == 0 || mj > maxPayloadBytes) {
+        logger.log("[MqttFsm] publishJson: encode=%u maxPayload=%u overflow=%u%s\n", (unsigned)mj,
+                   (unsigned)maxPayloadBytes, jp.overflowed() ? 1U : 0U,
+                   mj == 0 ? " (empty)" : (mj > maxPayloadBytes ? " (oversize)" : ""));
+        return false;
+    }
+
+    const uint32_t remLen = 2U + (uint32_t)topicLen + (uint32_t)mj;
+    uint8_t rl[4];
+    const uint8_t rlLen = encodeRemainingLen_(remLen, rl);
+    const uint16_t hdrExact = (uint16_t)(1U + (uint32_t)rlLen + 2U + (uint32_t)topicLen);
+    const uint16_t total = (uint16_t)(hdrExact + (uint32_t)mj);
+    if (total > cap) {
+        logger.log("[MqttFsm] publishJson: packet too large total=%u txMax=%u\n", (unsigned)total,
+                   (unsigned)cap);
+        return false;
+    }
+
+    // Slide payload left if remaining-length used fewer than 4 bytes.
+    if (hdrExact != hdrMax) {
+        memmove(slot + hdrExact, slot + hdrMax, mj);
     }
 
     uint16_t off = 0;
@@ -875,22 +886,13 @@ bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn 
     slot[off++] = (uint8_t)(topicLen & 0xFF);
     memcpy(slot + off, topic, topicLen);
     off += topicLen;
-
-    JsonIntoBufferPrint jp(slot + off, (size_t)(cap - off));
-    const size_t w = encoder(jp, ctx);
-    if (jp.overflowed() || w != mj) {
-        logger.log("[MqttFsm] publishJson: encode mismatch wrote=%u expected=%u overflow=%u\n", (unsigned)w,
-                   (unsigned)mj, jp.overflowed() ? 1U : 0U);
-        return false;
-    }
-    off += (uint16_t)w;
+    off += (uint16_t)mj;
 
     if (coalesce) {
         commitReplaceTeleSlot_(replaceIdx, off);
     } else {
         commitQueueSlot_(off, cls);
     }
-    // lastTx only in pumpWrite_ after real UART bytes leave.
     return true;
 }
 

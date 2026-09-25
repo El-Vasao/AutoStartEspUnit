@@ -10,6 +10,7 @@ class ProgramExecutor;
 class GSMController;
 class ErrorManager;
 class FlashCommitCoordinator;
+class MQTTClient;
 
 /**
  * Narrow read-side port for SSE/bootstrap JSON builders.
@@ -21,6 +22,7 @@ struct SseStatusPort {
     SensorsController* sensors{nullptr};
     ProgramExecutor* program{nullptr};
     GSMController* gsm{nullptr};
+    MQTTClient* mqtt{nullptr};
     ErrorManager* errors{nullptr};
     FlashCommitCoordinator* flash{nullptr};
 
@@ -36,6 +38,11 @@ struct SseStatusPort {
     uint32_t epochUtc{0};
     int16_t tzOffsetHours{0};
     char timeSource[12]{0};
+
+    /// GSM CSQ + MQTT session (compact SoftAP debug parity with MQTT /status).
+    int16_t csqRssi{99};
+    int16_t csqBer{-1};
+    bool mqttConnected{false};
 
     bool (*getTriggerRuntime)(void* ctx, uint8_t index){nullptr};
     bool (*getTempTriggerRuntime)(void* ctx, uint8_t index){nullptr};

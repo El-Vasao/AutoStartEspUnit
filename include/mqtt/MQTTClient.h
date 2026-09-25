@@ -6,6 +6,7 @@
 
 #include "app/StatusSnapshot.h"
 #include "common/Constants.h"
+#include "core/ErrorManager.h"
 #include "mqtt/MqttCommand.h"
 
 struct AppPorts;
@@ -45,6 +46,8 @@ public:
     void disconnect();
     bool needsDisconnectDrain() const;
     uint8_t getConsecutiveConnectFails() const;
+    /// True while MQTT FSM is in Connected (post-CONNACK).
+    bool isSessionConnected() const { return _fsm.isConnected(); }
     /// Last MQTT session fail reason (`keepalive_timeout` / `tcp_drop` / …); "" if none.
     const char* getLastConnectFailReason() const;
     bool isNonBlocking() const { return true; }
@@ -87,6 +90,11 @@ private:
     StatusSnapshot _lastPublished{};
     bool _havePublishedBaseline{false};
 
+    /// last_err staged into Tele TX but not yet confirmed past CIPSEND epoch.
+    bool _lastErrAwaitConfirm{false};
+    ErrorSnapshotEntry _lastErrPending[ErrorHistory::CAPACITY]{};
+    uint8_t _lastErrPendingCount{0};
+
     bool _cmdBusy{false};
     PendingReply _pending[MqttCmd::PENDING_REPLY_DEPTH]{};
     uint8_t _pendingCount{0};
@@ -124,7 +132,6 @@ private:
     void drainInbound_();
 
     bool enqueuePending_(const PendingReply& pr);
-    void evictOldestPending_();
     void flushPending_();
     bool stageReply_(const PendingReply& pr);
     bool ctrlPlaneBlocked_() const;
@@ -133,4 +140,6 @@ private:
     bool publishStatusReply_(const char* id);
     void captureStatusSnapshot_(StatusSnapshot& out) const;
     bool validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const;
+    void confirmLastErrDelivery_();
+    void abandonLastErrDelivery_();
 };

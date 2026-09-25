@@ -12,7 +12,7 @@ void GSMController::handleGprsSetup() {
     const uint32_t now = millis();
     if (_lastCommandTime == 0) {
         _gprsCfgStep = 0;
-        // Use SAPBR bearer profile 1 (required by modem MQTT stack, AT+SMCONF="CID",1).
+        // Use SAPBR bearer profile 1 (CIP single-socket stack).
         sendAt("AT+SAPBR=3,1,\"Contype\",\"GPRS\"", nullptr, AwaitKind::OK, GSM::APN_TIMEOUT_MS);
         return;
     }
@@ -60,6 +60,7 @@ void GSMController::handleGprsSetup() {
             default:
                 clearResponse();
                 _retryCount = 0;
+                snapshotAppliedApn_();
                 changeState(GSMState::GPRS_ATTACH);
                 return;
         }
@@ -161,9 +162,26 @@ void GSMController::handleGprsAttach() {
     }
 }
 
-void GSMController::handleGprsActivate() {
-    // Legacy CIP-stack state kept for compatibility; bearer bring-up uses SAPBR now.
-    changeState(GSMState::GPRS_GETIP);
+void GSMController::snapshotAppliedApn_() {
+    const auto& g = config.getBase().gsm;
+    strlcpy(_appliedApn, g.apn, sizeof(_appliedApn));
+    strlcpy(_appliedApnUser, g.apn_user, sizeof(_appliedApnUser));
+    strlcpy(_appliedApnPass, g.apn_pass, sizeof(_appliedApnPass));
+    _apnAppliedValid = true;
+}
+
+void GSMController::clearAppliedApn_() {
+    _apnAppliedValid = false;
+    _appliedApn[0] = '\0';
+    _appliedApnUser[0] = '\0';
+    _appliedApnPass[0] = '\0';
+}
+
+bool GSMController::apnMatchesApplied_() const {
+    if (!_apnAppliedValid) return false;
+    const auto& g = config.getBase().gsm;
+    return strcmp(_appliedApn, g.apn) == 0 && strcmp(_appliedApnUser, g.apn_user) == 0 &&
+           strcmp(_appliedApnPass, g.apn_pass) == 0;
 }
 
 void GSMController::handleGprsGetIp() {

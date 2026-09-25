@@ -349,6 +349,17 @@ void emitSnapshotPayload(Print& p, const SseStatusPort& st) {
     escapeJsonString(p, st.gsm ? st.gsm->getStateString() : "");
     p.print('"');
 
+    commaOut(p, &c);
+    p.print("\"csq\":{\"rssi\":");
+    p.print((int)st.csqRssi);
+    p.print(",\"ber\":");
+    p.print((int)st.csqBer);
+    p.print('}');
+
+    commaOut(p, &c);
+    p.print("\"mqttConnected\":");
+    p.print(st.mqttConnected ? "true" : "false");
+
     emitRelayInputTempVoltageMaps(p, &c, st);
 
     if (st.program) {

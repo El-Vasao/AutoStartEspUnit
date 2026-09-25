@@ -14,13 +14,15 @@ void GSMController::handleReady() {
         if (_rebootStep == 0) {
             _rebootStep = 1;
             logger.log("[GSMController] User requested modem reboot\n");
-            sendAt("AT+SAPBR=0,1", "SAPBR", AwaitKind::OK, 8000);
+            if (!sendAt("AT+SAPBR=0,1", "SAPBR", AwaitKind::OK, 8000)) {
+                _rebootStep = 0; // retry next tick
+            }
             return;
         }
         if (_rebootStep == 1) {
             if (_awaitOk || _awaitError || awaitTimedOut(millis())) {
                 resetAwait();
-                sendAt("AT+CFUN=1,1", "CFUN", AwaitKind::NONE, 0);
+                (void)sendAt("AT+CFUN=1,1", "CFUN", AwaitKind::NONE, 0);
                 gsmNoteModemSoftReboot(true);
                 _postLockQuietUntilMs = millis() + GSM::POST_CFUN_QUIET_MS;
                 _userRebootRequested = false;
@@ -39,40 +41,18 @@ void GSMController::handleReady() {
         _reattachRequested = true;
     }
 
-    if (_reattachRequested) {
-        const uint32_t now = millis();
-        if (_reattachCooldownUntilMs != 0 && (int32_t)(now - _reattachCooldownUntilMs) < 0) {
-            // Still cooling down; keep request pending.
-        } else {
-            _reattachRequested = false;
-
-            // Exponential-ish backoff to avoid thrashing bearer on unstable networks.
-            if (_reattachBackoffStep < 6) _reattachBackoffStep++;
-            uint32_t delayMs = 5000UL << (_reattachBackoffStep - 1); // 5s,10s,20s,40s,80s,160s
-            if (delayMs > 180000UL) delayMs = 180000UL;
-
-            // If signal is very low/unknown, be more gentle.
-            const int16_t rssi = _signal;
-            if (rssi < 6 || rssi == 99) {
-                delayMs = (delayMs < 60000UL) ? 60000UL : delayMs;
-            }
-
-            _reattachCooldownUntilMs = now + delayMs;
-            logger.log("[GSMController] Reattach requested (backoff=%us, rssi=%d)\n",
-                       (unsigned)(delayMs / 1000UL), (int)rssi);
-            changeState(GSMState::GPRS_ATTACH);
-            return;
-        }
+    // Config APN* changed while bearer still open — force Contype/APN rewrite via reattach.
+    if (!_reattachRequested && _apnAppliedValid && !apnMatchesApplied_()) {
+        logger.log("[GSMController] APN config changed, requesting reattach\n");
+        _reattachRequested = true;
     }
 
     // Resilience: treat PDP DEACT as bearer drop, but treat CLOSED as TCP-level drop.
-    // CLOSED is common for servers and should not automatically thrash SAPBR/bearer.
+    // Both go through the same backoff path as requestReattach (no immediate GPRS_ATTACH).
     if (_pdpDeactSeen) {
         _pdpDeactSeen = false;
-        logger.log("[GSMController] PDP DEACT seen (URC), re-attaching\n");
+        logger.log("[GSMController] PDP DEACT seen (URC), requesting reattach\n");
         _reattachRequested = true;
-        changeState(GSMState::GPRS_ATTACH);
-        return;
     }
     if (_closedSeen) {
         _closedSeen = false;
@@ -85,20 +65,26 @@ void GSMController::handleReady() {
         }
         logger.log("[GSMController] TCP CLOSED (URC) streak=%u\n", (unsigned)_tcpClosedStreak);
         if (_tcpClosedStreak >= GSM::TCP_CLOSED_REATTACH_THRESHOLD) {
-            logger.log("[GSMController] TCP CLOSED threshold reached, re-attaching bearer\n");
+            logger.log("[GSMController] TCP CLOSED threshold reached, requesting reattach\n");
             _reattachRequested = true;
-            changeState(GSMState::GPRS_ATTACH);
-            return;
         }
-        // Otherwise: do nothing, MQTT/TCP will reconnect without SAPBR thrash.
+        // Otherwise: MQTT/TCP reconnects without SAPBR thrash.
     }
 
-    // Diagnostics should be sparse: do not constantly poke the modem.
-    // Never enqueue CSQ/COPS while TCP owns the AT bus (CIPSEND / CIPSTART / recover).
+    if (_reattachRequested) {
+        const uint32_t now = millis();
+        if (_reattachCooldownUntilMs == 0 || (int32_t)(now - _reattachCooldownUntilMs) >= 0) {
+            leaveReadyForReattach_("ready");
+            return;
+        }
+        // Cooldown: stay READY, keep request pending, continue sparse diag below.
+    }
+
+    // Diagnostics: never poke CSQ/COPS while a TCP socket is up/connecting (shared UART framing).
     // Prefer in-flight NTP over sparse CSQ/COPS; NTP itself refuses while TCP socket is up.
     const uint32_t now = millis();
-    if (!_stack.tcp.isBusBusy()) {
-        if (_timeStep != TimeStep::Idle && !tcpSocketActive()) {
+    if (!_stack.tcp.isTcpEpochBusy() && !tcpSocketActive()) {
+        if (_timeStep != TimeStep::Idle) {
             serviceTimeSync(now);
             return;
         }
@@ -124,7 +110,23 @@ void GSMController::handleError() {
     // If we scheduled a restart and cooldown is over, do it now.
     if (_restartPending) {
         _restartPending = false;
+        _errorRecoveryCmdPending = false;
         begin();
+        return;
+    }
+
+    // Exhausted full L1–L4 cycles: sticky fail, rare retries until UI modem reboot / READY.
+    if (_errorRecoveryCycles >= GSM::ERROR_RECOVERY_MAX_CYCLES) {
+        if (core.getErrorManager().get() != ErrorCode::GSM_NO_RESPONSE) {
+            core.getErrorManager().set(ErrorCode::GSM_NO_RESPONSE);
+        }
+        logger.log("[GSMController] Recovering exhausted (cycles=%u) — wait %us or UI reboot\n",
+                   (unsigned)_errorRecoveryCycles,
+                   (unsigned)(GSM::ERROR_RECOVERY_EXHAUSTED_MS / 1000UL));
+        _cooldownUntilMs = now + GSM::ERROR_RECOVERY_EXHAUSTED_MS;
+        _errorRecoveryCycles = 0; // allow another slow round after the long wait
+        _recoveryLevel = 1;
+        _restartPending = true;
         return;
     }
 
@@ -149,33 +151,62 @@ void GSMController::handleError() {
         return;
     }
 
-    // L2: reset TCP/IP stack (CIPSHUT), then restart FSM.
+    // L2: reset TCP/IP stack (CIPSHUT), wait for bus idle, then arm restart.
     if (_recoveryLevel == 2) {
-        logger.log("[GSMController] Recovering (level 2): CIPSHUT\n");
-        _stack.tcp.stop("recover");
-        (void)_stack.at.enqueueHigh({ "AT+CIPSHUT", 10000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" });
-        _cooldownUntilMs = now + 5000UL;
+        if (!_errorRecoveryCmdPending) {
+            logger.log("[GSMController] Recovering (level 2): CIPSHUT\n");
+            _stack.tcp.stop("recover");
+            if (!_stack.at.enqueueHigh(
+                    { "AT+CIPSHUT", 10000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
+                return; // retry enqueue next tick
+            }
+            _errorRecoveryCmdPending = true;
+            ev(22);
+            return;
+        }
+        if (_stack.tcp.isBusBusy() || _stack.at.isBusy() || _stack.at.hasResult()) {
+            return;
+        }
+        _errorRecoveryCmdPending = false;
+        _cooldownUntilMs = now + 2000UL;
         _recoveryLevel = 3;
         _restartPending = true;
-        ev(22);
         return;
     }
 
-    // L3: bearer reset (SAPBR close) + restart.
+    // L3: bearer reset (SAPBR close), wait for result, then arm restart.
     if (_recoveryLevel == 3) {
-        logger.log("[GSMController] Recovering (level 3): SAPBR reset\n");
-        (void)_stack.at.enqueueHigh({ "AT+SAPBR=0,1", 8000, atExpectMask(AtSession::Expect::Ok), nullptr, "SAPBR0" });
-        _cooldownUntilMs = now + 8000UL;
+        if (!_errorRecoveryCmdPending) {
+            logger.log("[GSMController] Recovering (level 3): SAPBR reset\n");
+            if (!_stack.at.enqueueHigh(
+                    { "AT+SAPBR=0,1", 8000, atExpectMask(AtSession::Expect::Ok), nullptr, "SAPBR0" })) {
+                return;
+            }
+            beginAwait(AwaitKind::OK, 8000);
+            _errorRecoveryCmdPending = true;
+            ev(23);
+            return;
+        }
+        if (!(_awaitOk || _awaitError || awaitTimedOut(now))) {
+            return;
+        }
+        resetAwait();
+        _errorRecoveryCmdPending = false;
+        _cooldownUntilMs = now + 2000UL;
         _recoveryLevel = 4;
         _restartPending = true;
-        ev(23);
         return;
     }
 
-    // L4: CFUN reset, then restart.
-    logger.log("[GSMController] Recovering (level 4): CFUN reset\n");
-    (void)_stack.at.enqueueHigh({ "AT+CFUN=1,1", 1000, atExpectMask(AtSession::Expect::AnyLine), nullptr, "CFUN" });
+    // L4: CFUN reset, then restart — counts as one full recovery cycle.
+    logger.log("[GSMController] Recovering (level 4): CFUN reset (cycle %u/%u)\n",
+               (unsigned)(_errorRecoveryCycles + 1), (unsigned)GSM::ERROR_RECOVERY_MAX_CYCLES);
+    if (!_stack.at.enqueueHigh(
+            { "AT+CFUN=1,1", 1000, atExpectMask(AtSession::Expect::AnyLine), nullptr, "CFUN" })) {
+        return;
+    }
     gsmNoteModemSoftReboot(true);
+    if (_errorRecoveryCycles < 255) _errorRecoveryCycles++;
     _cooldownUntilMs = now + GSM::POST_CFUN_QUIET_MS;
     _recoveryLevel = 1;
     _restartPending = true;

@@ -14,26 +14,11 @@
 #include "io/SensorsController.h"
 #include "program/ProgramExecutor.h"
 #include "common/Pins.h"
+#include "mqtt/internal/CountingPrint.h"
 
 #include <cstring>
 
 namespace {
-
-struct CountingForwarder final : public Print {
-    Print& d;
-    size_t n = 0;
-    explicit CountingForwarder(Print& x) : d(x) {}
-    size_t write(uint8_t b) override {
-        const size_t w = d.write(b);
-        n += w;
-        return w;
-    }
-    size_t write(const uint8_t* buf, size_t s) override {
-        const size_t w = d.write(buf, s);
-        n += w;
-        return w;
-    }
-};
 
 struct ThinReplyCtx {
     const char* id;
@@ -159,16 +144,6 @@ bool MQTTClient::enqueuePending_(const PendingReply& pr) {
     return true;
 }
 
-void MQTTClient::evictOldestPending_() {
-    if (_pendingCount == 0) return;
-    logger.log("[MQTTClient] reply pending evict id=%s code=%u\n", _pending[0].id, (unsigned)_pending[0].code);
-    for (uint8_t i = 1; i < _pendingCount; i++) {
-        _pending[i - 1] = _pending[i];
-    }
-    _pendingCount--;
-    _pending[_pendingCount] = PendingReply{};
-}
-
 bool MQTTClient::publishThinReply_(const char* id, uint16_t code) {
     if (!_topicReply[0]) return false;
     ThinReplyCtx ctx{id, code};
@@ -229,12 +204,8 @@ bool MQTTClient::stageReply_(const PendingReply& pr) {
                        (unsigned)pr.kind);
             return true;
         }
-        evictOldestPending_();
-        if (enqueuePending_(pr)) {
-            logger.log("[MQTTClient] reply wait Ctrl after evict id=%s code=%u\n", pr.id, (unsigned)pr.code);
-            return true;
-        }
-        logger.log("[MQTTClient] reply drop id=%s code=%u\n", pr.id, (unsigned)pr.code);
+        // No silent evict: caller must not treat this as accepted (C4/H3).
+        logger.log("[MQTTClient] reply pending full id=%s code=%u\n", pr.id, (unsigned)pr.code);
         return false;
     }
 
@@ -254,12 +225,7 @@ bool MQTTClient::stageReply_(const PendingReply& pr) {
                    (unsigned)pr.code);
         return true;
     }
-    evictOldestPending_();
-    if (enqueuePending_(pr)) {
-        logger.log("[MQTTClient] reply stage queued after evict id=%s code=%u\n", pr.id, (unsigned)pr.code);
-        return true;
-    }
-    logger.log("[MQTTClient] reply drop id=%s code=%u\n", pr.id, (unsigned)pr.code);
+    logger.log("[MQTTClient] reply pending full id=%s code=%u\n", pr.id, (unsigned)pr.code);
     return false;
 }
 
@@ -356,7 +322,7 @@ void MQTTClient::tryAckIngress_(const uint8_t* payload, uint16_t length) {
     memcpy(message, payload, length);
     message[length] = '\0';
 
-    auto stageAck = [this](const char* id, uint16_t code) {
+    auto stageAck = [this](const char* id, uint16_t code) -> bool {
         PendingReply pr{};
         pr.kind = PendingKind::Thin;
         strlcpy(pr.id, id, sizeof(pr.id));
@@ -364,7 +330,9 @@ void MQTTClient::tryAckIngress_(const uint8_t* payload, uint16_t length) {
         logger.log("[MQTTClient] cmd ack id=%s code=%u\n", id, (unsigned)code);
         if (!stageReply_(pr)) {
             logger.log("[MQTTClient] cmd ack could not be staged id=%s code=%u\n", id, (unsigned)code);
+            return false;
         }
+        return true;
     };
 
     MqttCommand cmd;
@@ -372,24 +340,28 @@ void MQTTClient::tryAckIngress_(const uint8_t* payload, uint16_t length) {
         char idBuf[MqttCmd::ID_MAX_LEN + 1]{};
         (void)mqttExtractReqId(message, idBuf, sizeof(idBuf));
         logger.log("[MQTTClient] cmd unrecognized\n");
-        if (idBuf[0]) stageAck(idBuf, MqttCmd::CODE_BAD_REQUEST);
+        if (idBuf[0]) (void)stageAck(idBuf, MqttCmd::CODE_BAD_REQUEST);
         return;
     }
 
     MqttCmdErr argErr = MqttCmdErr::None;
     if (!validateArgs_(cmd, argErr)) {
         logger.log("[MQTTClient] cmd invalid id=%s\n", cmd.id);
-        stageAck(cmd.id, mqttErrToHttpCode(argErr));
+        (void)stageAck(cmd.id, mqttErrToHttpCode(argErr));
         return;
     }
 
     if (_inboundCount >= MqttCmd::INBOUND_DEPTH) {
         logger.log("[MQTTClient] cmd inbound full id=%s\n", cmd.id);
-        stageAck(cmd.id, MqttCmd::CODE_UNAVAILABLE);
+        (void)stageAck(cmd.id, MqttCmd::CODE_UNAVAILABLE);
         return;
     }
 
-    stageAck(cmd.id, MqttCmd::CODE_ACCEPTED);
+    // Only enqueue after 202 is staged — never execute without an ack path (C4).
+    if (!stageAck(cmd.id, MqttCmd::CODE_ACCEPTED)) {
+        logger.log("[MQTTClient] cmd not queued (ack busy) id=%s\n", cmd.id);
+        return;
+    }
     logger.log("[MQTTClient] cmd ack kind=%s id=%s\n", mqttCmdKindStr(cmd.kind), cmd.id);
     (void)enqueueInbound_(cmd);
 }

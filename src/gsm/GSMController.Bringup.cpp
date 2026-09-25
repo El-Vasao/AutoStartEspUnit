@@ -36,6 +36,7 @@ void GSMController::gsmResetSessionAfterStop() {
     _resumeSapbrHadIp = false;
     _postResumeTarget = GSMState::REGISTERING;
     _initCgattBusyRetries = 0;
+    clearAppliedApn_();
 }
 
 void GSMController::gsmNoteModemSoftReboot(bool cfunAlreadyDone) {

@@ -49,7 +49,11 @@ MQTT-публикация статуса и подписка на команды
 - Pending reply **`PENDING_REPLY_DEPTH=4`** (retry если Ctrl занят).
 - Периодический `/status` (Tele) — низший приоритет: только когда inbound/pending пусты, нет активного cmd и нет Ctrl в TX; Tele не занимает последний слот очереди FSM (FIFO send).
 
-**Нет silent drop:** на кадр с валидным `id` на `{prefix}/cmd` устройство всегда отдаёт ≥1 `/reply` с тем же `id`. Исключение — oversized payload без извлекаемого `id`.
+**Нет silent drop (при живой сессии):** на кадр с валидным `id` на `{prefix}/cmd` устройство всегда пытается отдать ≥1 `/reply` с тем же `id`. Если Ctrl/pending заняты и 202 не удалось stage — команда **не** ставится в inbound (клиент может повторить). Pending replies **не** вытесняются silently.
+
+**Исключения:**
+- oversized payload без извлекаемого `id`;
+- **разрыв сессии** (leave READY / `disconnect` / `tcp_drop`): inbound и pending void — клиент опирается на LWT/`avail` и таймаут.
 
 ### Транспорт (SIM800)
 - Один MQTT-кадр = один атомарный `AT+CIPSEND` (`write` только буферизует, `flush`/`flushSend` стартует send).
@@ -64,8 +68,8 @@ MQTT-публикация статуса и подписка на команды
 - PUBLISH not on `/cmd` — ignore (no reconnect).
 
 ### Доставка
-- LWT `/avail` `"offline"` retained Will QoS1; после connect — `"online"` (после SUBACK или SUBACK-timeout с retry SUBSCRIBE).
-- `/status` QoS0, период `publish_interval_sec` (если Tele-idle).
+- LWT `/avail` `"offline"` retained Will QoS1; после connect — `"online"` **только после SUBACK** (пока `/cmd` не подтверждён — `avail` не online; SUBSCRIBE ретраится по timeout).
+- `/status` QoS0, период `publish_interval_sec` (если Tele-idle); full status при активном SoftAP UI предпочитает delta (кроме first/`last_err`).
 - `/cmd` и `/reply` QoS0.
 
 ### 1) Command (`{prefix}/cmd`)
@@ -81,13 +85,14 @@ MQTT-публикация статуса и подписка на команды
 {"id":"7f3a","cmd":"set","name":"temp_trigger","ref":20,"enabled":true}
 {"id":"7f3a","cmd":"set","name":"battery_saver","enabled":false}
 {"id":"a1","cmd":"set","name":"wifi_ap","enabled":true}
+{"id":"t1","cmd":"set_time","epoch":1710000000}
 ```
 
 | Поле | Правило |
 |------|---------|
 | `id` | 1..`MqttCmd::ID_MAX_LEN` (16) |
-| `cmd` | `run` \| `stop` \| `list` \| `status` \| `set` |
-| `program` / `name` / `ref` / `enabled` | по cmd |
+| `cmd` | `run` \| `stop` \| `list` \| `status` \| `set` \| `set_time` |
+| `program` / `name` / `ref` / `enabled` / `epoch` | по cmd (`set_time` требует `epoch` ≥ 1700000000) |
 
 ### 2) Reply (`{prefix}/reply`)
 
@@ -122,7 +127,7 @@ Delta всегда несёт `uptime` (liveness); блок `epoch`/`synced`/`tz
 
 #### `csq`
 
-GSM signal from last `AT+CSQ` (polled on READY when AT bus idle, including while MQTT TCP is up).
+GSM signal from last `AT+CSQ` (polled on READY when AT bus idle and TCP socket not active).
 
 ```json
 "csq":{"rssi":20,"ber":0}
@@ -134,6 +139,8 @@ GSM signal from last `AT+CSQ` (polled on READY when AT bus idle, including while
 | `ber` | Bit error rate 0..7; `-1` if never received |
 
 Always present in `full`; in `delta` only when either field changes. Consumers may map dBm as `-113 + 2*rssi` for 0..31.
+
+SoftAP SSE `gsm` event mirrors `gsmState`, `csq`, and `mqttConnected` for local debug (same values as MQTT status / session).
 
 #### `last_err` (breaking vs legacy `last_error` string)
 
@@ -158,7 +165,9 @@ One-shot undelivered error queue (newest first). Key omitted when empty.
 
 1. Boot/RTC undelivered → first `full` after MQTT connect
 2. New runtime errors → once on next periodic status
-3. Mark delivered only after successful status PUBLISH stage; retry next send on failure
+3. Mark delivered only after Tele left the MQTT TX queue **and** modem CIPSEND epoch ended (`!tcpBusBusy`); on `tcp_drop`/disconnect — abandon and retry next status
+
+**Time while MQTT socket is up:** modem cascade (CCLK/CIPGSMLOC/CNTP) is refused while `tcpSocketActive` — wall clock stays soft until TCP drops, `set_time`, or boot cascade. `timeStale` (48 h) is reported in status; schedule triggers still use `isSynced()`.
 
 **Abnormal reboot fact** (always undelivered on boot, except clean reasons):
 

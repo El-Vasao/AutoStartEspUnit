@@ -15,7 +15,9 @@
 #include "core/ErrorManager.h"
 #include "core/FlashCommitCoordinator.h"
 #include "gsm/GSMController.h"
+#include "mqtt/MQTTClient.h"
 
+#include <cstdio>
 #include <cstring>
 
 namespace sse_inc_detail {
@@ -26,7 +28,7 @@ static uint32_t gLastHardwareHash{0};
 static uint32_t gLastRuntimeHash{0};
 static uint32_t gLastProgramHash{0};
 static char gLastMode[TextBytes::Wifi::SSID]{};
-static char gLastGsm[64]{};
+static char gLastGsm[96]{};
 static char gLastErr[Logging::MAX_MESSAGE_LENGTH]{};
 static FlashCommitOp gLastFlashOp{FlashCommitOp::NONE};
 static bool gLastFlashPending{false};
@@ -43,6 +45,32 @@ static bool tempTriggerRuntimeThunk(void* ctx, uint8_t index) {
     return static_cast<Core*>(ctx)->getTempTriggerRuntime(index);
 }
 
+static void formatGsmFingerprint_(char* out, size_t outSz, const SseStatusPort& st) {
+    if (!out || outSz == 0) return;
+    const char* state = st.gsm ? st.gsm->getStateString() : "";
+    snprintf(out, outSz, "%s|%d|%d|%u", state ? state : "", (int)st.csqRssi, (int)st.csqBer,
+             st.mqttConnected ? 1u : 0u);
+}
+
+static void emitGsmPayload_(PayloadPrint& gp, const SseStatusPort& st) {
+    gp.print('{');
+    bool cg = false;
+    commaOut(gp, &cg);
+    gp.print("\"gsmState\":\"");
+    escapeJsonString(gp, st.gsm ? st.gsm->getStateString() : "");
+    gp.print('"');
+    commaOut(gp, &cg);
+    gp.print("\"csq\":{\"rssi\":");
+    gp.print((int)st.csqRssi);
+    gp.print(",\"ber\":");
+    gp.print((int)st.csqBer);
+    gp.print('}');
+    commaOut(gp, &cg);
+    gp.print("\"mqttConnected\":");
+    gp.print(st.mqttConnected ? "true" : "false");
+    gp.print('}');
+}
+
 static SseStatusPort makeStatusPort() {
     SseStatusPort st;
     st.relay = &core.getRelay();
@@ -50,6 +78,7 @@ static SseStatusPort makeStatusPort() {
     st.sensors = &core.getSensors();
     st.program = &core.getProgramExecutor();
     st.gsm = &core.getGSM();
+    st.mqtt = &core.getMQTT();
     st.errors = &core.getErrorManager();
     st.flash = &flashCommit;
     st.modeName = core.getModeName();
@@ -66,6 +95,11 @@ static SseStatusPort makeStatusPort() {
         st.tzOffsetHours = ts.tzOffsetHours();
         strlcpy(st.timeSource, ts.lastSource(), sizeof(st.timeSource));
     }
+    if (st.gsm) {
+        st.csqRssi = st.gsm->getSignalQuality();
+        st.csqBer = st.gsm->getSignalBer();
+    }
+    st.mqttConnected = st.mqtt && st.mqtt->isSessionConnected();
     st.getTriggerRuntime = triggerRuntimeThunk;
     st.getTempTriggerRuntime = tempTriggerRuntimeThunk;
     st.triggerCtx = &core;
@@ -166,17 +200,12 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
             continue;
         }
         if (gBaselineStep == 3) {
-            const char* curGsm = st.gsm ? st.gsm->getStateString() : "";
+            char curGsmFp[96]{};
+            formatGsmFingerprint_(curGsmFp, sizeof(curGsmFp), st);
             PayloadPrint gp;
-            gp.print('{');
-            bool cg = false;
-            commaOut(gp, &cg);
-            gp.print("\"gsmState\":\"");
-            escapeJsonString(gp, curGsm);
-            gp.print('"');
-            gp.print('}');
+            emitGsmPayload_(gp, st);
             if (sendJsonEvent(ws, "gsm", gp, statusQueueMax)) {
-                strlcpy(gLastGsm, curGsm, sizeof(gLastGsm));
+                strlcpy(gLastGsm, curGsmFp, sizeof(gLastGsm));
                 gBaselineStep = 4;
             } else {
                 return;
@@ -227,19 +256,14 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
         }
     }
 
-    const char* curGsm = st.gsm ? st.gsm->getStateString() : "";
-    if (strcmp(gLastGsm, curGsm) != 0) {
+    char curGsmFp[96]{};
+    formatGsmFingerprint_(curGsmFp, sizeof(curGsmFp), st);
+    if (strcmp(gLastGsm, curGsmFp) != 0) {
         if (!sseTickMoreEventsSafe(ws)) return;
         PayloadPrint gp;
-        gp.print('{');
-        bool cg = false;
-        commaOut(gp, &cg);
-        gp.print("\"gsmState\":\"");
-        escapeJsonString(gp, curGsm);
-        gp.print('"');
-        gp.print('}');
+        emitGsmPayload_(gp, st);
         if (sendJsonEvent(ws, "gsm", gp, statusQueueMax)) {
-            strlcpy(gLastGsm, curGsm, sizeof(gLastGsm));
+            strlcpy(gLastGsm, curGsmFp, sizeof(gLastGsm));
         }
     }
 

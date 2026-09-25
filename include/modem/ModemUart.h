@@ -37,6 +37,8 @@ public:
     void writeByte(uint8_t b);
 
     void flushInput();
+    /// Drain UART TX (baud change / IPR NV); prefer this over raw Serial.flush().
+    void flushTx();
 
 private:
     HardwareSerial& _serial;

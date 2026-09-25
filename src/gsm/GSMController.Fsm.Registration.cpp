@@ -22,7 +22,7 @@ void GSMController::handleRegistering() {
     }
 
     if (_lastCommandTime == 0) {
-        sendAt("AT+CREG?", nullptr, AwaitKind::CREG, GSM::REG_TIMEOUT_MS);
+        (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, GSM::REG_POLL_INTERVAL_MS);
         return;
     }
 
@@ -37,7 +37,7 @@ void GSMController::handleRegistering() {
             logger.log("[GSMController] CREG returned ERROR\n");
             return;
         }
-        sendAt("AT+CREG?", nullptr, AwaitKind::CREG, GSM::REG_TIMEOUT_MS);
+        (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, GSM::REG_POLL_INTERVAL_MS);
         return;
     }
 
@@ -53,17 +53,19 @@ void GSMController::handleRegistering() {
         return;
     }
 
-    if (awaitTimedOut(now)) {
-        _retryCount++;
+    // Searching / not registered: re-poll on short cadence (do not burn MAX_RETRIES).
+    const bool searching =
+        (_awaitOk && _awaitGotCreg) || awaitTimedOut(now);
+    if (searching) {
         resetAwait();
-        if (_retryCount >= GSM::MAX_RETRIES) {
+        clearResponse();
+        if (getStateAgeMs() > GSM::REG_TIMEOUT_MS) {
             changeState(GSMState::ERROR);
             core.getErrorManager().set(ErrorCode::GSM_REG_FAIL);
             logRxSnippet("CREG timeout");
             logger.log("[GSMController] Registration failed\n");
             return;
         }
-        sendAt("AT+CREG?", nullptr, AwaitKind::CREG, GSM::REG_TIMEOUT_MS);
+        (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, GSM::REG_POLL_INTERVAL_MS);
     }
 }
-

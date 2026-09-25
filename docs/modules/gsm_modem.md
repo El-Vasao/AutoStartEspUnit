@@ -19,7 +19,7 @@
 ### 1) Единый AT pipeline
 
 - Все AT-команды идут через `AtSession` и `ModemUart`.
-- Прямые `Serial.flush()` в прикладной логике не использовать: риск WDT и потери прогресса RX.
+- Прямые `Serial.flush()` в прикладной логике не использовать: риск WDT и потери прогресса RX. Для дождаться TX (смена baud / IPR NV) — `ModemUart::flushTx()`.
 
 ### 2) FSM GSM
 
@@ -27,7 +27,7 @@
 
 - `INIT` может перейти сразу в `REGISTERING`, `GPRS_SETUP` или `READY` после resume-опроса (сеть и bearer уже в рабочем состоянии), иначе — цепочка `REGISTERING` → `GPRS_SETUP` → … → `READY` как ниже.
 - Типичный cold path после INIT: `REGISTERING` → `GPRS_SETUP` → `GPRS_ATTACH` → `GPRS_GETIP` → `READY`
-- **Warm modem (ребут только ESP):** contact (`AT`/`AT+CGMI`) + status probe (`CREG`/`CGATT`/`SAPBR=2,1`) — без `CFUN`, без повторного open bearer если IP уже есть. `GPRS_ATTACH` тоже status-first: сначала `SAPBR=2,1`, open `SAPBR=1,1` только если IP нет; при ERROR open — повторный probe (часто bearer уже открыт).
+- **Warm modem (ребут только ESP):** contact (`AT`/`AT+CGMI`) + status probe (`CREG`/`CGATT`/`SAPBR=2,1`) — без `CFUN`, без повторного open bearer если IP уже есть **и** `gsm.apn*` совпадает с последним GPRS_SETUP. Иначе — `GPRS_SETUP` (Contype/APN/USER/PWD). `GPRS_ATTACH` тоже status-first: сначала `SAPBR=2,1`, open `SAPBR=1,1` только если IP нет; при ERROR open — повторный probe (часто bearer уже открыт). Смена `apn*` на READY → reattach через `GPRS_SETUP`.
 - `ERROR` — восстановление с эскалацией (см. ниже)
 
 ### 2а) UART: гипотеза скорости и поиск baud
@@ -50,13 +50,13 @@
 ### 3) SIM800 TCP (URC-first)
 
 - Завершение connect/close/send — по URC: точный `CLOSED`, `CONNECT OK` / `CONNECT FAIL`, `SEND OK` / `SEND FAIL`. Голый `ERROR` **не** рвёт TCP (его обрабатывает `AtSession`; иначе GSM AT на том же UART ломал бы сокет).
-- **Send-epoch:** с enqueue `CIPSEND` до `SEND OK`/`SEND FAIL`/watchdog держатся `_sendInProgress` + `_modemTxLocked` (даже когда `AtSession` уже Idle после `>`). `CIPSTART` и GSM diag (`CSQ`/`COPS`) запрещены, пока `isBusBusy()`.
+- **Send-epoch:** с enqueue `CIPSEND` до `SEND OK`/`SEND FAIL`/watchdog держатся `_sendInProgress` + `_modemTxLocked` (даже когда `AtSession` уже Idle после `>`). `CIPSTART` и GSM diag (`CSQ`/`COPS`) запрещены, пока `isTcpEpochBusy()` / сокет up. MQTT Ctrl/`last_err` confirm смотрят `tcpEpochBusy()` (не любой CSQ AT). Полный `isBusBusy()` (= epoch ∨ `AtSession::isBusy`) — для reattach/drain.
 - Перед **первым** `CIPSTART` после `Sim800TcpTransport::reset()` — один `AT+CIPSHUT` (тёплый модем после ребута ESP). Cooldown `CONNECT_RETRY_COOLDOWN_MS` между попытками.
 - `Client::connect` — **неблокирующий** kick `CIPSTART` (без wall-clock wait); иначе SoftAP/IWDT.
 - Watchdogs: connect (`CONNECT_WATCHDOG_MS`) сбрасывает залипший `_connecting`; send (`SEND_WATCHDOG_MS`) после `CIPSEND`/`>` без `SEND OK` — end send-epoch + CIPSHUT recover.
 - **`SEND FAIL` / CIPSEND accept fail / CIPSTART accept fail** — fail-closed: session down + CIPSHUT recover (как send WD). MQTT RX всегда drain (mid-CIPSEND +IPD безопасен; post-send quiet нет).
 - После `STACK_RECOVER_REATTACH_THRESHOLD` CIPSHUT-recover без успешного `CONNECT OK` — `needsBearerReattach` → GSM `requestReattach` (status-first `SAPBR=2,1`).
-- Единый `takeResult`: TCP CIP* теги → `Sim800TcpTransport::consumeAtResult`, иначе GSM await absorb.
+- Единый owner `GSMController::drainAtResult_()` (только из `update` и cooperate-pump): `takeResult` → TCP CIP* `consumeAtResult`, иначе GSM await absorb. `Sim800TcpTransport::tick` **не** вызывает `takeResult` (иначе non-CIP OK съедался бы мимо GSM).
 - RX: **`AT+CIPRXGET=0` → `AT+CIPHEAD=1` → `AT+CIPMUX=0`**. `CIPHEAD=1` обязателен: без него inbound TCP сырой и **дропается mid-CIPSEND** (`discardingTcpPayload_`) → обрезанный MQTT PUBLISH. Флаги ставятся только после **OK** на все три команды; `CIPSTART` — только после подтверждённого `CIPHEAD`. После `CIPSHUT` конфиг сбрасывается и переигрывается.
 - **CIPSEND payload TX:** `ModemUart::writeBytes` пишет чанками по 32 байта с `pollRx()` между ними — иначе длинный status full (~400B) забивает HW RX FIFO и режет хвост `+IPD` (`rx_incomplete have≪need`).
 - **CIPSEND vs +IPD:** `startSend_` не стартует, пока `_ipState != Idle`; MQTT Tele не flush'ится, пока в FSM собирается валидный неполный inbound кадр.
@@ -88,11 +88,15 @@ MQTT реализован **в прошивке** как неблокирующ�
 От дешёвого к дорогому в `handleError` (ERROR FSM):
 
 - **L1**: restart FSM (`begin` после cooldown)
-- **L2**: сброс IP-стека (`CIPSHUT`)
-- **L3**: bearer reset (`SAPBR=0,1`)
+- **L2**: сброс IP-стека (`CIPSHUT`), wait bus idle
+- **L3**: bearer reset (`SAPBR=0,1`), wait result
 - **L4**: модемный reset (`CFUN=1,1`), затем `gsmNoteModemSoftReboot`
 
-На READY отдельно: TCP reconnect (MQTT), reattach с backoff (ступени до ~180 с, зависимость от CSQ) — см. `handleReady` / `CellularCore`.
+После `ERROR_RECOVERY_MAX_CYCLES` полных L1–L4 — sticky `GSM_NO_RESPONSE`, пауза `ERROR_RECOVERY_EXHAUSTED_MS`, затем ещё один медленный круг (или UI modem reboot). Счётчик циклов сбрасывается на READY.
+
+На READY отдельно: TCP reconnect (MQTT), reattach с backoff (ступени до ~180 с, зависимость от CSQ) — см. `handleReady` / `CellularCore`. Backoff **не** сбрасывается на каждом входе в READY — только после стабильной MQTT-сессии (`clearReattachBackoff`). PDP DEACT / CLOSED-threshold идут через тот же `_reattachRequested` + cooldown. Перед уходом с READY: `tcp.stop` и ожидание idle AT bus; `CellularCore` дренирует MQTT как при `suspend`.
+
+CSQ/COPS на READY — только при `!tcpSocketActive()` (не поверх живого MQTT CIP).
 
 ## Диагностика
 
@@ -145,3 +149,25 @@ MQTT реализован **в прошивке** как неблокирующ�
 - Cellular suspend только в SETUP/EMERGENCY AP и `OTA_UPDATE` (не при SoftAP down в NORMAL).
 - Полный JSON status уходит без Instruction fault / IWDT.
 - Ожидание: в панели виден живой `gsmState` во время загрузки UI (без `/ui/ready`).
+
+**4) Leave READY / reattach handoff**
+
+- Симулировать MQTT fail streak ≥3 или PDP DEACT.
+- Ожидание: `[Sim800Tcp] stop` / CIPCLOSE до SAPBR; `[Cellular] GSM left READY — draining MQTT`; нет AT queue storm.
+- Повторные fail: backoff растёт (логи `Reattach … backoff=Ns`); после стабильного Connected backoff сбрасывается.
+
+**5) last_err delivery**
+
+- Ввести ошибку (например MQTT disconnect), дождаться status с `last_err`.
+- Оборвать TCP до SEND OK: `last_err` должен появиться снова после reconnect (не «съеден» ранним markDelivered).
+
+**6) cmd ack gate**
+
+- При загруженном Ctrl: команда без успешного stage 202 не должна исполняться (`cmd not queued`).
+- При живой сессии: `run` даёт 202 затем финал 200/500.
+
+**7) Baud search ceiling**
+
+- Модем на неверной скорости / без ответа: после `BAUD_SEARCH_MAX_PASSES` — ERROR + `GSM_NO_RESPONSE`, не бесконечный search.
+
+Полевой журнал (pass/fail на железе): [`gsm_mqtt_field_log.md`](gsm_mqtt_field_log.md).

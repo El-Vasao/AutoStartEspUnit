@@ -34,6 +34,8 @@ public:
     void suspend();
 
 private:
+    void drainMqttDisconnect_();
+
     GSMController* _gsm{nullptr};
     MQTTClient* _mqtt{nullptr};
     WebServer* _web{nullptr};
@@ -47,4 +49,6 @@ private:
     uint32_t _lastReattachRequestMs{0};
     uint8_t _lastLoggedFailStreak{0};
     bool _loggedBootNtpWait{false};
+    /// Latched after MQTT Connected with failStreak==0 → gsm.clearReattachBackoff().
+    bool _mqttStableNoted{false};
 };

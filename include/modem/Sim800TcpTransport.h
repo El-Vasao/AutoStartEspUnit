@@ -22,11 +22,13 @@ public:
 
     bool isConnected() const { return _connected; }
     bool isConnecting() const { return _connecting; }
-    /// True while connect/send/close/recover owns the shared AT/UART bus.
-    bool isBusBusy() const {
+    /// TCP/CIP epoch only (CIPSTART/CIPSEND/CIPCLOSE/CIPSHUT) — excludes unrelated AT (CSQ/COPS/CNTP).
+    bool isTcpEpochBusy() const {
         return _connecting || _sendInProgress || _txLen != 0 || _modemTxLocked || _closeQueued ||
-               _recoverQueued || _at.isBusy();
+               _recoverQueued;
     }
+    /// Epoch busy or any AtSession command in flight (reattach/drain serialization).
+    bool isBusBusy() const { return isTcpEpochBusy() || _at.isBusy(); }
 
     bool connectStart(const char* host, uint16_t port);
     /// Clear stuck connect/send flags (e.g. Client::connect wall-clock timeout).

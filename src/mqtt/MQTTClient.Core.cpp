@@ -21,26 +21,10 @@
 #include "io/DigitalInputs.h"
 #include "program/ProgramExecutor.h"
 #include "core/ErrorManager.h"
+#include "web/WebServer.h"
+#include "mqtt/internal/CountingPrint.h"
 
 namespace {
-
-struct CountingForwarder final : public Print {
-    Print& d;
-    size_t n = 0;
-    explicit CountingForwarder(Print& x) : d(x) {}
-
-    size_t write(uint8_t b) override {
-        const size_t w = d.write(b);
-        n += w;
-        return w;
-    }
-    size_t write(const uint8_t* buf, size_t s) override {
-        const size_t w = d.write(buf, s);
-        n += w;
-        return w;
-    }
-    size_t written() const { return n; }
-};
 
 struct PublishStatusCtx {
     const StatusSnapshot* cur;
@@ -272,6 +256,12 @@ void MQTTClient::loop() {
     // ensureTcp_ may clear Error→Idle in the same tick; record before we only see Idle next loop.
     noteSessionErrorIfNeeded_();
 
+    if (_fsm.state() == MqttFsmClient::State::Error || !_fsm.isConnected()) {
+        abandonLastErrDelivery_();
+    } else {
+        confirmLastErrDelivery_();
+    }
+
     if (_fsm.isConnected()) {
         // Queue SUBSCRIBE once; confirmed only after SUBACK.
         if (!_subscribeQueued && _topicCmd[0]) {
@@ -308,14 +298,14 @@ void MQTTClient::loop() {
         if (subTimedOut) {
             if (!_subackTimeoutLogged) {
                 _subackTimeoutLogged = true;
-                logger.log("[MQTTClient] SUBACK timeout %ums — publishing online/status; retrying SUBSCRIBE\n",
+                logger.log("[MQTTClient] SUBACK timeout %ums — retrying SUBSCRIBE (hold online/status)\n",
                            (unsigned)kSubackTimeoutMs);
             }
             _fsm.requeueSubscribe();
             _subWaitStartMs = millis();
         }
-        // Presence/tele after SUBACK, or after timeout so we are not stuck offline forever.
-        const bool subReady = subConfirmed || subTimedOut || _subackTimeoutLogged;
+        // Presence/tele only after SUBACK — avoid avail=online while /cmd is not subscribed.
+        const bool subReady = !_topicCmd[0] || subConfirmed;
 
         static constexpr uint8_t kOnlinePayload[] = "online";
         if (subReady && _onlinePublishDue && _topicAvail[0]) {
@@ -363,6 +353,7 @@ void MQTTClient::loop() {
 
 void MQTTClient::disconnect() {
     logger.log("[MQTTClient] disconnect()\n");
+    abandonLastErrDelivery_();
     if (_fsm.isConnected() && _topicAvail[0]) {
         static constexpr uint8_t kOfflinePayload[] = "offline";
         (void)_fsm.publish(_topicAvail, kOfflinePayload, sizeof(kOfflinePayload) - 1u, true, true);
@@ -371,6 +362,7 @@ void MQTTClient::disconnect() {
     _subscribeQueued = false;
     _subWaitStartMs = 0;
     _subackTimeoutLogged = false;
+    // Session tear-down voids in-flight cmd/reply (documented in mqtt.md).
     clearPending_();
     clearInbound_();
     _hasActiveRun = false;
@@ -422,12 +414,28 @@ bool MQTTClient::publishStatus(bool forceFull) {
     captureStatusSnapshot_(snapshot);
     const auto& cfg = config.getBase();
 
+    // While awaiting CIPSEND confirm for a prior last_err Tele, suppress re-force of the same set.
+    const uint8_t errN = snapshot.lastErrCount;
+    if (_lastErrAwaitConfirm) {
+        snapshot.lastErrCount = 0;
+    }
+
     // Full until first successful stage, on explicit force (first/get_status), else delta/skip.
-    const bool needFull = forceFull || !_havePublishedBaseline;
+    bool needFull = forceFull || !_havePublishedBaseline;
+    // SoftAP UI active: prefer delta to keep main-loop serialize cheap (still force full for last_err / first).
+    if (needFull && !forceFull && _havePublishedBaseline && errN == 0 &&
+        webServer.activeUiSessionCount() > 0) {
+        needFull = false;
+    }
     // Undelivered errors must force a status TX (periodic one-shot / retry).
     if (!needFull && snapshot.lastErrCount == 0 &&
         !mqttStatusHasSignificantChanges(snapshot, _lastPublished, cfg)) {
         return true; // unchanged — no TX
+    }
+
+    // Restore last_err for encode when this publish is the first stage of an undelivered set.
+    if (!_lastErrAwaitConfirm && errN > 0) {
+        snapshot.lastErrCount = errN;
     }
 
     PublishStatusCtx ctx{&snapshot, needFull ? nullptr : &_lastPublished, needFull};
@@ -450,21 +458,37 @@ bool MQTTClient::publishStatus(bool forceFull) {
                    (unsigned)kMqttPublishBudgetMs);
     }
 
-    if (snapshot.lastErrCount > 0) {
-        ErrorSnapshotEntry sent[ErrorHistory::CAPACITY]{};
-        for (uint8_t i = 0; i < snapshot.lastErrCount && i < ErrorHistory::CAPACITY; i++) {
-            sent[i].code = snapshot.lastErr[i].code;
-            sent[i].active = snapshot.lastErr[i].active;
-            sent[i].uptimeSec = snapshot.lastErr[i].uptimeSec;
-            strlcpy(sent[i].msg, snapshot.lastErr[i].msg, sizeof(sent[i].msg));
+    // Defer markDelivered until Tele left the MQTT queue and modem CIPSEND epoch ended (C3).
+    if (!_lastErrAwaitConfirm && errN > 0) {
+        _lastErrPendingCount = errN;
+        for (uint8_t i = 0; i < errN && i < ErrorHistory::CAPACITY; i++) {
+            _lastErrPending[i].code = snapshot.lastErr[i].code;
+            _lastErrPending[i].active = snapshot.lastErr[i].active;
+            _lastErrPending[i].uptimeSec = snapshot.lastErr[i].uptimeSec;
+            strlcpy(_lastErrPending[i].msg, snapshot.lastErr[i].msg, sizeof(_lastErrPending[i].msg));
         }
-        core.getErrorManager().markDelivered(sent, snapshot.lastErrCount);
+        _lastErrAwaitConfirm = true;
     }
 
     _lastPublished = snapshot;
-    // After markDelivered, next capture will have empty lastErr — store cleared for delta compare.
     _lastPublished.lastErrCount = 0;
     _havePublishedBaseline = true;
     logger.log("[MQTTClient] pub status %s bytes=%u\n", needFull ? "full" : "delta", (unsigned)measured);
     return true;
+}
+
+void MQTTClient::confirmLastErrDelivery_() {
+    if (!_lastErrAwaitConfirm) return;
+    if (_fsm.hasOutbound()) return;
+    if (_ctrlPlaneBusy && _ctrlPlaneBusy(_ctrlPlaneBusyCtx)) return;
+    core.getErrorManager().markDelivered(_lastErrPending, _lastErrPendingCount);
+    _lastErrAwaitConfirm = false;
+    _lastErrPendingCount = 0;
+}
+
+void MQTTClient::abandonLastErrDelivery_() {
+    if (!_lastErrAwaitConfirm) return;
+    logger.log("[MQTTClient] last_err delivery abandoned (session/tcp) — will retry\n");
+    _lastErrAwaitConfirm = false;
+    _lastErrPendingCount = 0;
 }

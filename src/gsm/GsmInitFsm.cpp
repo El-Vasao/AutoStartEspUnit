@@ -455,7 +455,7 @@ void GSMController::handleInit() {
         if (_awaitOk) {
             resetAwait();
             clearResponse();
-            _serial->flush();
+            _stack.uart.flushTx();
             gsmOpenUart(GSM::UART_BAUD);
             _stack.at.reset();
             _lastCommandTime = 0;
@@ -566,7 +566,8 @@ void GSMController::handleInit() {
             resetAwait();
             clearResponse();
             const bool regOk = (_cregStat == 1 || _cregStat == 5);
-            if (regOk && _resumeSapbrHadIp) {
+            // Warm SAPBR IP alone is not enough: Contype/APN may differ from config (SIM/APN change).
+            if (regOk && _resumeSapbrHadIp && apnMatchesApplied_()) {
                 _postResumeTarget = GSMState::READY;
             } else if (regOk) {
                 _postResumeTarget = GSMState::GPRS_SETUP;

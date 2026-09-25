@@ -65,6 +65,14 @@ void GSMController::gsmMaybeLogStallWatchdog(uint32_t now) {
         _atCmdBuf);
 }
 
+void GSMController::drainAtResult_() {
+    if (!_stack.at.hasResult()) return;
+    const AtSession::Result r = _stack.at.takeResult();
+    if (!_stack.tcp.consumeAtResult(r)) {
+        gsmAbsorbAtSessionResult(r);
+    }
+}
+
 void GSMController::gsmAbsorbAtSessionResult(const AtSession::Result& r) {
     // RX: ModemUart вызывает AtSession::onLine до onRxLine (GSMController.Core).
     // Ошибка/таймаут очереди AT — общий сигнал срыва; OK для Expect::Ok совпадает со строкой OK в handleAwaitLine.
@@ -86,13 +94,7 @@ void GSMController::update() {
         _stack.tcp.tick(now);
     }
 
-    // Single takeResult owner: TCP CIP* tags first, else GSM await absorb.
-    if (_stack.at.hasResult()) {
-        const AtSession::Result r = _stack.at.takeResult();
-        if (!_stack.tcp.consumeAtResult(r)) {
-            gsmAbsorbAtSessionResult(r);
-        }
-    }
+    drainAtResult_();
 
     switch (_state) {
     case GSMState::IDLE:
@@ -109,9 +111,6 @@ void GSMController::update() {
         break;
     case GSMState::GPRS_ATTACH:
         handleGprsAttach();
-        break;
-    case GSMState::GPRS_ACTIVATE:
-        handleGprsActivate();
         break;
     case GSMState::GPRS_GETIP:
         handleGprsGetIp();

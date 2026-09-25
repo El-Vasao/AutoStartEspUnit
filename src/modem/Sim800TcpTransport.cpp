@@ -312,11 +312,7 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
         forceStackRecover_("send_wd");
     }
 
-    // SoftAP/write pump: drain TCP-owned AtSession results while we own the bus.
-    if (_at.hasResult() &&
-        (_connecting || _sendInProgress || _modemTxLocked || _closeQueued || _recoverQueued)) {
-        (void)consumeAtResult(_at.takeResult());
-    }
+    // AtSession Done is drained only by GSMController::drainAtResult_ (take → consume → absorb).
 
     // Start sealed CIPSEND when flushSend() was called.
     if (_flushRequested && _connected && !_sendInProgress && !_modemTxLocked && _txLen > 0) {

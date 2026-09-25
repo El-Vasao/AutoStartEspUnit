@@ -35,6 +35,10 @@ void ModemUart::flushInput() {
     }
 }
 
+void ModemUart::flushTx() {
+    _serial.flush();
+}
+
 void ModemUart::writeRaw(const char* s) {
     if (!s) return;
     _serial.print(s);

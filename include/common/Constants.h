@@ -342,11 +342,10 @@ namespace JsonBytes {
     }
 }
 
-/// MQTT cmd/reply queue and idempotency limits (wire contract in docs/modules/mqtt.md).
+/// MQTT cmd/reply queue limits (wire contract in docs/modules/mqtt.md).
+/// No idempotency LRU on device — client may retry the same `id`.
 namespace MqttCmd {
     constexpr uint8_t INBOUND_DEPTH = 8;
-    constexpr uint8_t IDEM_DEPTH = 16;
-    constexpr uint32_t IDEM_TTL_MS = 30UL * 60UL * 1000UL;
     constexpr uint8_t PENDING_REPLY_DEPTH = 4;
     constexpr uint8_t ID_MAX_LEN = 16;
 
@@ -487,13 +486,15 @@ namespace GSM {
     /// Опционально: принудительный фоллбэк после длительной тишины на RX (0 = выкл.; не используется без кода в INIT).
     constexpr uint32_t BAUD_FALLBACK_SILENCE_FORCE_MS = 0;
     /// Лимит неудачных раундов поиска baud подряд (0 = без лимита).
-    constexpr uint8_t BAUD_SEARCH_MAX_PASSES = 0;
+    constexpr uint8_t BAUD_SEARCH_MAX_PASSES = 4;
     /// Подстрока в ответе на `AT+CGMI` (ожидаемый производитель; SIM800 семейство).
     inline constexpr char MODEM_VERIFY_MANUFACTURER_SUBSTR[] = "SIMCOM";
     /// Логировать URC `+CSQ` только если RSSI изменился не меньше чем на это значение (шкала 0..31).
     constexpr int16_t URC_RSSI_LOG_DELTA = 3;
 
     constexpr uint32_t REG_TIMEOUT_MS = 60000;
+    /// Cadence for AT+CREG? while modem is still searching (stat ≠ 1/5).
+    constexpr uint32_t REG_POLL_INTERVAL_MS = 5000;
     constexpr uint32_t APN_TIMEOUT_MS = 10000;
     constexpr uint32_t GPRS_ATTACH_TIMEOUT_MS = 15000;
     constexpr uint32_t PDP_ACTIVATE_TIMEOUT_MS = 20000;
@@ -504,6 +505,9 @@ namespace GSM {
     constexpr uint32_t TCP_CLOSED_REATTACH_WINDOW_MS = 60000; // 1 min
     constexpr uint8_t TCP_CLOSED_REATTACH_THRESHOLD = 3;      // 3 drops within window
     constexpr uint32_t ERROR_RECOVERY_DELAY_MS = 30000;
+    constexpr uint8_t ERROR_RECOVERY_MAX_CYCLES = 3;
+    /// After exhausting L1–L4 cycles, wait this long before another attempt (or until UI reboot).
+    constexpr uint32_t ERROR_RECOVERY_EXHAUSTED_MS = 300000UL; // 5 min
 
     /// Modem NTP (AT+CNTP): accept timeout for setup commands.
     constexpr uint32_t CNTP_AT_TIMEOUT_MS = 10000;

@@ -49,7 +49,6 @@
         REGISTERING: { text: 'GSM: Регистрация', tone: 'info' },
         GPRS_SETUP: { text: 'GSM: APN', tone: 'info' },
         GPRS_ATTACH: { text: 'GSM: GPRS attach', tone: 'info' },
-        GPRS_ACTIVATE: { text: 'GSM: PDP', tone: 'info' },
         GPRS_GETIP: { text: 'GSM: IP', tone: 'info' },
         READY: { text: 'GSM: ✓ Готов', tone: 'success' },
         ERROR: { text: 'GSM: ✗ Ошибка', tone: 'danger' },

@@ -35,12 +35,7 @@ GSMController::GSMController()
                  self->_stack.uart.pollRx();
                  self->_stack.at.tick(millis());
                  self->_stack.tcp.tick(millis());
-                 if (self->_stack.at.hasResult()) {
-                     const AtSession::Result r = self->_stack.at.takeResult();
-                     if (!self->_stack.tcp.consumeAtResult(r)) {
-                         self->gsmAbsorbAtSessionResult(r);
-                     }
-                 }
+                 self->drainAtResult_();
                  yield();
              },
              this),
@@ -126,22 +121,29 @@ void GSMController::logRxSnippet(const char* tag) const {
     logger.logSerialOnly("[GSMController] << %s: %s\n", tag ? tag : "", out);
 }
 
-void GSMController::sendAt(const char* cmd, const char* tag, AwaitKind kind, uint32_t timeoutMs) {
+bool GSMController::sendAt(const char* cmd, const char* tag, AwaitKind kind, uint32_t timeoutMs) {
     _cmdId++;
     ev(3, _cmdId); // sendAt
-    if (kind != AwaitKind::NONE) {
-        beginAwait(kind, timeoutMs);
-    } else {
-        resetAwait();
-    }
     // Unified AT pipeline: enqueue into AtSession (ModemUart owns actual UART writes).
     // IMPORTANT: AtSession stores non-owning pointers; GSM FSM guarantees one in-flight request,
     // so we store command in a dedicated member buffer.
     snprintf(_atCmdBuf, sizeof(_atCmdBuf), "%s", cmd ? cmd : "");
     const char* effectiveTag = (tag && tag[0]) ? tag : nullptr;
     AtSession::Request r{ _atCmdBuf, timeoutMs, atExpectMask(AtSession::Expect::Ok), nullptr, effectiveTag };
-    (void)_stack.at.enqueue(r);
+    if (!_stack.at.enqueue(r)) {
+        // Do not arm await — otherwise FSM stalls until a phantom timeout.
+        resetAwait();
+        _lastCommandTime = 0;
+        logger.log("[GSMController] sendAt enqueue full: %s\n", _atCmdBuf);
+        return false;
+    }
+    if (kind != AwaitKind::NONE) {
+        beginAwait(kind, timeoutMs);
+    } else {
+        resetAwait();
+    }
     _lastCommandTime = millis();
+    return true;
 }
 
 void GSMController::sendCommand(const char* cmd) {
@@ -156,7 +158,6 @@ static const char* gsmStateToString(GSMState s) {
         case GSMState::REGISTERING:     return "REGISTERING";
         case GSMState::GPRS_SETUP:      return "GPRS_SETUP";
         case GSMState::GPRS_ATTACH:     return "GPRS_ATTACH";
-        case GSMState::GPRS_ACTIVATE:   return "GPRS_ACTIVATE";
         case GSMState::GPRS_GETIP:      return "GPRS_GETIP";
         case GSMState::READY:           return "READY";
         case GSMState::ERROR:           return "ERROR";
@@ -179,9 +180,9 @@ void GSMController::changeState(GSMState newState) {
     ev(2, (uint16_t)newState); // enter state
 
     if (newState == GSMState::READY) {
-        // Successful bring-up: reset reattach backoff + clear sticky GSM errors.
-        _reattachBackoffStep = 0;
-        _reattachCooldownUntilMs = 0;
+        // Sticky GSM bring-up errors clear on READY. Reattach backoff is cleared only after a
+        // stable MQTT session (clearReattachBackoff) — not here — so fail→reattach loops back off.
+        _errorRecoveryCycles = 0;
         clearGsmBringupErrors_();
         core.logHeapSnapshot("gsm_ready");
     }
@@ -203,7 +204,6 @@ const char* GSMController::getStateString() const {
         case GSMState::REGISTERING:     return "REGISTERING";
         case GSMState::GPRS_SETUP:      return "GPRS_SETUP";
         case GSMState::GPRS_ATTACH:     return "GPRS_ATTACH";
-        case GSMState::GPRS_ACTIVATE:   return "GPRS_ACTIVATE";
         case GSMState::GPRS_GETIP:      return "GPRS_GETIP";
         case GSMState::READY:           return "READY";
         case GSMState::ERROR:           return "ERROR";
@@ -288,9 +288,45 @@ ErrorCode GSMController::classifyBearerFail_() const {
     if (_cregStat != 1 && _cregStat != 5) {
         return ErrorCode::GSM_REG_FAIL;
     }
-    if (_signal == 99 || _signal <= 1) {
+    // _signalBer < 0 ⇒ never got CSQ; do not treat constructor _signal=0 as dead RF.
+    if (_signalBer >= 0 && (_signal == 99 || _signal <= 1)) {
         return ErrorCode::GSM_REG_FAIL;
     }
     return ErrorCode::GSM_APN_FAIL;
+}
+
+void GSMController::clearReattachBackoff() {
+    _reattachBackoffStep = 0;
+    _reattachCooldownUntilMs = 0;
+}
+
+void GSMController::leaveReadyForReattach_(const char* why) {
+    // Stop TCP first so CIPCLOSE finishes before SAPBR on the shared AT bus.
+    if (_stack.tcp.isConnected() || _stack.tcp.isConnecting() || _stack.tcp.isBusBusy()) {
+        _stack.tcp.stop(why ? why : "reattach");
+    }
+    if (_stack.tcp.isBusBusy() || _stack.at.isBusy() || _stack.at.hasResult()) {
+        // Keep request pending; handleReady retries when bus is idle.
+        _reattachRequested = true;
+        return;
+    }
+    const uint32_t now = millis();
+    if (_reattachBackoffStep < 6) _reattachBackoffStep++;
+    uint32_t delayMs = 5000UL << (_reattachBackoffStep - 1); // 5s…160s
+    if (delayMs > 180000UL) delayMs = 180000UL;
+    const int16_t rssi = _signal;
+    if (_signalBer >= 0 && (rssi < 6 || rssi == 99)) {
+        delayMs = (delayMs < 60000UL) ? 60000UL : delayMs;
+    }
+    _reattachCooldownUntilMs = now + delayMs;
+    _reattachRequested = false;
+    logger.log("[GSMController] Reattach (%s) backoff=%us rssi=%d\n",
+               why ? why : "?", (unsigned)(delayMs / 1000UL), (int)rssi);
+    // APN credentials may have changed in config — rewrite Contype/APN before attach.
+    if (_apnAppliedValid && !apnMatchesApplied_()) {
+        changeState(GSMState::GPRS_SETUP);
+    } else {
+        changeState(GSMState::GPRS_ATTACH);
+    }
 }
 
