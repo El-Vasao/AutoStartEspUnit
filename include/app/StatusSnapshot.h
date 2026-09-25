@@ -52,4 +52,8 @@ struct StatusSnapshot {
     };
     ErrEntry lastErr[ErrorHistory::CAPACITY]{};
     uint8_t lastErrCount{0};
+
+    /// Last AT+CSQ: rssi 0..31 (99 unknown), ber 0..7 (-1 if never seen).
+    int16_t csqRssi{0};
+    int16_t csqBer{-1};
 };

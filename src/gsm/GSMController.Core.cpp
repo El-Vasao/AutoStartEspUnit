@@ -179,9 +179,10 @@ void GSMController::changeState(GSMState newState) {
     ev(2, (uint16_t)newState); // enter state
 
     if (newState == GSMState::READY) {
-        // Successful bring-up: reset reattach backoff.
+        // Successful bring-up: reset reattach backoff + clear sticky GSM errors.
         _reattachBackoffStep = 0;
         _reattachCooldownUntilMs = 0;
+        clearGsmBringupErrors_();
         core.logHeapSnapshot("gsm_ready");
     }
     if (newState == GSMState::INIT) {
@@ -272,5 +273,24 @@ bool GSMController::gsmParseStoredIprBaud(uint32_t& baudOut) const {
     if (end == p || u == 0UL || u > 4000000UL) return false;
     baudOut = (uint32_t)u;
     return true;
+}
+
+void GSMController::clearGsmBringupErrors_() {
+    const ErrorCode cur = core.getErrorManager().get();
+    if (cur == ErrorCode::GSM_NO_RESPONSE || cur == ErrorCode::GSM_REG_FAIL ||
+        cur == ErrorCode::GSM_APN_FAIL) {
+        core.getErrorManager().clear();
+    }
+}
+
+ErrorCode GSMController::classifyBearerFail_() const {
+    // Antenna loss / out of coverage: deregistered or no usable RF — not an APN config problem.
+    if (_cregStat != 1 && _cregStat != 5) {
+        return ErrorCode::GSM_REG_FAIL;
+    }
+    if (_signal == 99 || _signal <= 1) {
+        return ErrorCode::GSM_REG_FAIL;
+    }
+    return ErrorCode::GSM_APN_FAIL;
 }
 

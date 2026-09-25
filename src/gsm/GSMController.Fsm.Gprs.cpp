@@ -22,7 +22,7 @@ void GSMController::handleGprsSetup() {
         resetAwait();
         if (_retryCount >= GSM::MAX_RETRIES) {
             changeState(GSMState::ERROR);
-            core.getErrorManager().set(ErrorCode::GSM_APN_FAIL);
+            core.getErrorManager().set(classifyBearerFail_());
             logger.log("[GSMController] APN setup failed\n");
             return;
         }
@@ -69,7 +69,7 @@ void GSMController::handleGprsSetup() {
         _retryCount++;
         if (_retryCount >= GSM::MAX_RETRIES) {
             changeState(GSMState::ERROR);
-            core.getErrorManager().set(ErrorCode::GSM_APN_FAIL);
+            core.getErrorManager().set(classifyBearerFail_());
             logger.log("[GSMController] APN setup failed\n");
             return;
         }
@@ -152,7 +152,7 @@ void GSMController::handleGprsAttach() {
         clearResponse();
         if (_retryCount >= GSM::MAX_RETRIES) {
             changeState(GSMState::ERROR);
-            core.getErrorManager().set(ErrorCode::GSM_APN_FAIL);
+            core.getErrorManager().set(classifyBearerFail_());
             logger.log("[GSMController] SAPBR open failed\n");
             return;
         }
@@ -178,7 +178,7 @@ void GSMController::handleGprsGetIp() {
         resetAwait();
         if (_retryCount >= GSM::MAX_RETRIES) {
             changeState(GSMState::ERROR);
-            core.getErrorManager().set(ErrorCode::GSM_APN_FAIL);
+            core.getErrorManager().set(classifyBearerFail_());
             logger.log("[GSMController] Failed to get IP\n");
             return;
         }
@@ -202,7 +202,7 @@ void GSMController::handleGprsGetIp() {
         _retryCount++;
         if (_retryCount >= GSM::MAX_RETRIES) {
             changeState(GSMState::ERROR);
-            core.getErrorManager().set(ErrorCode::GSM_APN_FAIL);
+            core.getErrorManager().set(classifyBearerFail_());
             logger.log("[GSMController] Failed to get IP\n");
             return;
         }

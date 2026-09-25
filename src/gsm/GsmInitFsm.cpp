@@ -648,9 +648,6 @@ void GSMController::handleInit() {
             clearResponse();
         }
         _retryCount = 0;
-        if (core.getErrorManager().get() == ErrorCode::GSM_NO_RESPONSE) {
-            core.getErrorManager().clear();
-        }
         {
             const char* t = "UNKNOWN";
             switch (_postResumeTarget) {

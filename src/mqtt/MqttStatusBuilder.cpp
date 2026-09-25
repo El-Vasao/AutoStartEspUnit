@@ -85,6 +85,19 @@ inline void printTempSensorObject(Print& p, const StatusSnapshot::TempSensor& ts
     p.print('}');
 }
 
+/// Emit `"csq":{"rssi":N,"ber":M}`.
+inline void printCsqObject(Print& p, const StatusSnapshot& s) {
+    p.print("\"csq\":{\"rssi\":");
+    p.print(static_cast<long>(s.csqRssi));
+    p.print(",\"ber\":");
+    p.print(static_cast<long>(s.csqBer));
+    p.print('}');
+}
+
+inline bool csqChanged(const StatusSnapshot& cur, const StatusSnapshot& prev) {
+    return cur.csqRssi != prev.csqRssi || cur.csqBer != prev.csqBer;
+}
+
 bool voltageChanged(const StatusSnapshot& cur, const StatusSnapshot& prev) {
     if (cur.voltageValid != prev.voltageValid) return true;
     if (!cur.voltageValid) return false;
@@ -153,6 +166,7 @@ bool mqttStatusHasSignificantChanges(const StatusSnapshot& cur, const StatusSnap
     if (anyTriggerChanged(cur, prev, cfg)) return true;
     if (lastErrChanged(cur, prev)) return true;
     if (cur.lastErrCount > 0) return true;
+    if (csqChanged(cur, prev)) return true;
     if (cur.timeSynced != prev.timeSynced) return true;
     if (cur.tzOffsetHours != prev.tzOffsetHours) return true;
     if (strcmp(cur.timeSource, prev.timeSource) != 0) return true;
@@ -201,6 +215,9 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
     comma(p, &c);
     p.print("\"engineRunning\":");
     p.print(s.engineRunning ? "true" : "false");
+
+    comma(p, &c);
+    printCsqObject(p, s);
 
     comma(p, &c);
     p.print("\"inputsById\":{");
@@ -352,6 +369,11 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
         comma(p, &c);
         p.print("\"engineRunning\":");
         p.print(cur.engineRunning ? "true" : "false");
+    }
+
+    if (csqChanged(cur, prev)) {
+        comma(p, &c);
+        printCsqObject(p, cur);
     }
 
     if (anyInputChanged(cur, prev)) {

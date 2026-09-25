@@ -117,8 +117,23 @@ retained `"offline"` / `"online"`.
 ### 4) StatusSnapshot (`{prefix}/status`)
 `emitMqttStatusJson` / delta. QoS 0. Маркер `full` true/false. Периодика / first после connect. `cmd=status` отвечает fat `/reply`, Tele не форсирует.
 
-Значимые изменения: `mode`, `engineRunning`, `last_err` (undelivered queue), relays/inputs, triggers, program fields; `voltage` / temp — ε из `JsonBytes::Mqtt`.
+Значимые изменения: `mode`, `engineRunning`, `csq`, `last_err` (undelivered queue), relays/inputs, triggers, program fields; `voltage` / temp — ε из `JsonBytes::Mqtt`.
 Delta всегда несёт `uptime` (liveness); блок `epoch`/`synced`/`tzOffsetHours`/`timeSource` — только при смене synced/tz/source (тик `epoch` сам по себе не включает time-поля).
+
+#### `csq`
+
+GSM signal from last `AT+CSQ` (polled on READY when AT bus idle, including while MQTT TCP is up).
+
+```json
+"csq":{"rssi":20,"ber":0}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `rssi` | Modem scale 0..31; `99` = unknown/not detectable |
+| `ber` | Bit error rate 0..7; `-1` if never received |
+
+Always present in `full`; in `delta` only when either field changes. Consumers may map dBm as `-113 + 2*rssi` for 0..31.
 
 #### `last_err` (breaking vs legacy `last_error` string)
 
@@ -136,6 +151,8 @@ One-shot undelivered error queue (newest first). Key omitted when empty.
 | `code` | `ErrorCode` as uint8 |
 | `msg` | Stable short string (`errorCodeToString`) |
 | `active` | Still current uncleared error |
+
+**GSM sticky codes:** `GSM_NO_RESPONSE` / `GSM_REG_FAIL` / `GSM_APN_FAIL` — `active` cleared on successful entry to READY (history kept for one-shot delivery). Bearer/SAPBR exhaustion sets `GSM_REG_FAIL` when deregistered or CSQ is 99/`<=1`, otherwise `GSM_APN_FAIL`.
 
 **Delivery:**
 

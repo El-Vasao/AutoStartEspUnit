@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <time.h>
 #include "common/Constants.h"
+#include "common/ErrorCodes.h"
 #include "gsm/GsmModemStack.h"
 #include "gsm/GsmInitPhase.h"
 #include "gsm/GsmInitFsm.h"
@@ -54,8 +55,11 @@ public:
     // Получить название оператора
     const char* getOperator() const { return _operator; }
 
-    // Получить уровень сигнала (0-31)
+    // Получить уровень сигнала (0-31, 99 = unknown)
     int16_t getSignalQuality() const { return _signal; }
+
+    // BER из последнего AT+CSQ (0..7), или -1 если ещё не было ответа
+    int16_t getSignalBer() const { return _signalBer; }
 
     // Текущая скорость UART, на которой работает модем (по мнению контроллера).
     uint32_t getBaud() const { return _baud; }
@@ -266,6 +270,11 @@ private:
 
     // Смена состояния
     void changeState(GSMState newState);
+
+    /// Clear sticky GSM bring-up errors (NO_RESPONSE / REG_FAIL / APN_FAIL) on READY.
+    void clearGsmBringupErrors_();
+    /// Prefer REG_FAIL when deregistered or no/weak CSQ; else APN_FAIL.
+    ErrorCode classifyBearerFail_() const;
 
     // Отправка AT-команды
     void sendCommand(const char* cmd);

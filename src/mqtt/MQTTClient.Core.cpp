@@ -15,6 +15,7 @@
 #include "common/Version.h"
 #include "core/Core.h"
 #include "core/TimeSyncManager.h"
+#include "gsm/GSMController.h"
 #include "io/SensorsController.h"
 #include "io/RelayController.h"
 #include "io/DigitalInputs.h"
@@ -127,6 +128,12 @@ void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
         s.epochUtc = s.timeSynced ? static_cast<uint32_t>(ts.epochUtc()) : 0;
         s.tzOffsetHours = ts.tzOffsetHours();
         strlcpy(s.timeSource, ts.lastSource(), sizeof(s.timeSource));
+    }
+
+    {
+        auto& gsm = core.getGSM();
+        s.csqRssi = gsm.getSignalQuality();
+        s.csqBer = gsm.getSignalBer();
     }
 
     ErrorSnapshotEntry undeliv[ErrorHistory::CAPACITY]{};
