@@ -1209,7 +1209,21 @@ button.trigger-delete:hover {
 /* ====================================================
    Логи
    ==================================================== */
-#logsDisplay {
+.log-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.log-toolbar {
+    flex-shrink: 0;
+    position: static;
+    margin-top: 0;
+}
+
+.log-display,
+#logsDisplay,
+#atLogsDisplay {
     background: #0a1020;
     color: var(--text-secondary);
     padding: 10px;
@@ -1220,6 +1234,7 @@ button.trigger-delete:hover {
     white-space: pre-wrap;
     word-wrap: break-word;
     line-height: 1.2;
+    margin: 0;
 }
 
 /* ====================================================

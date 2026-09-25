@@ -66,6 +66,8 @@ private:
     uint32_t _lastReconnectAttempt;
     bool _reconnectEnabled{true};
     uint8_t _connectFailStreak{0};
+    /// Latched while FSM is in/after Error until Connected edge clears it (avoids missing set when ensureTcp_ clears Error).
+    bool _sessionErrorRecorded{false};
     const AppPorts* _ports{nullptr};
     bool (*_deferMqttRx)(void*){nullptr};
     void* _deferMqttRxCtx{nullptr};
@@ -106,6 +108,7 @@ private:
     char _topicReply[TextBytes::Mqtt::TOPIC]{};
 
     void connect();
+    void noteSessionErrorIfNeeded_();
     static void joinTopic_(char* out, size_t outSz, const char* prefix, const char* suffix);
 
     static void onPublishThunk(void* ctx, const char* topic, const uint8_t* payload, uint16_t len, bool retained);

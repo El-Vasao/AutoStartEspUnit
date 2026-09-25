@@ -106,7 +106,9 @@ void AtSession::onLine(const char* line) {
     }
 
     if ((_active.expectMask & (uint8_t)Expect::Ok) != 0) {
-        if (strcmp(line, "OK") == 0) {
+        // SIM800 CIP* final replies are often "CLOSE OK" / "SHUT OK", not bare "OK".
+        if (strcmp(line, "OK") == 0 || strcmp(line, "CLOSE OK") == 0 ||
+            strcmp(line, "SHUT OK") == 0) {
             finish_(true, false, false);
             return;
         }

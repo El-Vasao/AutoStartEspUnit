@@ -262,6 +262,9 @@ void MQTTClient::loop() {
     b.onRxIncompleteCtx = _onRxIncompleteCtx;
     _fsm.tick(b);
 
+    // ensureTcp_ may clear Error→Idle in the same tick; record before we only see Idle next loop.
+    noteSessionErrorIfNeeded_();
+
     if (_fsm.isConnected()) {
         // Queue SUBSCRIBE once; confirmed only after SUBACK.
         if (!_subscribeQueued && _topicCmd[0]) {
@@ -277,11 +280,13 @@ void MQTTClient::loop() {
         if (!_mqttWasConnected) {
             _mqttWasConnected = true;
             _connectFailStreak = 0;
+            _sessionErrorRecorded = false;
             _lastStatusPublish = 0;
             _onlinePublishDue = _topicAvail[0] != '\0';
             _awaitFirstStatus = _topicStatus[0] != '\0';
             _firstStatusAfterMs = millis() + 1500u;
             _havePublishedBaseline = false;
+            // Clear sticky active; undelivered history remains for first full status last_err.
             if (core.getErrorManager().get() == ErrorCode::MQTT_CONNECT_FAIL) {
                 core.getErrorManager().clear();
             }
@@ -369,25 +374,29 @@ bool MQTTClient::needsDisconnectDrain() const {
     return _fsm.isDisconnectPending() || _fsm.hasOutbound();
 }
 
+void MQTTClient::noteSessionErrorIfNeeded_() {
+    if (_fsm.state() != MqttFsmClient::State::Error) return;
+    if (_sessionErrorRecorded) return;
+    _sessionErrorRecorded = true;
+    if (_connectFailStreak < 255) _connectFailStreak++;
+    const char* why = _fsm.lastErrorReason();
+    if (why && why[0]) {
+        logger.log("[MQTTClient] session error=%s streak=%u\n", why, (unsigned)_connectFailStreak);
+    }
+    // One ErrorManager entry per disconnect; delivered via last_err on first status after reconnect.
+    core.getErrorManager().set(ErrorCode::MQTT_CONNECT_FAIL);
+}
+
 void MQTTClient::connect() {
     // Do not request connect while CNTP (or CIPSEND) owns the stack — CIPSTART would race NTP.
     if (_ctrlPlaneBusy && _ctrlPlaneBusy(_ctrlPlaneBusyCtx)) {
         return;
     }
+    // Capture Error before requestConnect/ensureTcp_ clears it to Idle.
+    noteSessionErrorIfNeeded_();
     const auto& mqttCfg = config.getBase().mqtt;
-    // Count any Error (tcp_drop / keepalive / connack / SEND-path recover → Error) toward GSM reattach.
-    if (_fsm.state() == MqttFsmClient::State::Error) {
-        if (_connectFailStreak < 255) _connectFailStreak++;
-        const char* why = _fsm.lastErrorReason();
-        if (why && why[0]) {
-            logger.log("[MQTTClient] connect after fail=%s streak=%u\n", why, (unsigned)_connectFailStreak);
-        }
-        // Sticky diagnostic: first fail in a streak surfaces in SSE/MQTT lastError.
-        if (_connectFailStreak == 1) {
-            core.getErrorManager().set(ErrorCode::MQTT_CONNECT_FAIL);
-        }
-    }
-    if (_fsm.state() == MqttFsmClient::State::Idle) {
+    if (_fsm.state() == MqttFsmClient::State::Idle ||
+        _fsm.state() == MqttFsmClient::State::Error) {
         logger.log("[MQTTClient] connect() broker=%s:%u\n", mqttCfg.broker, (unsigned)mqttCfg.port);
     }
     _fsm.requestConnect();

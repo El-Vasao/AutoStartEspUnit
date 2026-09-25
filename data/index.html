@@ -1209,14 +1209,33 @@
 
                         <div class="card">
                             <h3>Логи системы</h3>
-                            <div class="button-group">
-                              <button class="btn" type="button" @click="$store.uiLogs.copy()">Скопировать лог</button>
+                            <div class="log-panel">
+                              <div class="log-toolbar button-group">
+                                <button class="btn" type="button" @click="$store.uiLogs.copy()">Скопировать</button>
+                                <button class="btn" type="button" @click="$store.uiLogs.clear()">Очистить</button>
+                              </div>
+                              <pre
+                                  id="logsDisplay"
+                                  class="log-display"
+                                  x-ref="logsContainer"
+                                  x-text="$store.uiLogs.text"
+                              ></pre>
                             </div>
-                            <pre
-                                id="logsDisplay"
-                                x-ref="logsContainer"
-                                x-text="$store.uiLogs.text"
-                            ></pre>
+                        </div>
+
+                        <div class="card">
+                            <h3>Лог модема</h3>
+                            <div class="log-panel">
+                              <div class="log-toolbar button-group">
+                                <button class="btn" type="button" @click="$store.uiAtLogs.copy()">Скопировать</button>
+                                <button class="btn" type="button" @click="$store.uiAtLogs.clear()">Очистить</button>
+                              </div>
+                              <pre
+                                  id="atLogsDisplay"
+                                  class="log-display"
+                                  x-text="$store.uiAtLogs.text"
+                              ></pre>
+                            </div>
                         </div>
             </div>
         </main>

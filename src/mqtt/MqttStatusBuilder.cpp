@@ -314,8 +314,8 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
     p.print("\"uptime\":");
     p.print(static_cast<unsigned long>(cur.uptimeSec));
 
-    if (cur.epochUtc != prev.epochUtc || cur.timeSynced != prev.timeSynced ||
-        cur.tzOffsetHours != prev.tzOffsetHours || strcmp(cur.timeSource, prev.timeSource) != 0) {
+    if (cur.timeSynced != prev.timeSynced || cur.tzOffsetHours != prev.tzOffsetHours ||
+        strcmp(cur.timeSource, prev.timeSource) != 0) {
         comma(p, &c);
         p.print("\"epoch\":");
         p.print(static_cast<unsigned long>(cur.epochUtc));

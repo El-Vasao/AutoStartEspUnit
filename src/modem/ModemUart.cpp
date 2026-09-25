@@ -2,15 +2,27 @@
 
 #include "common/Logger.h"
 
-namespace {
+#include <string.h>
 
-void emitFramedLine_(ModemUart::LineHandler handler, void* ctx, char* line) {
+void ModemUart::emitFramedLine_(char* line) {
     if (!line || !line[0]) return;
+    // Whitespace-only modem noise (often before SEND OK) — skip log and handler.
+    bool onlyWs = true;
+    for (const char* p = line; *p; ++p) {
+        if (*p != ' ' && *p != '\t') {
+            onlyWs = false;
+            break;
+        }
+    }
+    if (onlyWs) return;
+    // Skip modem echo of the last TX command (ATE1); ATE0 is preferred, this is safety.
+    if (_lastTx[0] && strcmp(line, _lastTx) == 0) {
+        if (_handler) _handler(_handlerCtx, line);
+        return;
+    }
     logger.log("[AT] << %s\n", line);
-    if (handler) handler(ctx, line);
+    if (_handler) _handler(_handlerCtx, line);
 }
-
-} // namespace
 
 void ModemUart::flushInput() {
     uint16_t n = 0;
@@ -33,6 +45,7 @@ void ModemUart::writeLine(const char* line) {
     if (!line) line = "";
     _serial.print(line);
     _serial.print("\r\n");
+    strlcpy(_lastTx, line, sizeof(_lastTx));
     // Text control-plane only; CIPSEND body uses writeBytes (not logged).
     logger.log("[AT] >> %s\n", line);
     // No Serial.flush(): blocks long enough to trip WDT under AT load.
@@ -75,20 +88,25 @@ void ModemUart::pollRx() {
         if (c == '\n') {
             if (_lineLen == 0) continue;
             _lineBuf[_lineLen] = '\0';
-            emitFramedLine_(_handler, _handlerCtx, _lineBuf);
+            emitFramedLine_(_lineBuf);
             _lineLen = 0;
             continue;
         }
 
-        // CIPSEND prompt arrives without CRLF.
+        // CIPSEND prompt arrives without CRLF — log clearly and do not buffer (avoids
+        // attaching TX-echo / binary to '>' and emitting garbage "lines").
         if (c == '>' && _lineLen == 0) {
-            logger.log("[AT] << >\n");
+            logger.log("[AT] << CIPSEND prompt\n");
+            if ((++n & 0x3F) == 0) {
+                yield();
+            }
+            continue;
         }
 
         if (_lineLen + 1 >= LINE_BUF_SIZE) {
             // Truncate the line to keep framing intact.
             _lineBuf[_lineLen] = '\0';
-            emitFramedLine_(_handler, _handlerCtx, _lineBuf);
+            emitFramedLine_(_lineBuf);
             _lineLen = 0;
         }
         _lineBuf[_lineLen++] = c;

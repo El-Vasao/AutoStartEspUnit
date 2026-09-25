@@ -1,17 +1,18 @@
-// logs store (always keep text in sync; visible only gates autoscroll)
+// System + modem log consoles (always keep text in sync; visible only gates autoscroll)
 (function () {
   const APP = (window.APP = window.APP || {});
   APP.stores = APP.stores || {};
 
-  APP.stores.registerUiLogConsoleStore = function registerUiLogConsoleStore(Alpine) {
-    Alpine.store('uiLogs', {
+  function createLogConsole(elementId) {
+    return {
       entries: [],
       text: '',
       visible: false,
       _el: null,
+      _elementId: elementId,
       _getEl() {
         if (this._el && document.body.contains(this._el)) return this._el;
-        this._el = document.getElementById('logsDisplay');
+        this._el = document.getElementById(this._elementId);
         return this._el;
       },
       flushToView() {
@@ -97,6 +98,11 @@
           toast?.show?.('Не удалось скопировать', 'error', 3500);
         }
       }
-    });
+    };
+  }
+
+  APP.stores.registerUiLogConsoleStore = function registerUiLogConsoleStore(Alpine) {
+    Alpine.store('uiLogs', createLogConsole('logsDisplay'));
+    Alpine.store('uiAtLogs', createLogConsole('atLogsDisplay'));
   };
 })();

@@ -25,10 +25,10 @@ void GSMController::ev(uint8_t type, uint16_t aux) {
 void GSMController::updateSignalQuality() {
     // Asynchronous poll: parse +CSQ: <rssi>,<ber> from incoming lines.
     // Avoid blocking modem polls in the READY hot-path; +CSQ is parsed from URC lines.
-    sendAt("AT+CSQ", "CSQ", AwaitKind::NONE, 0);
+    sendAt("AT+CSQ", "CSQ", AwaitKind::NONE, GSM::AT_OK_TIMEOUT_MS);
 }
 
 void GSMController::readOperator() {
     // Ответ парсится в `handleUrc()` по строке `+COPS:` (без TinyGSM / без heap-String).
-    sendAt("AT+COPS?", "COPS", AwaitKind::NONE, 0);
+    sendAt("AT+COPS?", "COPS", AwaitKind::NONE, GSM::AT_OK_TIMEOUT_MS);
 }

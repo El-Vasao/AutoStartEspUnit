@@ -139,6 +139,10 @@ private:
     void pushRx_(uint8_t b, bool fromIpd = false);
     /// Drop non-IPD bytes while CIPSEND owns the UART.
     bool discardingTcpPayload_(bool fromIpd) const;
+    /// CRLF control-line filter / MQTT RX (no +IPD matcher). Used after match abort replay.
+    void feedRawByte_(char c);
+    /// Abort partial +IPD match: replay consumed prefix into feedRawByte_, then current byte.
+    void abortIpdMatch_(IpState matchedUntil, char c);
     void clearRx_();
     bool startConnect_();
     bool enqueueIpConfig_();

@@ -262,7 +262,14 @@
       }
       ctx.source.addEventListener('log', e => {
         ctx.lastEventAt = Date.now();
-        try { Alpine.store('uiLogs').add(e.data); } catch (err) {}
+        try {
+          const line = String(e.data || '');
+          if (line.indexOf('] [AT] ') !== -1) {
+            Alpine.store('uiAtLogs').add(line);
+          } else {
+            Alpine.store('uiLogs').add(line);
+          }
+        } catch (err) {}
         setState('connected');
       });
 

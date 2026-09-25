@@ -118,6 +118,7 @@ retained `"offline"` / `"online"`.
 `emitMqttStatusJson` / delta. QoS 0. Маркер `full` true/false. Периодика / first после connect. `cmd=status` отвечает fat `/reply`, Tele не форсирует.
 
 Значимые изменения: `mode`, `engineRunning`, `last_err` (undelivered queue), relays/inputs, triggers, program fields; `voltage` / temp — ε из `JsonBytes::Mqtt`.
+Delta всегда несёт `uptime` (liveness); блок `epoch`/`synced`/`tzOffsetHours`/`timeSource` — только при смене synced/tz/source (тик `epoch` сам по себе не включает time-поля).
 
 #### `last_err` (breaking vs legacy `last_error` string)
 

@@ -208,8 +208,8 @@ void GSMController::handleInit() {
                 _verifiedModemContactSinceStop = true;
                 _baudSearchActive = false;
                 _retryCount = 0;
-#if defined(GSM_MODEM_ECHO) && (GSM_MODEM_ECHO != 0)
                 _lastCommandTime = 0;
+#if defined(GSM_MODEM_ECHO) && (GSM_MODEM_ECHO != 0)
                 _initPhase = GsmInitPhase::EarlyAteSend;
 #else
                 _initPhase = GsmInitPhase::DIprQ;
@@ -342,8 +342,8 @@ void GSMController::handleInit() {
             _verifiedModemContactSinceStop = true;
             _retryCount = 0;
             _hypNextAttemptMs = 0;
-#if defined(GSM_MODEM_ECHO) && (GSM_MODEM_ECHO != 0)
             _lastCommandTime = 0;
+#if defined(GSM_MODEM_ECHO) && (GSM_MODEM_ECHO != 0)
             _initPhase = GsmInitPhase::EarlyAteSend;
 #else
             _initPhase = GsmInitPhase::DIprQ;

@@ -150,11 +150,13 @@
         this.activeTab = next;
         try {
           const logs = Alpine.store('uiLogs');
-          if (!logs) return;
+          const atLogs = Alpine.store('uiAtLogs');
           if (next === 'system') {
-            logs.setVisible(true);
+            logs?.setVisible?.(true);
+            atLogs?.setVisible?.(true);
           } else if (prev === 'system') {
-            logs.setVisible(false);
+            logs?.setVisible?.(false);
+            atLogs?.setVisible?.(false);
           }
         } catch (e) {}
       },

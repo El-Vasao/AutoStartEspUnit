@@ -1,4 +1,5 @@
 #include "modem/Sim800TcpTransport.h"
+#include <stdio.h>
 #include <string.h>
 #include "common/Constants.h"
 #include "common/Logger.h"
@@ -28,12 +29,20 @@ static bool isControlLine_(const char* s, size_t len) {
     if (len >= 4 && memcmp(s, "RDY", 3) == 0) return true;          // "RDY"
     if (len >= 7 && memcmp(s, "CLOSED", 6) == 0) return true;       // "CLOSED"
     if (len >= 10 && memcmp(s, "CONNECT OK", 10) == 0) return true; // "CONNECT OK"
+    if (len >= 12 && memcmp(s, "CONNECT FAIL", 12) == 0) return true;
+    if (len >= 15 && memcmp(s, "ALREADY CONNECT", 15) == 0) return true;
+    if (len >= 8 && memcmp(s, "CLOSE OK", 8) == 0) return true;
+    if (len >= 7 && memcmp(s, "SHUT OK", 7) == 0) return true;
     if (len >= 7 && memcmp(s, "SEND OK", 7) == 0) return true;      // "SEND OK"
     if (len >= 9 && memcmp(s, "SEND FAIL", 9) == 0) return true;    // "SEND FAIL"
     if (len >= 1 && s[0] == '>') return true;                       // prompt line (">")
 
-    // URCs typically start with '+'
+    // URCs typically start with '+'; also stripped forms if +IPD matcher ate '+'
     if (s[0] == '+') return true;
+    if (len >= 4 && memcmp(s, "CSQ:", 4) == 0) return true;
+    if (len >= 5 && memcmp(s, "CREG:", 5) == 0) return true;
+    if (len >= 5 && memcmp(s, "COPS:", 5) == 0) return true;
+    if (len >= 4 && memcmp(s, "IPD,", 4) == 0) return true;
 
     return false;
 }
@@ -474,65 +483,34 @@ void Sim800TcpTransport::onLine(const char* line) {
     }
 }
 
-void Sim800TcpTransport::onByte(char c) {
-    // +IPD state machine (CIPHEAD=1). While !_Idle, framing owns the byte — no raw sniffer.
-    switch (_ipState) {
-        case IpState::Idle:
-            if (c == '+') _ipState = IpState::MatchI;
-            break;
-        case IpState::MatchI:
-            _ipState = (c == 'I') ? IpState::MatchP : IpState::Idle;
-            break;
-        case IpState::MatchP:
-            _ipState = (c == 'P') ? IpState::MatchD : IpState::Idle;
-            break;
-        case IpState::MatchD:
-            _ipState = (c == 'D') ? IpState::MatchComma : IpState::Idle;
-            break;
-        case IpState::MatchComma:
-            if (c == ',') {
-                _ipLen = 0;
-                _ipRead = 0;
-                _ipState = IpState::ReadLen;
-            } else {
-                _ipState = IpState::Idle;
-            }
-            break;
-        case IpState::ReadLen:
-            // Some firmwares may insert spaces/CRLF around length, be tolerant.
-            if (c == ' ' || c == '\r' || c == '\n' || c == '\t') {
-                break;
-            }
-            if (c >= '0' && c <= '9') {
-                const uint32_t v = (uint32_t)_ipLen * 10UL + (uint32_t)(c - '0');
-                _ipLen = (v > 65535UL) ? 65535 : (uint16_t)v;
-            } else if (c == ':') {
-                if (kTcpWantVerbose) {
-                    logger.log("[Sim800Tcp] +IPD len=%u\n", (unsigned)_ipLen);
-                }
-                _ipRead = 0;
-                _at.uart().setDataMode(true);
-                _ipState = IpState::ReadData;
-            } else {
-                _ipState = IpState::Idle;
-            }
-            break;
-        case IpState::ReadData:
-            pushRx_((uint8_t)c, true);
-            if (++_ipRead >= _ipLen) {
-                _at.uart().setDataMode(false);
-                _ipState = IpState::Idle;
-                _rawLineLen = 0; // drop any accidental "+IPD,n:" residue from match path
-            }
-            // Always return: last payload byte must not fall through to the raw sniffer.
-            return;
-        default:
-            _ipState = IpState::Idle;
-            break;
+void Sim800TcpTransport::abortIpdMatch_(IpState matchedUntil, char c) {
+    // Replay bytes already consumed by the +IPD matcher so URCs like +CSQ keep their '+'.
+    const char* prefix = "";
+    switch (matchedUntil) {
+    case IpState::MatchI: prefix = "+"; break;
+    case IpState::MatchP: prefix = "+I"; break;
+    case IpState::MatchD: prefix = "+IP"; break;
+    case IpState::MatchComma: prefix = "+IPD"; break;
+    case IpState::ReadLen: prefix = "+IPD,"; break;
+    default: break;
     }
+    _ipState = IpState::Idle;
+    for (const char* p = prefix; *p; ++p) {
+        feedRawByte_(*p);
+    }
+    if (matchedUntil == IpState::ReadLen && _ipLen > 0) {
+        char digits[6];
+        snprintf(digits, sizeof(digits), "%u", (unsigned)_ipLen);
+        for (char* p = digits; *p; ++p) {
+            feedRawByte_(*p);
+        }
+        _ipLen = 0;
+        _ipRead = 0;
+    }
+    feedRawByte_(c);
+}
 
-    if (_ipState != IpState::Idle) return;
-
+void Sim800TcpTransport::feedRawByte_(char c) {
     // Raw path (fallback / modem text): CRLF control-line filter into MQTT RX.
     // Do not treat 0x20 as text start — MQTT CONNACK begins with that byte.
     const uint8_t ub = (uint8_t)c;
@@ -583,14 +561,15 @@ void Sim800TcpTransport::onByte(char c) {
         }
         const bool maybeModemTextStart =
             (ub == '+') || // URCs like +CREG, +CSQ, +IPD...
-            (ub == 'A') || // AT echoes
+            (ub == 'A') || // AT echoes / ALREADY CONNECT
             (ub == 'O') || // OK
             (ub == 'E') || // ERROR
-            (ub == 'C') || // CLOSED / CONNECT / Call Ready...
-            (ub == 'S') || // SEND OK/FAIL
+            (ub == 'C') || // CLOSED / CONNECT / CLOSE OK / CSQ (stripped)
+            (ub == 'S') || // SEND OK/FAIL / SHUT OK
             (ub == 'R') || // RDY
             (ub == 'N') || // NO CARRIER (rare)
-            (ub == 'F');   // FAIL fragments
+            (ub == 'F') || // FAIL fragments
+            (ub == 'I');   // IPD, (stripped +)
 
         if (!maybeModemTextStart) {
             pushRx_(ub);
@@ -616,6 +595,83 @@ void Sim800TcpTransport::onByte(char c) {
         for (uint8_t i = 0; i < _rawLineLen; i++) pushRx_((uint8_t)_rawLineBuf[i]);
     }
     _rawLineLen = 0;
+}
+
+void Sim800TcpTransport::onByte(char c) {
+    // +IPD state machine (CIPHEAD=1). While matching/reading, framing owns the byte.
+    switch (_ipState) {
+        case IpState::Idle:
+            if (c == '+') {
+                _ipState = IpState::MatchI;
+                return;
+            }
+            break;
+        case IpState::MatchI:
+            if (c == 'I') {
+                _ipState = IpState::MatchP;
+                return;
+            }
+            abortIpdMatch_(IpState::MatchI, c);
+            return;
+        case IpState::MatchP:
+            if (c == 'P') {
+                _ipState = IpState::MatchD;
+                return;
+            }
+            abortIpdMatch_(IpState::MatchP, c);
+            return;
+        case IpState::MatchD:
+            if (c == 'D') {
+                _ipState = IpState::MatchComma;
+                return;
+            }
+            abortIpdMatch_(IpState::MatchD, c);
+            return;
+        case IpState::MatchComma:
+            if (c == ',') {
+                _ipLen = 0;
+                _ipRead = 0;
+                _ipState = IpState::ReadLen;
+                return;
+            }
+            abortIpdMatch_(IpState::MatchComma, c);
+            return;
+        case IpState::ReadLen:
+            // Some firmwares may insert spaces/CRLF around length, be tolerant.
+            if (c == ' ' || c == '\r' || c == '\n' || c == '\t') {
+                return;
+            }
+            if (c >= '0' && c <= '9') {
+                const uint32_t v = (uint32_t)_ipLen * 10UL + (uint32_t)(c - '0');
+                _ipLen = (v > 65535UL) ? 65535 : (uint16_t)v;
+                return;
+            }
+            if (c == ':') {
+                if (kTcpWantVerbose) {
+                    logger.log("[Sim800Tcp] +IPD len=%u\n", (unsigned)_ipLen);
+                }
+                _ipRead = 0;
+                _at.uart().setDataMode(true);
+                _ipState = IpState::ReadData;
+                return;
+            }
+            abortIpdMatch_(IpState::ReadLen, c);
+            return;
+        case IpState::ReadData:
+            pushRx_((uint8_t)c, true);
+            if (++_ipRead >= _ipLen) {
+                _at.uart().setDataMode(false);
+                _ipState = IpState::Idle;
+                _rawLineLen = 0; // drop any accidental "+IPD,n:" residue from match path
+            }
+            // Always return: last payload byte must not fall through to the raw sniffer.
+            return;
+        default:
+            _ipState = IpState::Idle;
+            break;
+    }
+
+    feedRawByte_(c);
 }
 
 void Sim800TcpTransport::pushRx_(uint8_t b, bool fromIpd) {

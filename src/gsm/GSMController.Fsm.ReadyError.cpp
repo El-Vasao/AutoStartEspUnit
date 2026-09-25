@@ -94,10 +94,10 @@ void GSMController::handleReady() {
     }
 
     // Diagnostics should be sparse: do not constantly poke the modem.
-    // Never enqueue CSQ/COPS while TCP owns the AT bus (CIPSEND / CIPSTART / recover).
-    // Prefer in-flight NTP over sparse CSQ/COPS.
+    // Never enqueue CSQ/COPS while TCP owns the AT bus or a socket is up/connecting
+    // (URCs during MQTT can race +IPD framing). Prefer in-flight NTP over sparse CSQ/COPS.
     const uint32_t now = millis();
-    if (!_stack.tcp.isBusBusy()) {
+    if (!_stack.tcp.isBusBusy() && !tcpSocketActive()) {
         if (_timeStep != TimeStep::Idle) {
             serviceTimeSync(now);
             return;

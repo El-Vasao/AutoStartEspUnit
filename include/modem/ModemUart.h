@@ -49,5 +49,11 @@ private:
     char _lineBuf[LINE_BUF_SIZE]{};
     size_t _lineLen{0};
     bool _dataMode{false};
+
+    /// Last writeLine text (no CRLF) for echo de-dupe if modem echo is on.
+    static constexpr size_t LAST_TX_SIZE = 128;
+    char _lastTx[LAST_TX_SIZE]{};
+
+    void emitFramedLine_(char* line);
 };
 
