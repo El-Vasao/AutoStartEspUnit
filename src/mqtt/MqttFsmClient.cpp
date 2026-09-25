@@ -255,9 +255,11 @@ void MqttFsmClient::tick(const Budgets& b) {
         doWrite();
         doRead();
 
-        // MQTT handshake timeout is measured from first entry into MqttConnecting (or from CONNECT enqueue).
+        // Handshake clock may be set with millis() after `now` was snapshotted this tick —
+        // guard against uint32 underflow (instant false mqtt_connack_timeout).
         const uint32_t hs0 = (_mqttHandshakeStartMs != 0) ? _mqttHandshakeStartMs : _tcpConnectStartMs;
-        if (hs0 != 0 && (now - hs0) > kMqttConnectTimeoutMs) {
+        const uint32_t nowHs = millis();
+        if (hs0 != 0 && nowHs >= hs0 && (nowHs - hs0) > kMqttConnectTimeoutMs) {
             setError_("mqtt_connack_timeout");
         }
         return;

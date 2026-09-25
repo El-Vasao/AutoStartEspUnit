@@ -50,7 +50,7 @@
 ### 3) SIM800 TCP (URC-first)
 
 - Завершение connect/close/send — по URC: точный `CLOSED`, `CONNECT OK` / `CONNECT FAIL`, `SEND OK` / `SEND FAIL`. Голый `ERROR` **не** рвёт TCP (его обрабатывает `AtSession`; иначе GSM AT на том же UART ломал бы сокет).
-- **Send-epoch:** с enqueue `CIPSEND` до `SEND OK`/`SEND FAIL`/watchdog держатся `_sendInProgress` + `_modemTxLocked` (даже когда `AtSession` уже Idle после `>`). `CIPSTART` и GSM diag (`CSQ`/`COPS`) запрещены, пока `isTcpEpochBusy()` / сокет up. MQTT Ctrl/`last_err` confirm смотрят `tcpEpochBusy()` (не любой CSQ AT). Полный `isBusBusy()` (= epoch ∨ `AtSession::isBusy`) — для reattach/drain.
+- **Send-epoch:** с enqueue `CIPSEND` до `SEND OK`/`SEND FAIL`/watchdog держатся `_sendInProgress` + `_modemTxLocked` (даже когда `AtSession` уже Idle после `>`). `CIPSTART` и GSM diag (`CSQ`/`COPS`) запрещены, пока `isTcpEpochBusy()` / сокет up. MQTT Ctrl/`last_err` confirm смотрят `tcpEpochBusy()` (не любой CSQ AT). Полный `isBusBusy()` (= epoch ∨ `AtSession::isBusy`) — для reattach/drain. `stop()` всегда зовёт `endSendEpoch_()` — иначе mid-CIPSEND abort оставлял `_modemTxLocked` и блокировал reconnect.
 - Перед **первым** `CIPSTART` после `Sim800TcpTransport::reset()` — один `AT+CIPSHUT` (тёплый модем после ребута ESP). Cooldown `CONNECT_RETRY_COOLDOWN_MS` между попытками.
 - `Client::connect` — **неблокирующий** kick `CIPSTART` (без wall-clock wait); иначе SoftAP/IWDT.
 - Watchdogs: connect (`CONNECT_WATCHDOG_MS`) сбрасывает залипший `_connecting`; send (`SEND_WATCHDOG_MS`) после `CIPSEND`/`>` без `SEND OK` — end send-epoch + CIPSHUT recover.

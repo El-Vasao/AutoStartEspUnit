@@ -219,7 +219,8 @@ void Sim800TcpTransport::stop(const char* reason) {
     const bool wasConnectedOrConnecting = (_connected || _connecting);
     _connected = false;
     _connecting = false;
-    clearTx_();
+    // Abort mid-CIPSEND: clear send-epoch so tcpEpochBusy cannot block MQTT reconnect forever.
+    endSendEpoch_();
     _promptLeak = 0;
     // Cooldown so the next MQTT tick does not CIPSTART-storm.
     _lastConnectAttemptMs = nowMs_();
