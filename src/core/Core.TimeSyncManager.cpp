@@ -3,6 +3,7 @@
 
 #include "config/Config.h"
 #include "core/Core.h"
+#include "core/ErrorManager.h"
 #include "gsm/GSMController.h"
 #include "common/ErrorCodes.h"
 #include "common/Utils.h"
