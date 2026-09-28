@@ -337,6 +337,10 @@ namespace JsonBytes {
         constexpr float STATUS_VOLTAGE_EPS = 0.05f;
         /// Temperature change below this does not count as significant / does not enter a delta.
         constexpr float STATUS_TEMP_EPS = 0.1f;
+        /// freeHeap change below this does not count as significant / does not enter a delta.
+        constexpr uint32_t STATUS_HEAP_EPS = 2048;
+        /// timerRemaining (sec) change below this does not count as significant (unless running flips).
+        constexpr uint32_t STATUS_TIMER_EPS_SEC = 1;
     }
 
     namespace Programs {

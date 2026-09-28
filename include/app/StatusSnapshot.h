@@ -33,9 +33,12 @@ struct StatusSnapshot {
     bool programRunning{false};
     uint8_t currentProgramId{0};
     uint8_t lastProgramId{0};
+    uint32_t timerRemainingSec{0};
 
     bool inputTriggerRuntime[Limits::MAX_TRIGGERS]{};
     bool tempTriggerRuntime[Limits::MAX_TRIGGERS]{};
+    bool thermostatRuntime{false};
+    bool batterySaverRuntime{false};
 
     bool timeSynced{false};
     bool timeStale{false};
@@ -43,7 +46,9 @@ struct StatusSnapshot {
     int16_t tzOffsetHours{0};
     char timeSource[12]{0};
 
-    /// Undelivered MQTT error one-shot queue (newest first). Empty → omit `last_err` on wire.
+    uint32_t freeHeap{0};
+
+    /// Undelivered MQTT error one-shot queue (newest first). Empty → omit `diag.last_err` on wire.
     struct ErrEntry {
         uint8_t code{0};
         bool active{false};

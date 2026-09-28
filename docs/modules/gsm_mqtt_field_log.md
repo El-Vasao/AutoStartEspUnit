@@ -6,7 +6,7 @@ Firmware cannot substitute this run — fill on device after flash.
 | # | Scenario | Pass? | Date | Notes / log snippets |
 |---|----------|-------|------|----------------------|
 | 4 | Leave READY / reattach handoff | ☐ | | Expect: `[Sim800Tcp] stop` / CIPCLOSE before SAPBR; `[Cellular] GSM left READY — draining MQTT`; backoff grows on repeat fails; clears after stable Connected |
-| 5 | `last_err` delivery | ☐ | | Expect: status carries `last_err` after disconnect; mid-SEND TCP drop → `last_err` again after reconnect (not eaten by early markDelivered) |
+| 5 | `diag.last_err` delivery | ☐ | | Expect: status carries `diag.last_err` after disconnect; mid-SEND TCP drop → `last_err` again after reconnect (not eaten by early markDelivered) |
 | 6 | cmd ack gate | ☐ | | Ctrl busy: no execute without 202 (`cmd not queued`); live session: `run` → 202 then 200/500 |
 | 7 | Baud search ceiling | ☐ | | Wrong baud / dead modem: after `BAUD_SEARCH_MAX_PASSES` → ERROR + `GSM_NO_RESPONSE`, not infinite search |
 | 8 | CALL_OWNER | ☐ | | Set `owner_phone`; run program with CALL_OWNER. Expect: `[Cellular] draining MQTT for voice/SMS`; `ATD…;`; hangup; MQTT reconnects after epoch |

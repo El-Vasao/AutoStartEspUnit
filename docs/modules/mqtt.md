@@ -69,7 +69,7 @@ MQTT-публикация статуса и подписка на команды
 
 ### Доставка
 - LWT `/avail` `"offline"` retained Will QoS1; после connect — `"online"` **только после SUBACK** (пока `/cmd` не подтверждён — `avail` не online; SUBSCRIBE ретраится по timeout).
-- `/status` QoS0, период `publish_interval_sec` (если Tele-idle); full status при активном SoftAP UI предпочитает delta (кроме first/`last_err`).
+- `/status` QoS0, период `publish_interval_sec` (если Tele-idle); первый Tele после connect — full, далее delta или skip по significant changes.
 - `/cmd` и `/reply` QoS0.
 
 ### 1) Command (`{prefix}/cmd`)
@@ -120,31 +120,98 @@ MQTT-публикация статуса и подписка на команды
 retained `"offline"` / `"online"`.
 
 ### 4) StatusSnapshot (`{prefix}/status`)
-`emitMqttStatusJson` / delta. QoS 0. Маркер `full` true/false. Периодика / first после connect. `cmd=status` отвечает fat `/reply`, Tele не форсирует.
 
-Значимые изменения: `mode`, `engineRunning`, `csq`, `last_err` (undelivered queue), relays/inputs, triggers, program fields; `voltage` / temp — ε из `JsonBytes::Mqtt`.
-Delta всегда несёт `uptime` (liveness); блок `epoch`/`synced`/`tzOffsetHours`/`timeSource` — только при смене synced/tz/source (тик `epoch` сам по себе не включает time-поля).
+`emitMqttStatusJson` / `emitMqttStatusDeltaJson`. QoS 0, не retained. Wire всегда **компактный** JSON (без pretty-print). Лимит тела `JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES` (900).
 
-#### `csq`
+**Каналы:** Tele периодический; `cmd=status` → fat `/reply` с `"status":{…}` всегда **full** (Tele не форсируется). Первый Tele после connect — full; далее delta или skip.
 
-GSM signal from last `AT+CSQ` (polled on READY when AT bus idle and TCP socket not active).
+**Full / delta / skip:** `forceFull` или нет baseline → full; иначе undelivered `diag.last_err` → TX; иначе significant → delta; иначе skip. Тик `uptime` / `time.epoch` сами по себе skip не отменяют.
+
+**Вложенная схема (breaking vs legacy flat):** корень `full`, `uptime`, `mode`; объекты `time`, `hw`, `radio`, `program`, `runtime`, `diag`.
+
+#### Full (`"full":true`)
+
+Все объекты присутствуют. `program.current` всегда есть (`null` если не running). `diag.last_err` опускается, если очередь пуста.
 
 ```json
-"csq":{"rssi":20,"ber":0}
+{
+  "full": true,
+  "uptime": 3600,
+  "mode": "AUTO",
+  "time": {
+    "epoch": 1710000000,
+    "synced": true,
+    "stale": false,
+    "tzOffsetHours": 3,
+    "timeSource": "NTP"
+  },
+  "hw": {
+    "voltage": 12.4,
+    "engineRunning": false,
+    "inputsById": {"1": false, "2": true},
+    "relaysById": {"1": false, "2": false},
+    "tempSensorsById": {
+      "10": {"valid": true, "lastMs": 1234, "t": 21.5}
+    }
+  },
+  "radio": {"csq": {"rssi": 20, "ber": 0}},
+  "program": {
+    "running": false,
+    "current": null,
+    "last": 3,
+    "timerRemaining": 0
+  },
+  "runtime": {
+    "thermostat": false,
+    "batterySaver": true,
+    "inputTriggersById": {"1": false},
+    "tempTriggersById": {"2": true}
+  },
+  "diag": {
+    "freeHeap": 45000,
+    "last_err": [
+      {"code": 21, "msg": "Panic reset", "active": true}
+    ]
+  }
+}
 ```
 
-| Field | Meaning |
-|-------|---------|
-| `rssi` | Modem scale 0..31; `99` = unknown/not detectable |
-| `ber` | Bit error rate 0..7; `-1` if never received |
+| Объект / поле | Смысл |
+|---------------|--------|
+| `time.stale` | время старше ~48 h (даже при `synced`) |
+| `hw.tempSensorsById` | только смапленные id≠0; `t` null если !valid |
+| `radio.csq.rssi` | 0..31; `99` unknown |
+| `radio.csq.ber` | 0..7; `-1` never seen |
+| `program.timerRemaining` | секунды |
+| `diag.freeHeap` | байты |
+| `diag.last_err` | one-shot undelivered (newest first); omit if empty |
 
-Always present in `full`; in `delta` only when either field changes. Consumers may map dBm as `-113 + 2*rssi` for 0..31.
+#### Delta (`"full":false`)
 
-SoftAP SSE `gsm` event mirrors `gsmState`, `csq`, and `mqttConnected` for local debug (same values as MQTT status / session).
+Всегда: `full`, `uptime`. Остальное — partial deep-merge:
 
-#### `last_err` (breaking vs legacy `last_error` string)
+- `mode` — если сменился
+- `time` — **весь** объект при смене `synced`/`stale`/`tzOffsetHours`/`timeSource` (не один тик `epoch`)
+- `hw` — partial: voltage (ε 0.05), engine, partial maps inputs/relays/temps (temp: id/valid/t ε 0.1; не lastMs alone; id→0 не шлём)
+- `radio` — если csq изменился
+- `program` — partial: `running`, `current` (id или `null` при стопе), `last`, `timerRemaining` (`|Δ|≥1` с или смена running)
+- `runtime` — partial thermostat/batterySaver + changed trigger ids (без tombstone удалённых config id)
+- `diag` — `freeHeap` при `|Δ|≥2048`; `last_err` полный массив если count>0
 
-One-shot undelivered error queue (newest first). Key omitted when empty.
+#### Significant → delta (иначе skip)
+
+`mode`; `time` meta (не epoch alone); `hw` voltage(ε)/engine/inputs/relays/temps; `radio.csq`; `program` running/current/last/timer; `runtime` thermostat/batterySaver/triggers; `diag.freeHeap` ≥2 KiB; `diag.last_err` changed **или** count>0.
+
+**Не significant:** тик `uptime`, тик `time.epoch`, только `temp.lastMs`, подпороговые Δ voltage/temp/heap/timer.
+
+#### Merge для клиента
+
+1. `full:true` → заменить state.
+2. `full:false` → deep-merge; `program.current:null` = не running; maps merge по ключам.
+3. После reconnect / смены base config → full (`cmd=status` или first Tele).
+4. Отсутствие `diag.last_err` ≠ «ошибок нет навсегда» (one-shot undelivered).
+
+#### `diag.last_err` delivery
 
 ```json
 "last_err":[
@@ -167,7 +234,9 @@ One-shot undelivered error queue (newest first). Key omitted when empty.
 2. New runtime errors → once on next periodic status
 3. Mark delivered only after Tele left the MQTT TX queue **and** modem CIPSEND epoch ended (`!tcpBusBusy`); on `tcp_drop`/disconnect — abandon and retry next status
 
-**Time vs MQTT CIP:** modem cascade (CCLK/CIPGSMLOC/CNTP) cannot share the IP stack with MQTT TCP. Boot still runs cascade before first CIPSTART. On `sync_interval`, TimeSyncManager may briefly drain MQTT (offline + DISCONNECT + CIPCLOSE), run the same full cascade, then reconnect — same drain recipe as voice/SMS. Manual `set_time` still applies without tearing CIP. `timeStale` (48 h) is reported in status; schedule triggers still use `isSynced()`.
+SoftAP SSE `gsm` event mirrors `gsmState`, `csq`, and `mqttConnected` for local debug (`gsmState` не в MQTT Tele — канал жив только при рабочем контуре модема).
+
+**Time vs MQTT CIP:** modem cascade (CCLK/CIPGSMLOC/CNTP) cannot share the IP stack with MQTT TCP. Boot still runs cascade before first CIPSTART. On `sync_interval`, TimeSyncManager may briefly drain MQTT (offline + DISCONNECT + CIPCLOSE), run the same full cascade, then reconnect — same drain recipe as voice/SMS. Manual `set_time` still applies without tearing CIP. `time.stale` (48 h) is reported in status; schedule triggers still use `isSynced()`.
 
 **Abnormal reboot fact** (always undelivered on boot, except clean reasons):
 
@@ -179,7 +248,9 @@ One-shot undelivered error queue (newest first). Key omitted when empty.
 | EXT / UNKNOWN / SDIO / other | Unexpected reset |
 | POWERON / SW / DEEPSLEEP | not recorded (clean power / OTA / `/reboot`) |
 
-Clean soft reboot: LWT offline→online + `uptime` reset only. Power-cut may clear RTC → no `last_err`.
+Clean soft reboot: LWT offline→online + `uptime` reset only. Power-cut may clear RTC → no `diag.last_err`.
+
+**Не в MQTT status:** `gsmState`, `mqttConnected`, имена программ, `flashCommit`, frequencies, sticky `lastError`.
 
 ### Вне scope
 QoS1, текстовые `err` на wire, persist LRU, ACL, legacy API.

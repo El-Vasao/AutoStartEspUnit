@@ -80,7 +80,7 @@ Heap headroom заметно выше, чем на ESP8266, но предска�
 Дополнение:
 - Для рантайм-исполнения программ — компактные шаги без строк (`CompiledStep`).
 - Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`).
-- MQTT: выделенные топики из конфигурации; payload caps (`STATUS_PAYLOAD_MAX_BYTES=900`) согласованы с `MqttFsmClient::TX_MAX=1024`. Нормативный JSON статуса — `docs/modules/mqtt.md` §3 (`full` marker, snapshot/delta merge, `engineRunning`, `inputsById` → `relaysById` → `tempSensorsById`).
+- MQTT: выделенные топики из конфигурации; payload caps (`STATUS_PAYLOAD_MAX_BYTES=900`) согласованы с `MqttFsmClient::TX_MAX=1024`. Нормативный JSON статуса — `docs/modules/mqtt.md` §4 (вложенные `time`/`hw`/`radio`/`program`/`runtime`/`diag`, `full` marker, snapshot/delta merge).
 
 ## 3.0) MQTT contract (топики, сообщения, доставка)
 MQTT чувствителен к стабильности цикла (SIM800 + SoftAP).
@@ -93,7 +93,7 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
   - LWT `"offline"` на `{prefix}/avail`: QoS1 + retained
   - `"online"` при connect на `{prefix}/avail`: retained (независимо от JSON)
   - периодический JSON на `{prefix}/status`: best-effort, not-retained, раз в `publish_interval_sec`
-    (full только после connect до успешного TX и по `get_status`; иначе delta/skip; контракт: `docs/modules/mqtt.md` §3)
+    (full только после connect до успешного TX и по `get_status`; иначе delta/skip; контракт: `docs/modules/mqtt.md` §4)
 - **Anti-hang**: публикация JSON-статуса по таймеру (delta/skip) плюс first/full и `get_status`; чтение/запись в транспорт режутся лимитами `MqttFsmClient::Budgets`.
   Локальное время «измерить + застейджить» JSON ограничивают **логируемым** порогом
   (~10 мс в `MQTTClient::publishStatus`) и не приводят к принудительному `disconnect()` сами по себе.

@@ -2,6 +2,7 @@
 
 #include "app/AppPorts.h"
 #include "config/Config.h"
+#include "config/SensorRomResolve.h"
 #include "mqtt/MqttStatusBuilder.h"
 
 #include "app/StatusSnapshot.h"
@@ -21,7 +22,6 @@
 #include "io/DigitalInputs.h"
 #include "program/ProgramExecutor.h"
 #include "core/ErrorManager.h"
-#include "web/WebServer.h"
 #include "mqtt/internal/CountingPrint.h"
 
 namespace {
@@ -49,6 +49,7 @@ void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
     s = StatusSnapshot{};
     s.uptimeSec = core.getUptime();
     strlcpy(s.modeName, core.getModeName(), sizeof(s.modeName));
+    s.freeHeap = espHalFreeHeap();
 
     auto& sensors = core.getSensors();
     auto& relay = core.getRelay();
@@ -62,22 +63,7 @@ void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
 
     const auto& cfg = config.getBase();
     for (int i = 0; i < HardwareLimits::SENSORS; i++) {
-        uint16_t sid = 0;
-        const uint8_t* addr = sensors.getSensorAddress(i);
-        if (addr) {
-            char romStr[TextBytes::Sensors::ADDR_STRING];
-            snprintf(romStr, sizeof(romStr), "%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X", addr[0], addr[1], addr[2],
-                     addr[3], addr[4], addr[5], addr[6], addr[7]);
-            for (uint8_t j = 0; j < HardwareLimits::SENSORS; j++) {
-                const auto& sc = cfg.sensors[j];
-                if (sc.rom[0] == '\0' || sc.id == 0) continue;
-                if (strcmp(sc.rom, romStr) == 0) {
-                    sid = sc.id;
-                    break;
-                }
-            }
-        }
-        s.tempSensors[i].id = sid;
+        s.tempSensors[i].id = resolveSensorConfigId(sensors.getSensorAddress(i), cfg);
         s.tempSensors[i].valid = sensors.isTemperatureValid(i);
         s.tempSensors[i].lastMs = sensors.getLastTemperatureTime(i);
         s.tempSensors[i].t = s.tempSensors[i].valid ? sensors.getTemperature(i) : 0.0f;
@@ -93,6 +79,13 @@ void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
     s.programRunning = pe.isRunning();
     s.currentProgramId = s.programRunning ? pe.getCurrentProgramId() : 0;
     s.lastProgramId = pe.getLastProgramId();
+    {
+        const uint32_t remMs = pe.getTimerRemainingMs();
+        s.timerRemainingSec = remMs ? (remMs + 999) / 1000 : 0;
+    }
+
+    s.thermostatRuntime = core.getThermostatRuntime();
+    s.batterySaverRuntime = core.getBatterySaverRuntime();
 
     for (uint8_t i = 0; i < Limits::MAX_TRIGGERS; i++) {
         s.inputTriggerRuntime[i] = false;
@@ -422,11 +415,6 @@ bool MQTTClient::publishStatus(bool forceFull) {
 
     // Full until first successful stage, on explicit force (first/get_status), else delta/skip.
     bool needFull = forceFull || !_havePublishedBaseline;
-    // SoftAP UI active: prefer delta to keep main-loop serialize cheap (still force full for last_err / first).
-    if (needFull && !forceFull && _havePublishedBaseline && errN == 0 &&
-        webServer.activeUiSessionCount() > 0) {
-        needFull = false;
-    }
     // Undelivered errors must force a status TX (periodic one-shot / retry).
     if (!needFull && snapshot.lastErrCount == 0 &&
         !mqttStatusHasSignificantChanges(snapshot, _lastPublished, cfg)) {
