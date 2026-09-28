@@ -10,7 +10,8 @@ class Config;
 class GSMController;
 
 /**
- * Soft wall clock: cascade CCLK → CIPGSMLOC → CNTP on SIM800, then settimeofday.
+ * Soft wall clock: cascade CCLK → CIPGSMLOC → (optional CNTP) on SIM800, then settimeofday.
+ * CCLK/CIPGSMLOC always; CNTP only when config time.enabled (NTP).
  * Survives soft reboot via RTC_DATA_ATTR snapshot until next network sync.
  *
  * Modem cascade needs CIP idle (serialized with MQTT). Periodic sync_interval may

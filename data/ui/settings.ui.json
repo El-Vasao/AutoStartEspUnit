@@ -412,7 +412,7 @@
     "time": {
       "title": "Время",
       "fields": [
-        { "key": "enabled", "path": "time.enabled", "type": "toggle", "label": "Синхронизация", "labelOn": "NTP включён", "labelOff": "NTP выключен", "helpTitle": "Как работает", "help": "Синхронизация часов через SIM800 NTP (AT+CNTP) при готовности GPRS." },
+        { "key": "enabled", "path": "time.enabled", "type": "toggle", "label": "NTP", "labelOn": "NTP включён", "labelOff": "NTP выключен", "helpTitle": "Как работает", "help": "Только NTP через SIM800 (AT+CNTP). CCLK/NITZ и CIPGSMLOC запускаются всегда, независимо от этого переключателя." },
         { "key": "ntp_server", "path": "time.ntp_server", "type": "text", "label": "NTP сервер", "helpTitle": "Что указать", "help": "Имя или IP NTP-сервера для модема (например ru.pool.ntp.org)." },
         {
           "key": "tz_offset_hours",

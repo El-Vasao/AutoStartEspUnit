@@ -124,6 +124,13 @@ public:
     /// Who produced the last successful modem time sync (for status/debug).
     enum class TimeSource : uint8_t { None = 0, Cclk, Cipgsmloc, Cntp };
 
+    /// Bits for takeTimeSyncFail when cascade ends without epoch.
+    enum TimeFailBit : uint8_t {
+        TimeFailCclk = 1u << 0,
+        TimeFailCipgsmloc = 1u << 1,
+        TimeFailCntp = 1u << 2,
+    };
+
     /// Wall-clock cascade steps (public so busy check can inline).
     enum class TimeStep : uint8_t {
         Idle = 0,
@@ -150,6 +157,8 @@ public:
     bool takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut = nullptr,
                           int8_t* tzHoursOut = nullptr, bool* tzValidOut = nullptr);
     bool takeNtpEpochUtc(time_t& epochUtcOut) { return takeTimeEpochUtc(epochUtcOut, nullptr); }
+    /// Consumes a terminal cascade failure. `failMaskOut` = TimeFailBit OR. Returns false if none.
+    bool takeTimeSyncFail(uint8_t& failMaskOut);
 
     /// Exclusive voice/SMS epoch (MQTT CIP must stay down). Covers outbound + inbound.
     bool modemServiceEpochBusy() const { return _voicePhase != VoicePhase::Idle; }
@@ -291,6 +300,8 @@ private:
     TimeSource _timeSource{TimeSource::None};
     int8_t _timeTzHours{0};
     bool _timeTzValid{false};
+    uint8_t _timeFailMask{0};
+    bool _timeFailReady{false};
     uint32_t _timeDeadlineMs{0};
     char _cclkSnap[48]{};
     char _cipgsmlocSnap[64]{};
@@ -389,6 +400,8 @@ private:
     void serviceTimeSync(uint32_t now);
     void timeFailStep_(const char* why);
     void timeFinishOk_(time_t epochUtc, TimeSource src, bool tzValid = false, int8_t tzHours = 0);
+    void timeMarkMethodFail_(uint8_t bit);
+    void timeFailTerminal_(const char* why);
     void timeAdvanceToCipgsmloc_(uint32_t now);
     void timeAdvanceToCntpOrFail_(uint32_t now, const char* why);
 

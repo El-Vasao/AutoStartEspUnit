@@ -2,7 +2,9 @@
 #include "core/TimeSyncManager.h"
 
 #include "config/Config.h"
+#include "core/Core.h"
 #include "gsm/GSMController.h"
+#include "common/ErrorCodes.h"
 #include "common/Utils.h"
 #include "common/Logger.h"
 
@@ -13,8 +15,8 @@
  * @file Core.TimeSyncManager.cpp
  * @brief Soft wall clock + SIM800 time cascade (CCLK → CIPGSMLOC → CNTP).
  *
- * Periodic sync_interval may yield MQTT CIP (NeedMqttDrain → CascadeArmed) so the
- * full modem cascade can run while always-on MQTT would otherwise block TCP.
+ * CCLK + CIPGSMLOC always run. CNTP only when time.enabled (NTP).
+ * Periodic sync_interval may yield MQTT CIP (NeedMqttDrain → CascadeArmed).
  */
 
 namespace {
@@ -36,6 +38,36 @@ const char* sourceFromGsm(GSMController::TimeSource s) {
         default: return "modem";
     }
 }
+
+bool isTimeSyncError(ErrorCode c) {
+    return c == ErrorCode::TIME_CCLK_FAIL || c == ErrorCode::TIME_CIPGSMLOC_FAIL ||
+           c == ErrorCode::TIME_CNTP_FAIL;
+}
+
+void clearTimeSyncErrorsIfActive_() {
+    ErrorManager& em = core.getErrorManager();
+    if (isTimeSyncError(em.get())) {
+        em.clear();
+    }
+}
+
+void applyTimeSyncFailMask_(uint8_t mask) {
+    ErrorManager& em = core.getErrorManager();
+    if (mask & GSMController::TimeFailCclk) {
+        em.set(ErrorCode::TIME_CCLK_FAIL);
+    }
+    if (mask & GSMController::TimeFailCipgsmloc) {
+        em.set(ErrorCode::TIME_CIPGSMLOC_FAIL);
+    }
+    if (mask & GSMController::TimeFailCntp) {
+        em.set(ErrorCode::TIME_CNTP_FAIL);
+    }
+}
+
+const char* ntpServerForCascade_(const TimeConfig& tcfg) {
+    if (!tcfg.enabled) return "";
+    return tcfg.ntp_server;
+}
 } // namespace
 
 TimeSyncManager::TimeSyncManager(Config& config, GSMController& gsm)
@@ -51,13 +83,7 @@ void TimeSyncManager::begin() {
     _yieldPhase = YieldPhase::Idle;
     _yieldDeadlineMs = 0;
     _yieldCascadeStarted = false;
-
-    const auto& tcfg = _config.getBase().time;
-    if (!tcfg.enabled) {
-        markBootTimeSettled_("disabled");
-    } else {
-        _bootTimeSettled = false;
-    }
+    _bootTimeSettled = false;
 }
 
 void TimeSyncManager::setLastSource_(const char* source) {
@@ -154,6 +180,7 @@ void TimeSyncManager::applyEpochInternal_(time_t epochUtc, const char* source, b
     _lastSyncMs = millis();
     setLastSource_(source);
     if (persistRtc) saveToRtc_();
+    clearTimeSyncErrorsIfActive_();
     logger.log("[TimeSync] synced epoch=%ld tz=%+dh source=%s\n", (long)epochUtc, (int)tzOffsetHours(),
                source ? source : "?");
     markBootTimeSettled_("ok");
@@ -190,36 +217,47 @@ void TimeSyncManager::saveToRtc_() {
 void TimeSyncManager::update() {
     const auto& tcfg = _config.getBase().time;
     const uint32_t now = millis();
+    const char* ntpSrv = ntpServerForCascade_(tcfg);
 
     if (!_bootTimeSettled) {
-        if (!tcfg.enabled) {
-            markBootTimeSettled_("disabled");
-        } else if (_bootDeadlineMs != 0 && (int32_t)(now - _bootDeadlineMs) >= 0) {
+        if (_bootDeadlineMs != 0 && (int32_t)(now - _bootDeadlineMs) >= 0) {
             markBootTimeSettled_("budget");
         }
     }
 
-    // Always drain modem result so a mid-flight disable cannot stick the GSM time FSM.
+    // Always drain modem success so a mid-flight change cannot stick the GSM time FSM.
     time_t got = 0;
     GSMController::TimeSource src = GSMController::TimeSource::None;
-    if (_gsm.takeTimeEpochUtc(got, &src)) {
-        if (tcfg.enabled) {
-            applyEpochInternal_(got, sourceFromGsm(src), true);
-            _forceRequest = false;
-            const uint32_t intervalMs =
-                tcfg.sync_interval_hours
-                    ? (tcfg.sync_interval_hours * 3600UL * 1000UL)
-                    : (6UL * 3600UL * 1000UL);
-            _nextAttemptMs = now + intervalMs;
-        } else {
-            logger.log("[TimeSync] discard modem time result (disabled)\n");
-            markBootTimeSettled_("discard");
-            clearYield_("discard");
+    int8_t tzFromModem = 0;
+    bool tzValid = false;
+    if (_gsm.takeTimeEpochUtc(got, &src, &tzFromModem, &tzValid)) {
+        if (tzValid) {
+            if (!_config.setTzOffsetHours(tzFromModem)) {
+                logger.log("[TimeSync] setTzOffsetHours(%+d) failed; keeping previous TZ\n",
+                           (int)tzFromModem);
+            }
         }
+        applyEpochInternal_(got, sourceFromGsm(src), true);
+        _forceRequest = false;
+        const uint32_t intervalMs =
+            tcfg.sync_interval_hours ? (tcfg.sync_interval_hours * 3600UL * 1000UL)
+                                     : (6UL * 3600UL * 1000UL);
+        _nextAttemptMs = now + intervalMs;
         return;
     }
 
-    // Boot cascade finished without success.
+    // Terminal cascade failure → per-method ErrorCode(s).
+    uint8_t failMask = 0;
+    if (_gsm.takeTimeSyncFail(failMask)) {
+        applyTimeSyncFailMask_(failMask);
+        markBootTimeSettled_("fail");
+        clearYield_("fail");
+        _forceRequest = false;
+        _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
+        return;
+    }
+
+    // Boot cascade finished without success (e.g. request never started).
     if (!_bootTimeSettled && _bootAttemptStarted && !_gsm.timeSyncBusy()) {
         markBootTimeSettled_("attempt_done");
     }
@@ -239,11 +277,6 @@ void TimeSyncManager::update() {
         _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
     }
 
-    if (!tcfg.enabled) {
-        clearYield_("disabled");
-        return;
-    }
-
     if (_gsm.timeSyncBusy()) return;
 
     // --- Yield path: waiting for CellularCore drain, then start cascade ---
@@ -254,10 +287,10 @@ void TimeSyncManager::update() {
     if (_yieldPhase == YieldPhase::CascadeArmed) {
         if (_gsm.tcpSocketActive() || _gsm.tcpBusBusy()) return;
         if (_gsm.modemServiceEpochBusy()) return;
-        if (tryStartCascade_(now, tcfg.ntp_server, tcfg.tz_offset_hours)) {
+        if (tryStartCascade_(now, ntpSrv, tcfg.tz_offset_hours)) {
             _yieldCascadeStarted = true;
         }
-        // Stay armed until busy finishes (success → apply clears; fail → attempt_done) or budget.
+        // Stay armed until busy finishes (success → apply clears; fail → takeTimeSyncFail) or budget.
         return;
     }
 
@@ -278,7 +311,7 @@ void TimeSyncManager::update() {
     }
 
     // TCP already down — start cascade immediately (boot / post-disconnect).
-    if (!tryStartCascade_(now, tcfg.ntp_server, tcfg.tz_offset_hours)) {
+    if (!tryStartCascade_(now, ntpSrv, tcfg.tz_offset_hours)) {
         _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
     }
 }
