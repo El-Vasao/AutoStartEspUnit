@@ -72,6 +72,10 @@ GSMController::GSMController()
 void GSMController::stop() {
     if (_state == GSMState::IDLE) return;
     logger.log("[GSMController] stop()\n");
+    voiceReset_();
+    _voiceResultReady = false;
+    _voicePendingProgramValid = false;
+    voiceAbortInboundClipWait_();
     _stack.tcp.stop("gsm_stop");
     _stack.tcp.reset();
     _stack.at.reset();

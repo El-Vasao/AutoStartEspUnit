@@ -68,6 +68,14 @@ void GSMController::gsmMaybeLogStallWatchdog(uint32_t now) {
 void GSMController::drainAtResult_() {
     if (!_stack.at.hasResult()) return;
     const AtSession::Result r = _stack.at.takeResult();
+    if (_voicePhase == VoicePhase::CmgsWaitPrompt && r.gotPrompt) {
+        _voicePromptSeen = true;
+        return;
+    }
+    if (_voicePhase == VoicePhase::CmgsWaitPrompt && (r.error || r.timedOut)) {
+        _awaitError = true;
+        return;
+    }
     if (!_stack.tcp.consumeAtResult(r)) {
         gsmAbsorbAtSessionResult(r);
     }

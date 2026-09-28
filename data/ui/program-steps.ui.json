@@ -17,7 +17,7 @@
         "step": 0.1,
         "min": 0,
         "helpTitle": "Как работает",
-        "help": "Задаёт длительность шага в секундах. Для паузы это время ожидания, для импульса - длительность каждой фазы.",
+        "help": "Задаёт длительность шага в секундах. Для паузы это время ожидания, для импульса — длительность каждой фазы, для звонка владельцу — сколько ждать гудков перед сбросом (рекомендуется ≥5 с).",
         "default": 1
       },
       "input_id": {
@@ -146,6 +146,15 @@
         "helpTitle": "Когда используется",
         "help": "Задаёт, сколько следующих шагов пропустить, если для таймаута выбрано действие \"Пропустить шаги\".",
         "default": 1
+      },
+      "message": {
+        "label": "Текст SMS",
+        "type": "text",
+        "valueType": "string",
+        "maxLength": 64,
+        "helpTitle": "Что отправить",
+        "help": "Текст SMS на номер владельца (gsm.owner_phone). Только ASCII/GSM-7, до 64 символов.",
+        "default": ""
       }
     },
     "actionCategories": [
@@ -195,6 +204,13 @@
           { "value": "BATTERY_SAVER_OFF", "label": "Battery Saver OFF", "params": [] },
           { "value": "THERMOSTAT_ON", "label": "Термостат ON", "params": [] },
           { "value": "THERMOSTAT_OFF", "label": "Термостат OFF", "params": [] }
+        ]
+      },
+      {
+        "name": "Связь",
+        "actions": [
+          { "value": "CALL_OWNER", "label": "Звонок владельцу", "params": ["ms"] },
+          { "value": "SMS_OWNER", "label": "SMS владельцу", "params": ["message"] }
         ]
       }
     ]

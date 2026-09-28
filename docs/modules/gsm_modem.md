@@ -70,6 +70,18 @@
 - После первого `service()` — settle **`GSM::POST_BOOT_SETTLE_MS` (20 s)** до `gsm.begin()`.
 - `mqtt.loop()` вызывается всегда при READY (mid-CIPSEND TX no-op, RX ring дренируется); reattach — по политике bearer, не блокируется только из‑за mid-send.
 - Hypothesis `AT`/`CGMI`: пауза **`HYP_RETRY_GAP_MS`** между повторами.
+- **Voice/SMS exclusive epoch:** пока `modemServiceEpochBusy()`, MQTT не стартует/не reconnect; при `serviceEpochNeedsMqttDrain()` — `drainMqttDisconnect_` затем `notifyMqttDrainedForServiceEpoch()`. `ctrlPlaneBusy` = TCP ∨ time ∨ voice/SMS.
+
+### 3б) Voice / SMS / inbound DTMF
+
+Файлы: `src/gsm/GSMController.Voice.cpp`, URC в `GSMController.Urc.cpp`, init `AT+CLIP=1` / `AT+DDET=1` / `AT+CMGF=1`.
+
+- **Outbound:** `requestCallOwner(timeoutMs)` → `ATDphone;`, wait, `ATH`. `requestSmsOwner(text)` → `AT+CMGS` + body + Ctrl+Z.
+- **Inbound:** `RING`/`+CLIP` → match `owner_phone` (digit suffix) **и** непустой `dtmf_password` → drain MQTT → `ATA` → DTMF password → program id digits + `#` → `ATH` → `takePendingProgramStart` → `ProgramExecutor::start`.
+- CLIP/DTMF mismatch или таймаут → hangup, без старта программы.
+- После звонка GPRS/MQTT обычно переподключается (ожидаемо).
+
+Полевой чеклист: сценарии **8–10** в [`gsm_mqtt_field_log.md`](gsm_mqtt_field_log.md).
 
 ### 4) MQTT поверх `Client`
 

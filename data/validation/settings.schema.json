@@ -382,7 +382,7 @@
         "enabled": { "type": "boolean" },
         "ntp_server": { "type": "string", "maxLength": 47 },
         "tz_offset_hours": { "type": "integer", "minimum": -12, "maximum": 14 },
-        "sync_interval_sec": { "type": "integer", "minimum": 300, "maximum": 604800 }
+        "sync_interval_hours": { "type": "integer", "minimum": 1, "maximum": 168 }
       }
     },
     "schedule_triggers": {

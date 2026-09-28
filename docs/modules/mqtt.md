@@ -167,7 +167,7 @@ One-shot undelivered error queue (newest first). Key omitted when empty.
 2. New runtime errors → once on next periodic status
 3. Mark delivered only after Tele left the MQTT TX queue **and** modem CIPSEND epoch ended (`!tcpBusBusy`); on `tcp_drop`/disconnect — abandon and retry next status
 
-**Time while MQTT socket is up:** modem cascade (CCLK/CIPGSMLOC/CNTP) is refused while `tcpSocketActive` — wall clock stays soft until TCP drops, `set_time`, or boot cascade. `timeStale` (48 h) is reported in status; schedule triggers still use `isSynced()`.
+**Time vs MQTT CIP:** modem cascade (CCLK/CIPGSMLOC/CNTP) cannot share the IP stack with MQTT TCP. Boot still runs cascade before first CIPSTART. On `sync_interval`, TimeSyncManager may briefly drain MQTT (offline + DISCONNECT + CIPCLOSE), run the same full cascade, then reconnect — same drain recipe as voice/SMS. Manual `set_time` still applies without tearing CIP. `timeStale` (48 h) is reported in status; schedule triggers still use `isSynced()`.
 
 **Abnormal reboot fact** (always undelivered on boot, except clean reasons):
 

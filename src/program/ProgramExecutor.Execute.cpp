@@ -2,6 +2,7 @@
 #include "program/ProgramExecutor.h"
 
 #include "core/Core.h"
+#include "gsm/GSMController.h"
 #include "io/DigitalInputs.h"
 #include "core/ErrorManager.h"
 #include "io/HwMap.h"
@@ -166,6 +167,20 @@ void ProgramExecutor::update() {
             core.getRelay().on((uint8_t)starterRelay);
             _starter.phase = 1;
             _starter.startedAtMs = now;
+            return;
+        }
+
+        case ActionId::CALL_OWNER:
+        case ActionId::SMS_OWNER: {
+            bool ok = false;
+            if (!core.getGSM().takeVoiceOpResult(ok)) return;
+            if (ok) {
+                nextStep();
+            } else {
+                logger.log("[ProgramExecutor] %s failed\n",
+                           actionId == ActionId::CALL_OWNER ? "CALL_OWNER" : "SMS_OWNER");
+                finish(false);
+            }
             return;
         }
 
@@ -339,6 +354,32 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
             _starter.attemptsLeft = 0;
             // Actual starter work happens in update().
             return;
+
+        case ActionId::CALL_OWNER: {
+            // UI default ms=1s is too short for a ring; treat <3s as "use modem default".
+            uint32_t ringMs = step.ms;
+            if (ringMs < 3000UL) ringMs = GSM::VOICE_DEFAULT_RING_MS;
+            if (!core.getGSM().requestCallOwner(ringMs)) {
+                logger.log("[ProgramExecutor] CALL_OWNER rejected (no phone / GSM busy)\n");
+                finish(false);
+                return;
+            }
+            return;
+        }
+
+        case ActionId::SMS_OWNER: {
+            if (!step.message[0]) {
+                logger.log("[ProgramExecutor] SMS_OWNER empty message\n");
+                finish(false);
+                return;
+            }
+            if (!core.getGSM().requestSmsOwner(step.message)) {
+                logger.log("[ProgramExecutor] SMS_OWNER rejected (no phone / GSM busy)\n");
+                finish(false);
+                return;
+            }
+            return;
+        }
 
         case ActionId::UNKNOWN:
         default:

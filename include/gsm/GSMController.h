@@ -35,6 +35,28 @@ enum class GSMState : uint8_t {
  */
 class GSMController {
 public:
+    enum class VoiceKind : uint8_t { None = 0, OutCall, OutSms, Inbound };
+    enum class VoicePhase : uint8_t {
+        Idle = 0,
+        NeedMqttDrain,
+        StopTcp,
+        DialSend,
+        DialWaitOk,
+        DialRing,
+        HangupSend,
+        HangupWait,
+        CmgsSend,
+        CmgsWaitPrompt,
+        CmgsSendBody,
+        CmgsWaitOk,
+        AnswerSend,
+        AnswerWait,
+        CollectPassword,
+        CollectProgId,
+        FinishOk,
+        FinishFail,
+    };
+
     GSMController();
 
     // Запуск/перезапуск автомата (после загрузки конфига)
@@ -124,8 +146,29 @@ public:
     bool timeSyncBusy() const { return _timeStep != TimeStep::Idle; }
     bool ntpSyncBusy() const { return timeSyncBusy(); }
     /// Consumes a successful sync result (UTC epoch). Returns false if none pending.
-    bool takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut = nullptr);
+    /// When CCLK carried a whole-hour TZ, `tzValidOut` is true and `tzHoursOut` is set.
+    bool takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut = nullptr,
+                          int8_t* tzHoursOut = nullptr, bool* tzValidOut = nullptr);
     bool takeNtpEpochUtc(time_t& epochUtcOut) { return takeTimeEpochUtc(epochUtcOut, nullptr); }
+
+    /// Exclusive voice/SMS epoch (MQTT CIP must stay down). Covers outbound + inbound.
+    bool modemServiceEpochBusy() const { return _voicePhase != VoicePhase::Idle; }
+    /// CellularCore: drain MQTT then call notifyMqttDrainedForServiceEpoch().
+    bool serviceEpochNeedsMqttDrain() const { return _voicePhase == VoicePhase::NeedMqttDrain; }
+    void notifyMqttDrainedForServiceEpoch();
+
+    /// Outbound program actions (owner_phone from config). Returns false if rejected.
+    bool requestCallOwner(uint32_t timeoutMs);
+    bool requestSmsOwner(const char* message);
+    /// True while an outbound call/SMS requested by ProgramExecutor is in flight.
+    bool voiceOpBusy() const {
+        return _voiceKind == VoiceKind::OutCall || _voiceKind == VoiceKind::OutSms;
+    }
+    /// Consumes outbound completion. Returns false if not ready.
+    bool takeVoiceOpResult(bool& okOut);
+
+    /// Inbound DTMF: pending program id to start (once). Returns false if none.
+    bool takePendingProgramStart(uint8_t& programIdOut);
 
 private:
     static constexpr size_t RESPONSE_BUF_SIZE = GSM::RESPONSE_BUFFER_SIZE;
@@ -246,9 +289,34 @@ private:
     bool _timeCmdSent{false};
     time_t _timeEpochUtc{0};
     TimeSource _timeSource{TimeSource::None};
+    int8_t _timeTzHours{0};
+    bool _timeTzValid{false};
     uint32_t _timeDeadlineMs{0};
     char _cclkSnap[48]{};
     char _cipgsmlocSnap[64]{};
+
+    /// Voice / SMS exclusive epoch (CALL_OWNER, SMS_OWNER, inbound DTMF).
+    VoiceKind _voiceKind{VoiceKind::None};
+    VoicePhase _voicePhase{VoicePhase::Idle};
+    char _voicePhone[TextBytes::Gsm::PHONE]{};
+    char _voiceSmsText[TextBytes::Programs::STEP_MESSAGE]{};
+    char _voiceDtmfBuf[TextBytes::Gsm::DTMF_PASSWORD]{};
+    char _voiceProgDigits[4]{};
+    uint8_t _voiceDtmfLen{0};
+    uint8_t _voiceProgDigitLen{0};
+    uint32_t _voiceTimeoutMs{0};
+    uint32_t _voiceEpochStartMs{0};
+    uint32_t _voicePhaseDeadlineMs{0};
+    bool _voiceResultReady{false};
+    bool _voiceResultOk{false};
+    bool _voicePromptSeen{false};
+    bool _voiceNoCarrier{false};
+    bool _voicePendingProgramValid{false};
+    uint8_t _voicePendingProgramId{0};
+    /// Inbound: RING seen, waiting for matching +CLIP before starting epoch.
+    bool _inboundRingSeen{false};
+    uint32_t _inboundClipDeadlineMs{0};
+    char _inboundClipDigits[24]{};
 
     /// Редкая диагностика «застряли»: снимок state/init/await не меняется дольше интервала.
     uint32_t _gsmStallPrevFp{0};
@@ -320,9 +388,17 @@ private:
 
     void serviceTimeSync(uint32_t now);
     void timeFailStep_(const char* why);
-    void timeFinishOk_(time_t epochUtc, TimeSource src);
+    void timeFinishOk_(time_t epochUtc, TimeSource src, bool tzValid = false, int8_t tzHours = 0);
     void timeAdvanceToCipgsmloc_(uint32_t now);
     void timeAdvanceToCntpOrFail_(uint32_t now, const char* why);
+
+    void serviceVoice_(uint32_t now);
+    void voiceReset_();
+    void voiceFinish_(bool ok);
+    void voiceAbortInboundClipWait_();
+    bool voiceTryBeginInbound_(const char* clipDigits);
+    void voiceOnDtmfTone_(char tone);
+    void voiceHandleUrc_(const char* line);
 
     friend class GsmInitFsm;
 };

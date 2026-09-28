@@ -419,8 +419,15 @@ public:
                     const int16_t mins = parseI16(v, 180);
                     t_->time.tz_offset_hours = static_cast<int8_t>(mins / 60);
                 }
-                else if (streq(pending_, "sync_interval_sec"))
-                    t_->time.sync_interval_sec = parseU32(v, 21600);
+                else if (streq(pending_, "sync_interval_hours"))
+                    t_->time.sync_interval_hours = parseU32(v, 6);
+                else if (streq(pending_, "sync_interval_sec")) {
+                    // Legacy seconds → whole hours (floor; at least 1 if old min 300s).
+                    const uint32_t sec = parseU32(v, 21600);
+                    uint32_t hours = sec / 3600U;
+                    if (hours == 0 && sec >= 300U) hours = 1;
+                    t_->time.sync_interval_hours = hours ? hours : 6;
+                }
                 break;
             case St::InTrigObj:
                 if (streq(pending_, "id")) trig_.id = parseU16(v, 0);

@@ -123,6 +123,8 @@ namespace TextBytes {
         /// "RELAY_PULSE_ON_OFF_ON" и т.п.
         constexpr size_t STEP_ACTION = 24;
         constexpr size_t NAME = 32;
+        /// SMS_OWNER step text (GSM-7/ASCII) + NUL.
+        constexpr size_t STEP_MESSAGE = 65;
     }
 
     namespace TimeCfg {
@@ -526,6 +528,16 @@ namespace GSM {
     // RX ring for waiter/diagnostic snippets. Keep compact to save RAM.
     constexpr size_t RESPONSE_BUFFER_SIZE = 128;
     constexpr size_t CMD_BUFFER_SIZE = 128;
+
+    /// Voice / SMS exclusive modem epoch (MQTT CIP suspended).
+    constexpr uint32_t VOICE_DEFAULT_RING_MS = 25000;
+    constexpr uint32_t VOICE_PASSWORD_TIMEOUT_MS = 30000;
+    constexpr uint32_t VOICE_PROGID_TIMEOUT_MS = 15000;
+    constexpr uint32_t VOICE_CALL_CEILING_MS = 60000;
+    constexpr uint32_t VOICE_CLIP_WAIT_MS = 8000;
+    constexpr uint32_t SMS_CMGS_TIMEOUT_MS = 30000;
+    /// Min digit suffix length used when matching CLIP vs owner_phone.
+    constexpr uint8_t PHONE_MATCH_MIN_DIGITS = 10;
 }
 
 // ============================================================

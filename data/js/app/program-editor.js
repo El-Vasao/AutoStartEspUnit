@@ -112,6 +112,7 @@
               const ta = (s.timeout_action || 0);
               if (ta === 1) base.skip_count = (s.skip_count || 0);
             }
+            else if (p === 'message') base.message = (s.message !== undefined) ? String(s.message || '') : '';
           }
 
           return base;
@@ -161,6 +162,7 @@
               // WYSIWYG: skip_count is shown only when timeout_action==1
               if (toInt(step.timeout_action, 0) === 1) add('skip_count', toInt(step.skip_count, 0));
             }
+            else if (p === 'message') add('message', (step.message !== undefined) ? String(step.message || '') : '');
           }
 
           return result;

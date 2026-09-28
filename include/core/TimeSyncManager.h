@@ -13,7 +13,8 @@ class GSMController;
  * Soft wall clock: cascade CCLK → CIPGSMLOC → CNTP on SIM800, then settimeofday.
  * Survives soft reboot via RTC_DATA_ATTR snapshot until next network sync.
  *
- * Modem cascade only when TCP socket is inactive (serialized with MQTT CIP).
+ * Modem cascade needs CIP idle (serialized with MQTT). Periodic sync_interval may
+ * request an MQTT drain yield so the full cascade can run while always-on MQTT.
  */
 class TimeSyncManager {
 public:
@@ -41,7 +42,20 @@ public:
     /// Legacy alias.
     bool isBootNtpSettled() const { return isBootTimeSettled(); }
 
+    /// CellularCore should drain MQTT/CIP before cascade (periodic yield).
+    bool needsMqttDrainForSync() const { return _yieldPhase == YieldPhase::NeedMqttDrain; }
+    /// Hold MQTT reconnect for drain + cascade (same role as modemServiceEpochBusy for voice).
+    bool isSyncYieldEpochBusy() const { return _yieldPhase != YieldPhase::Idle; }
+    /// CellularCore finished drainMqttDisconnect_ (or reconnect already off).
+    void notifyMqttDrainedForSync();
+
 private:
+    enum class YieldPhase : uint8_t {
+        Idle = 0,
+        NeedMqttDrain,
+        CascadeArmed,
+    };
+
     Config& _config;
     GSMController& _gsm;
 
@@ -55,6 +69,10 @@ private:
     bool _bootAttemptStarted{false};
     uint32_t _bootDeadlineMs{0};
 
+    YieldPhase _yieldPhase{YieldPhase::Idle};
+    uint32_t _yieldDeadlineMs{0};
+    bool _yieldCascadeStarted{false};
+
     static constexpr uint32_t RTC_MAGIC = 0xC10C710Eu;
 
     void loadFromRtc_();
@@ -62,4 +80,7 @@ private:
     void applyEpochInternal_(time_t epochUtc, const char* source, bool persistRtc);
     void markBootTimeSettled_(const char* why);
     void setLastSource_(const char* source);
+    void clearYield_(const char* why);
+    void armYieldDeadline_(uint32_t now);
+    bool tryStartCascade_(uint32_t now, const char* ntpServer, int8_t tzOffsetHours);
 };

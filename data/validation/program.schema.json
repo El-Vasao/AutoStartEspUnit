@@ -41,7 +41,8 @@
 
           "engine_state": { "type": "integer", "enum": [0, 1] },
           "timeout_action": { "type": "integer", "enum": [0, 1] },
-          "skip_count": { "type": "integer", "minimum": 0, "maximum": 255 }
+          "skip_count": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "message": { "type": "string", "maxLength": 64 }
         }
       }
     }

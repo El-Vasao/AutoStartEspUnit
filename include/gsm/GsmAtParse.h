@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 namespace gsm_at {
@@ -10,5 +11,17 @@ bool isIpv4Line(const char* s);
 
 /// SAPBR line contains quoted IPv4 (e.g. +SAPBR: 1,1,"1.2.3.4").
 bool sapbrLineHasQuotedIpv4(const char* line);
+
+/// Copy only digits from `in` into `out` (NUL-terminated). Returns digit count.
+size_t extractPhoneDigits(const char* in, char* out, size_t outCap);
+
+/// Match owner vs CLIP: compare digit suffixes (min 10 digits, or full if shorter).
+bool phonesMatch(const char* a, const char* b);
+
+/// Parse +CLIP: "number",... into digit buffer (digits only).
+bool parseClipDigits(const char* line, char* digitsOut, size_t digitsCap);
+
+/// Parse +DTMF: X or +DDET: X into a single tone char ('0'-'9','*','#').
+bool parseDtmfTone(const char* line, char& toneOut);
 
 } // namespace gsm_at

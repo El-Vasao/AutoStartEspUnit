@@ -227,14 +227,14 @@ struct TimeConfig {
     bool enabled;
     char ntp_server[TextBytes::TimeCfg::NTP_SERVER];
     int8_t tz_offset_hours; ///< UTC offset in whole hours (MSK = +3)
-    uint32_t sync_interval_sec;
+    uint32_t sync_interval_hours; ///< Period between successful syncs (whole hours)
 
     /// RAM/parse defaults: sync off until config (or DefaultConfig factory JSON) enables it.
     /// Avoids surprise NTP on old /config.json without a `time` section.
     TimeConfig()
         : enabled(false),
           tz_offset_hours(3),
-          sync_interval_sec(21600) {
+          sync_interval_hours(6) {
         ntp_server[0] = '\0';
     }
 };
@@ -282,6 +282,7 @@ struct Step {
     uint8_t engine_state;
     uint8_t timeout_action;
     uint8_t skip_count;
+    char message[TextBytes::Programs::STEP_MESSAGE];
 
     Step()
         : step(0),
@@ -301,6 +302,7 @@ struct Step {
           skip_count(0) {
         action[0] = '\0';
         sensor_name[0] = '\0';
+        message[0] = '\0';
         strcpy(comparison, "above");
     }
 };

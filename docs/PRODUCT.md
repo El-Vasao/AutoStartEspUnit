@@ -10,3 +10,14 @@
 - Оптимизации памяти: буферы, пулы, PROGMEM, снижение фрагментации heap, аккуратные лимиты с подтверждением worst-case — без отказа от постоянного доступа к UI в штатной работе.
 
 Подробнее в комментариях к [`include/web/WebServer.h`](../include/web/WebServer.h) и [`include/core/Core.h`](../include/core/Core.h).
+
+## Телефония (звонок / SMS / DTMF)
+
+Классический автозапуск опирается на SIM800 voice/SMS поверх того же UART, что и MQTT:
+
+- Исходящие шаги программ: `CALL_OWNER`, `SMS_OWNER` → `gsm.owner_phone`.
+- Входящий звонок: CLIP = owner + DTMF-пароль (`gsm.dtmf_password`) → цифры id программы + `#`.
+- На время голоса/SMS MQTT CIP **приостанавливается** (exclusive modem epoch); после эпохи MQTT переподключается. Параллельный CIP+voice не поддерживается.
+- Входящий `ProgramExecutor::start` может прервать текущую программу (как MQTT `run`).
+
+См. [`modules/gsm_modem.md`](modules/gsm_modem.md), [`modules/program.md`](modules/program.md).

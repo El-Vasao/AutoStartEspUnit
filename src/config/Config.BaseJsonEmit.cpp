@@ -204,7 +204,8 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
     comma(o, &c), o.print("\"enabled\":"), cfg.time.enabled ? o.print("true") : o.print("false");
     comma(o, &c), o.print("\"ntp_server\":"), writeEscaped(o, cfg.time.ntp_server);
     comma(o, &c), o.print("\"tz_offset_hours\":"), o.print(static_cast<int>(cfg.time.tz_offset_hours));
-    comma(o, &c), o.print("\"sync_interval_sec\":"), o.print(static_cast<unsigned long>(cfg.time.sync_interval_sec));
+    comma(o, &c), o.print("\"sync_interval_hours\":"),
+        o.print(static_cast<unsigned long>(cfg.time.sync_interval_hours));
     o.print('}');
 
     comma(o, &c), o.print("\"input_triggers\":[");

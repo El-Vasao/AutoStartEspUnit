@@ -36,6 +36,9 @@ const char* gsmInitPhaseName(GsmInitPhase p) {
     case GsmInitPhase::ModCmee: return "ModCmee";
     case GsmInitPhase::ModClts: return "ModClts";
     case GsmInitPhase::ModCreg2: return "ModCreg2";
+    case GsmInitPhase::ModClip: return "ModClip";
+    case GsmInitPhase::ModDdet: return "ModDdet";
+    case GsmInitPhase::ModCmgf: return "ModCmgf";
     }
     return "?";
 }

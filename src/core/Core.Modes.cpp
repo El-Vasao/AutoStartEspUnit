@@ -262,6 +262,13 @@ void Core::handleNormal() {
     impl.timeSyncManager.update();
     // SoftAP + cellular coexist on ESP32-C3. Same cellular policy as NORMAL_SILENT.
     serviceCellularLink();
+    {
+        uint8_t pid = 0;
+        if (impl.gsm.takePendingProgramStart(pid)) {
+            logger.log("[Core] inbound DTMF start program %u\n", (unsigned)pid);
+            (void)impl.programExecutor.start(pid);
+        }
+    }
 
     const auto& wcfg = config.getBase().wifi;
     if (wcfg.ap_timeout_enabled && wcfg.ap_timeout_sec > 0 && impl.modeManager.getCurrentMode() == CoreMode::NORMAL) {
@@ -300,6 +307,13 @@ void Core::handleNormalSilent() {
     impl.thermostatManager.update();
     impl.timeSyncManager.update();
     serviceCellularLink();
+    {
+        uint8_t pid = 0;
+        if (impl.gsm.takePendingProgramStart(pid)) {
+            logger.log("[Core] inbound DTMF start program %u\n", (unsigned)pid);
+            (void)impl.programExecutor.start(pid);
+        }
+    }
 }
 
 void Core::handleOTAUpdate() {

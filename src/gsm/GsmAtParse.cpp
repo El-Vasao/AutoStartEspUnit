@@ -99,4 +99,66 @@ bool sapbrLineHasQuotedIpv4(const char* line) {
     return (parts == 3 && acc >= 0);
 }
 
+size_t extractPhoneDigits(const char* in, char* out, size_t outCap) {
+    if (!out || outCap == 0) return 0;
+    out[0] = '\0';
+    if (!in) return 0;
+    size_t n = 0;
+    for (const char* p = in; *p && n + 1 < outCap; p++) {
+        if (*p >= '0' && *p <= '9') {
+            out[n++] = *p;
+        }
+    }
+    out[n] = '\0';
+    return n;
+}
+
+bool phonesMatch(const char* a, const char* b) {
+    char da[24];
+    char db[24];
+    const size_t na = extractPhoneDigits(a, da, sizeof(da));
+    const size_t nb = extractPhoneDigits(b, db, sizeof(db));
+    if (na == 0 || nb == 0) return false;
+    const size_t need = (na < 10 && nb < 10) ? ((na < nb) ? na : nb) : 10;
+    if (na < need || nb < need) {
+        return na == nb && strcmp(da, db) == 0;
+    }
+    return strcmp(da + (na - need), db + (nb - need)) == 0;
+}
+
+bool parseClipDigits(const char* line, char* digitsOut, size_t digitsCap) {
+    if (!line || !digitsOut || digitsCap == 0) return false;
+    digitsOut[0] = '\0';
+    const char* p = strstr(line, "+CLIP:");
+    if (!p) return false;
+    const char* q = strchr(p, '"');
+    if (!q) return false;
+    q++;
+    const char* r = strchr(q, '"');
+    if (!r || r <= q) return false;
+    char raw[24];
+    size_t n = (size_t)(r - q);
+    if (n >= sizeof(raw)) n = sizeof(raw) - 1;
+    memcpy(raw, q, n);
+    raw[n] = '\0';
+    return extractPhoneDigits(raw, digitsOut, digitsCap) > 0;
+}
+
+bool parseDtmfTone(const char* line, char& toneOut) {
+    if (!line) return false;
+    const char* p = strstr(line, "+DTMF:");
+    if (!p) p = strstr(line, "+DDET:");
+    if (!p) return false;
+    p = strchr(p, ':');
+    if (!p) return false;
+    p++;
+    while (*p == ' ' || *p == '"') p++;
+    const char c = *p;
+    if ((c >= '0' && c <= '9') || c == '*' || c == '#') {
+        toneOut = c;
+        return true;
+    }
+    return false;
+}
+
 } // namespace gsm_at

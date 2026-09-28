@@ -9,6 +9,11 @@
 #include "common/Logger.h"
 
 void GSMController::handleReady() {
+    serviceVoice_(millis());
+    if (modemServiceEpochBusy()) {
+        return;
+    }
+
     if (_userRebootRequested) {
         // Controlled reboot from UI: close bearer (best-effort), then CFUN=1,1 and quiet wait.
         if (_rebootStep == 0) {

@@ -14,8 +14,12 @@
 
 namespace {
 
-bool parseCclkToUtc(const char* line, time_t& utcOut) {
+bool parseCclkToUtc(const char* line, time_t& utcOut, int8_t* tzHoursOut = nullptr,
+                    bool* tzWholeHoursOut = nullptr) {
     // +CCLK: "yy/MM/dd,hh:mm:ss±zz"  zz = quarters of an hour from GMT
+    if (tzHoursOut) *tzHoursOut = 0;
+    if (tzWholeHoursOut) *tzWholeHoursOut = false;
+
     const char* p = strstr(line, "+CCLK:");
     if (!p) return false;
     p = strchr(p, '"');
@@ -56,7 +60,19 @@ bool parseCclkToUtc(const char* line, time_t& utcOut) {
 
     const int32_t offsetSec = (int32_t)tzq * 15 * 60;
     utcOut = asUtc - (time_t)offsetSec;
-    return utcOut > 0;
+    if (utcOut <= 0) return false;
+
+    // Config / UI store whole hours only; fractional NITZ zones stay out of tz_offset_hours.
+    if ((tzq % 4) == 0) {
+        const int hours = tzq / 4;
+        if (hours >= -12 && hours <= 14) {
+            if (tzHoursOut) *tzHoursOut = static_cast<int8_t>(hours);
+            if (tzWholeHoursOut) *tzWholeHoursOut = true;
+        }
+    } else {
+        logger.log("[GSMController] CCLK tzq=%d not whole hours; skip config TZ\n", tzq);
+    }
+    return true;
 }
 
 /// Reject factory/NITZ-missing clocks (e.g. 04/01/01) — same floor as TimeSyncManager.
@@ -131,6 +147,8 @@ bool GSMController::requestTimeSync(const char* ntpServer, int8_t tzOffsetHours)
     _timeResultReady = false;
     _timeEpochUtc = 0;
     _timeSource = TimeSource::None;
+    _timeTzHours = 0;
+    _timeTzValid = false;
     _timeCmdSent = false;
     _cclkSnap[0] = '\0';
     _cipgsmlocSnap[0] = '\0';
@@ -141,12 +159,17 @@ bool GSMController::requestTimeSync(const char* ntpServer, int8_t tzOffsetHours)
     return true;
 }
 
-bool GSMController::takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut) {
+bool GSMController::takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut, int8_t* tzHoursOut,
+                                     bool* tzValidOut) {
     if (!_timeResultReady) return false;
     epochUtcOut = _timeEpochUtc;
     if (sourceOut) *sourceOut = _timeSource;
+    if (tzHoursOut) *tzHoursOut = _timeTzHours;
+    if (tzValidOut) *tzValidOut = _timeTzValid;
     _timeResultReady = false;
     _timeEpochUtc = 0;
+    _timeTzHours = 0;
+    _timeTzValid = false;
     return true;
 }
 
@@ -159,9 +182,11 @@ void GSMController::timeFailStep_(const char* why) {
     _ntpUrcFail = false;
 }
 
-void GSMController::timeFinishOk_(time_t epochUtc, TimeSource src) {
+void GSMController::timeFinishOk_(time_t epochUtc, TimeSource src, bool tzValid, int8_t tzHours) {
     _timeEpochUtc = epochUtc;
     _timeSource = src;
+    _timeTzValid = tzValid;
+    _timeTzHours = tzValid ? tzHours : static_cast<int8_t>(0);
     _timeResultReady = true;
     resetAwait();
     _timeStep = TimeStep::Idle;
@@ -173,7 +198,12 @@ void GSMController::timeFinishOk_(time_t epochUtc, TimeSource src) {
         case TimeSource::Cntp: name = "cntp"; break;
         default: break;
     }
-    logger.log("[GSMController] time ok source=%s epoch=%ld\n", name, (long)epochUtc);
+    if (tzValid) {
+        logger.log("[GSMController] time ok source=%s epoch=%ld tz=%+dh\n", name, (long)epochUtc,
+                   (int)tzHours);
+    } else {
+        logger.log("[GSMController] time ok source=%s epoch=%ld\n", name, (long)epochUtc);
+    }
 }
 
 void GSMController::timeAdvanceToCipgsmloc_(uint32_t now) {
@@ -236,8 +266,10 @@ void GSMController::serviceTimeSync(uint32_t now) {
         if (!_awaitOk) return;
         {
             time_t utc = 0;
-            if (_cclkSnap[0] && parseCclkToUtc(_cclkSnap, utc) && cclkEpochSane(utc)) {
-                timeFinishOk_(utc, TimeSource::Cclk);
+            int8_t tzH = 0;
+            bool tzOk = false;
+            if (_cclkSnap[0] && parseCclkToUtc(_cclkSnap, utc, &tzH, &tzOk) && cclkEpochSane(utc)) {
+                timeFinishOk_(utc, TimeSource::Cclk, tzOk, tzH);
                 return;
             }
             logger.log("[GSMController] CCLK probe stale/unusable, next\n");
@@ -352,11 +384,14 @@ void GSMController::serviceTimeSync(uint32_t now) {
         if (!_awaitOk) return;
         {
             time_t utc = 0;
-            if (_cclkSnap[0] == '\0' || !parseCclkToUtc(_cclkSnap, utc) || !cclkEpochSane(utc)) {
+            int8_t tzH = 0;
+            bool tzOk = false;
+            if (_cclkSnap[0] == '\0' || !parseCclkToUtc(_cclkSnap, utc, &tzH, &tzOk) ||
+                !cclkEpochSane(utc)) {
                 timeFailStep_("CCLK parse");
                 return;
             }
-            timeFinishOk_(utc, TimeSource::Cntp);
+            timeFinishOk_(utc, TimeSource::Cntp, tzOk, tzH);
         }
         return;
 

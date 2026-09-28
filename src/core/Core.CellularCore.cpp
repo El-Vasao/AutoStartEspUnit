@@ -17,6 +17,7 @@
  * - После бута — settle `GSM::POST_BOOT_SETTLE_MS` до первого `gsm.begin()`.
  * - Неблокирующее обслуживание: GSM тикает в `service()`, MQTT — когда модем READY.
  * - First MQTT begin waits for boot time cascade (CCLK/CIPGSMLOC/CNTP before CIP).
+ * - Periodic time sync may drain MQTT (same recipe as voice) so cascade can run.
  * - Leave READY drains MQTT (same as suspend) before bearer AT continues.
  * - Cellular suspend только в SETUP / EMERGENCY / OTA (см. Core.Modes); SoftAP в NORMAL
  *   сосуществует с GSM/MQTT.
@@ -39,11 +40,11 @@ void CellularCore::init(GSMController& gsm, MQTTClient& mqtt, WebServer& web, Ti
             return static_cast<GSMController*>(ctx)->shouldDeferMqttRead();
         },
         _gsm);
-    // MQTT Ctrl/CIPSTART: TCP epoch or time cascade — not every CSQ AT.
+    // MQTT Ctrl/CIPSTART: TCP epoch, time cascade, or voice/SMS exclusive epoch.
     _mqtt->setCtrlPlaneBusy(
         [](void* ctx) -> bool {
             auto* g = static_cast<GSMController*>(ctx);
-            return g->tcpEpochBusy() || g->timeSyncBusy();
+            return g->tcpEpochBusy() || g->timeSyncBusy() || g->modemServiceEpochBusy();
         },
         _gsm);
     // rx_incomplete forensics: transport +IPD/send state + SoftAP activity.
@@ -104,7 +105,43 @@ void CellularCore::service() {
     }
 
     _gsm->update();
+
+    // Exclusive voice/SMS epoch: drain MQTT before ATD/ATA/CMGS.
+    if (_gsm->serviceEpochNeedsMqttDrain()) {
+        if (_mqttStarted) {
+            logger.log("[Cellular] draining MQTT for voice/SMS epoch\n");
+            drainMqttDisconnect_();
+        } else if (_mqtt) {
+            _mqtt->setReconnectEnabled(false);
+        }
+        _gsm->notifyMqttDrainedForServiceEpoch();
+    }
+
+    // Periodic time-sync yield: drain MQTT so CCLK→CIPGSMLOC→CNTP can run.
+    // Skip while voice owns the modem (mutual exclude).
+    if (_timeSync && _timeSync->needsMqttDrainForSync() && !_gsm->modemServiceEpochBusy() &&
+        !_gsm->serviceEpochNeedsMqttDrain()) {
+        if (_mqttStarted) {
+            logger.log("[Cellular] draining MQTT for time-sync yield\n");
+            drainMqttDisconnect_();
+        } else if (_mqtt) {
+            _mqtt->setReconnectEnabled(false);
+        }
+        _timeSync->notifyMqttDrainedForSync();
+    }
+
     if (_gsm->isReady()) {
+        if (_gsm->modemServiceEpochBusy()) {
+            // Keep MQTT down for the whole voice/SMS epoch.
+            return;
+        }
+
+        if (_timeSync && _timeSync->isSyncYieldEpochBusy()) {
+            // Keep MQTT down for drain + cascade (boot-like full time sync).
+            _mqtt->setReconnectEnabled(false);
+            return;
+        }
+
         // Policy: MQTT reconnect is always enabled (even with active UI/SSE).
         // WDT-safety is enforced at transport layer (pump + budgets) for SIM800.
         _mqtt->setReconnectEnabled(true);
@@ -148,7 +185,8 @@ void CellularCore::service() {
         if (failStreak >= 3) {
             const uint32_t now = millis();
             const bool canRequest = (_lastReattachRequestMs == 0) || (now - _lastReattachRequestMs >= 5000UL);
-            if (canRequest && !_gsm->tcpBusBusy() && !_gsm->timeSyncBusy()) {
+            if (canRequest && !_gsm->tcpBusBusy() && !_gsm->timeSyncBusy() &&
+                !_gsm->modemServiceEpochBusy()) {
                 _lastReattachRequestMs = now;
                 _gsm->requestReattach();
             }

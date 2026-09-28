@@ -161,6 +161,8 @@ void GSMController::handleUrc(const char* line) {
         ev(12);
         return;
     }
+
+    voiceHandleUrc_(line);
 }
 
 static bool isWordError_(const char* line) {

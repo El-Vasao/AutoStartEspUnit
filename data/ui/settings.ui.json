@@ -421,7 +421,7 @@
           "valueType": "int",
           "label": "Часовой пояс (UTC)",
           "helpTitle": "Как выбрать",
-          "help": "Смещение локального времени от UTC в целых часах. Москва — UTC+3. Время ниже обновляется сразу по выбранному значению (ещё до сохранения).",
+          "help": "При успешном NITZ/CCLK оффсет подставляется из сети автоматически. Задайте вручную для NTP/CIPGSMLOC или явного override. Москва — UTC+3. Время ниже обновляется сразу по выбранному значению (ещё до сохранения).",
           "options": [
             { "value": -12, "label": "UTC−12" },
             { "value": -11, "label": "UTC−11" },
@@ -452,7 +452,7 @@
             { "value": 14, "label": "UTC+14" }
           ]
         },
-        { "key": "sync_interval_sec", "path": "time.sync_interval_sec", "type": "number", "valueType": "int", "label": "Интервал sync (сек)", "step": "60", "helpTitle": "Как часто", "help": "Период повторной синхронизации после успешного NTP." }
+        { "key": "sync_interval_hours", "path": "time.sync_interval_hours", "type": "number", "valueType": "int", "label": "Интервал sync (часы)", "step": "1", "helpTitle": "Как часто", "help": "Период повторной синхронизации после успешного синка, в целых часах (1…168)." }
       ]
     }
   }

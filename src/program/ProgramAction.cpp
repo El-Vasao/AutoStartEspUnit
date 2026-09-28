@@ -27,6 +27,9 @@ ActionId actionIdFromString(const char* action) {
     if (strcmp(action, "THERMOSTAT_ON") == 0) return ActionId::THERMOSTAT_ON;
     if (strcmp(action, "THERMOSTAT_OFF") == 0) return ActionId::THERMOSTAT_OFF;
 
+    if (strcmp(action, "CALL_OWNER") == 0) return ActionId::CALL_OWNER;
+    if (strcmp(action, "SMS_OWNER") == 0) return ActionId::SMS_OWNER;
+
     return ActionId::UNKNOWN;
 }
 
@@ -50,6 +53,8 @@ const char* actionIdToString(ActionId id) {
         case ActionId::BATTERY_SAVER_OFF: return "BATTERY_SAVER_OFF";
         case ActionId::THERMOSTAT_ON: return "THERMOSTAT_ON";
         case ActionId::THERMOSTAT_OFF: return "THERMOSTAT_OFF";
+        case ActionId::CALL_OWNER: return "CALL_OWNER";
+        case ActionId::SMS_OWNER: return "SMS_OWNER";
         case ActionId::UNKNOWN:
         default:
             return "";

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <stdint.h>
+#include "common/Constants.h"
 #include "program/ProgramAction.h"
-
 /**
  * @brief Compact representation of a program step for runtime execution.
  *
@@ -30,5 +30,7 @@ struct CompiledStep {
     uint8_t engine_state{1};
     uint8_t timeout_action{0};
     uint8_t skip_count{0};
+    /// SMS_OWNER text (POD fixed buffer).
+    char message[TextBytes::Programs::STEP_MESSAGE]{};
 };
 

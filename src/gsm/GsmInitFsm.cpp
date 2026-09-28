@@ -648,6 +648,58 @@ void GSMController::handleInit() {
             resetAwait();
             clearResponse();
         }
+        _lastCommandTime = 0;
+        _initPhase = GsmInitPhase::ModClip;
+        return;
+    case GsmInitPhase::ModClip:
+        if (_lastCommandTime == 0) {
+            sendAt("AT+CLIP=1", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            return;
+        }
+        if (_awaitError || awaitTimedOut(now)) {
+            resetAwait();
+            clearResponse();
+        } else if (!_awaitOk) {
+            return;
+        } else {
+            resetAwait();
+            clearResponse();
+        }
+        _lastCommandTime = 0;
+        _initPhase = GsmInitPhase::ModDdet;
+        return;
+    case GsmInitPhase::ModDdet:
+        if (_lastCommandTime == 0) {
+            // SIM800: enable DTMF detection URCs (+DTMF:).
+            sendAt("AT+DDET=1", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            return;
+        }
+        if (_awaitError || awaitTimedOut(now)) {
+            resetAwait();
+            clearResponse();
+        } else if (!_awaitOk) {
+            return;
+        } else {
+            resetAwait();
+            clearResponse();
+        }
+        _lastCommandTime = 0;
+        _initPhase = GsmInitPhase::ModCmgf;
+        return;
+    case GsmInitPhase::ModCmgf:
+        if (_lastCommandTime == 0) {
+            sendAt("AT+CMGF=1", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            return;
+        }
+        if (_awaitError || awaitTimedOut(now)) {
+            resetAwait();
+            clearResponse();
+        } else if (!_awaitOk) {
+            return;
+        } else {
+            resetAwait();
+            clearResponse();
+        }
         _retryCount = 0;
         {
             const char* t = "UNKNOWN";

@@ -121,6 +121,23 @@ ConfigLoadOutcome Config::loadWithOutcome() {
 
 bool Config::save() { return saveBaseConfig(baseCache); }
 
+bool Config::setTzOffsetHours(int8_t hours) {
+    if (hours < -12 || hours > 14) {
+        logger.log("[Config] reject tz_offset_hours=%d\n", (int)hours);
+        return false;
+    }
+    if (baseCache.time.tz_offset_hours == hours) return true;
+    const int8_t prev = baseCache.time.tz_offset_hours;
+    baseCache.time.tz_offset_hours = hours;
+    if (!save()) {
+        baseCache.time.tz_offset_hours = prev;
+        logger.log("[Config] setTzOffsetHours save failed, reverted to %+dh\n", (int)prev);
+        return false;
+    }
+    logger.log("[Config] tz_offset_hours %+dh → %+dh\n", (int)prev, (int)hours);
+    return true;
+}
+
 void Config::emitCurrentBaseConfigJson(Print& p) const {
     config_internal::serializeBaseConfigToPrint(baseCache, p);
 }

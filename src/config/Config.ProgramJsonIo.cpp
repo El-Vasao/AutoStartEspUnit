@@ -543,6 +543,7 @@ public:
         else if (streq(pending_, "engine_state")) cur_.engine_state = parseU8(v, 1);
         else if (streq(pending_, "timeout_action")) cur_.timeout_action = parseU8(v, 0);
         else if (streq(pending_, "skip_count")) cur_.skip_count = parseU8(v, 0);
+        else if (streq(pending_, "message")) strlcpy(cur_.message, v ? v : "", sizeof cur_.message);
     }
 
     void value(const char* val) override {
@@ -610,6 +611,7 @@ public:
         else if (streq(pending_, "engine_state")) cur_.engine_state = parseU8(v, 1);
         else if (streq(pending_, "timeout_action")) cur_.timeout_action = parseU8(v, 0);
         else if (streq(pending_, "skip_count")) cur_.skip_count = parseU8(v, 0);
+        else if (streq(pending_, "message")) strlcpy(cur_.message, v ? v : "", sizeof cur_.message);
     }
 
     void value(const char* val) override {
@@ -663,6 +665,7 @@ void emitProgramBody(const Program& p, Print& pout) {
         if (s.engine_state == 0) comma(pout, &sc), pout.print("\"engine_state\":"), pout.print(0);
         if (s.timeout_action) comma(pout, &sc), pout.print("\"timeout_action\":"), pout.print(s.timeout_action);
         if (s.skip_count) comma(pout, &sc), pout.print("\"skip_count\":"), pout.print(s.skip_count);
+        if (s.message[0] != '\0') comma(pout, &sc), pout.print("\"message\":"), writeEscaped(pout, s.message);
         pout.print('}');
     }
     pout.print(']');

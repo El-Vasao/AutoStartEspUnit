@@ -27,6 +27,11 @@ enum class ActionId : uint8_t {
     BATTERY_SAVER_OFF,
     THERMOSTAT_ON,
     THERMOSTAT_OFF,
+
+    /// Dial config.gsm.owner_phone (voice); wait `ms` then hang up.
+    CALL_OWNER,
+    /// SMS to owner_phone with step `message` text.
+    SMS_OWNER,
 };
 
 /// Temperature comparison operator in compiled steps.

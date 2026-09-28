@@ -24,8 +24,8 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "broker": "m5.wqtt.ru",
     "port": 10162,
     "client_id": "",
-    "user": "u_1WJDYV",
-    "pass": "9chZ2EvV",
+    "user": "foo",
+    "pass": "bar",
     "topic_prefix": "car/Subaru",
     "publish_interval_sec": 60
   },
@@ -92,7 +92,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "enabled": true,
     "ntp_server": "ru.pool.ntp.org",
     "tz_offset_hours": 3,
-    "sync_interval_sec": 21600
+    "sync_interval_hours": 6
   },
   "input_triggers": [],
   "input_triggers_count": 0,

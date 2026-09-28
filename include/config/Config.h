@@ -36,6 +36,10 @@ public:
     bool reset();
     bool save();
 
+    /// Update wall-clock TZ in RAM; persist to flash only when value changes.
+    /// Returns false if flash save was required and failed.
+    bool setTzOffsetHours(int8_t hours);
+
     /// Сериализовать текущий `baseCache` в JSON (wire-формат как раньше; сейчас — потоковая печать, без ArduinoJson).
     void emitCurrentBaseConfigJson(Print& p) const;
 
