@@ -158,7 +158,7 @@ bool Core::begin() {
     impl.bootConfigLoaded = false;
     impl.bootHwMapBad = false;
 
-    logger.log("\n[Core] begin\n");
+    logger.log("[Core] begin\n");
     logger.log("[Core] Reset reason: %s\n", getResetReason());
 
     // Never use BLE on this product: release controller+host so RF cannot start this boot.
@@ -265,7 +265,7 @@ void Core::update() {
         if (impl.programExecutor.isRunning()) {
             if (flashCommit.isPending()) {
                 static uint32_t lastDeferredBusyLog = 0;
-                if (now - lastDeferredBusyLog >= 2000UL) {
+                if (now - lastDeferredBusyLog >= Timing::DEFERRED_FLASH_BUSY_LOG_MS) {
                     lastDeferredBusyLog = now;
                     logger.log("[Core] Deferred flash commit paused: program is running\n");
                 }
@@ -297,10 +297,12 @@ void Core::update() {
     webServer.update();
     drainDeferredOtaFromWebUpload_(impl);
 
-    if (impl.programExecutor.isRunning()) {
+    if (getMode() == CoreMode::OTA_UPDATE) {
+        // Do not commit config/program flash while Update/OTA stream owns FS.
+    } else if (impl.programExecutor.isRunning()) {
         if (flashCommit.isPending()) {
             static uint32_t lastDeferredBusyLog = 0;
-            if (now - lastDeferredBusyLog >= 2000UL) {
+            if (now - lastDeferredBusyLog >= Timing::DEFERRED_FLASH_BUSY_LOG_MS) {
                 lastDeferredBusyLog = now;
                 logger.log("[Core] Deferred flash commit paused: program is running\n");
             }

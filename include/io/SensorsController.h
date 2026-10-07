@@ -21,7 +21,7 @@ using SensorRomAddress = uint8_t[8];
 
 // Структура для хранения данных одного температурного датчика
 struct TemperatureSensorData {
-    float temperature = -127.0f;    ///< последнее измеренное значение
+    float temperature = DS18B20::DISCONNECTED;    ///< последнее измеренное значение
     uint32_t lastReadTime = 0;       ///< время последнего чтения (мс)
     bool valid = false;              ///< флаг валидности последнего значения
     SensorRomAddress address = {0};  ///< уникальный адрес датчика

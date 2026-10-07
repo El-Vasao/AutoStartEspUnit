@@ -19,7 +19,7 @@ void GSMController::handleReady() {
         if (_rebootStep == 0) {
             _rebootStep = 1;
             logger.log("[GSMController] User requested modem reboot\n");
-            if (!sendAt("AT+SAPBR=0,1", "SAPBR", AwaitKind::OK, 8000)) {
+            if (!sendAt("AT+SAPBR=0,1", "SAPBR", AwaitKind::OK, GSM::SAPBR_DEACT_TIMEOUT_MS)) {
                 _rebootStep = 0; // retry next tick
             }
             return;
@@ -76,8 +76,27 @@ void GSMController::handleReady() {
         // Otherwise: MQTT/TCP reconnects without SAPBR thrash.
     }
 
+    // Diagnostics: never poke CSQ/COPS while a TCP socket is up/connecting (shared UART framing).
+    // Time cascade: CCLK is AT-only (ok with MQTT CIP); yield to CIPSEND by soft-missing lite.
+    // Heavy CIPGSMLOC/CNTP: defer reattach until Idle (do not tear READY mid-cascade).
+    const uint32_t now = millis();
+    if (_timeStep != TimeStep::Idle) {
+        if (_timeCclkOnly && _stack.tcp.isTcpEpochBusy()) {
+            timeSoftMissCclkLite_("tcp_epoch");
+        } else if (!_stack.tcp.isTcpEpochBusy()) {
+            serviceTimeSync(now);
+            return;
+        }
+    }
+
     if (_reattachRequested) {
-        const uint32_t now = millis();
+        if (timeHeavySyncBusy()) {
+            // Finish CIPSHUT/CIPGSMLOC/CNTP before leaving READY.
+            return;
+        }
+        if (_timeCclkOnly) {
+            timeSoftMissCclkLite_("reattach");
+        }
         if (_reattachCooldownUntilMs == 0 || (int32_t)(now - _reattachCooldownUntilMs) >= 0) {
             leaveReadyForReattach_("ready");
             return;
@@ -85,14 +104,7 @@ void GSMController::handleReady() {
         // Cooldown: stay READY, keep request pending, continue sparse diag below.
     }
 
-    // Diagnostics: never poke CSQ/COPS while a TCP socket is up/connecting (shared UART framing).
-    // Prefer in-flight NTP over sparse CSQ/COPS; NTP itself refuses while TCP socket is up.
-    const uint32_t now = millis();
     if (!_stack.tcp.isTcpEpochBusy() && !tcpSocketActive()) {
-        if (_timeStep != TimeStep::Idle) {
-            serviceTimeSync(now);
-            return;
-        }
         if (now - _lastDiagMs >= GSM::READY_SIGNAL_INTERVAL_MS) {
             _lastDiagMs = now;
             updateSignalQuality();
@@ -137,7 +149,7 @@ void GSMController::handleError() {
 
     // Bring-up timebox: escalate recovery if we are stuck too long.
     const uint32_t bringupAge = (now - _bringupStartMs);
-    if (bringupAge > 300000UL && _recoveryLevel < 2) { // 5 min
+    if (bringupAge > GSM::BRINGUP_ESCALATE_MS && _recoveryLevel < 2) {
         _recoveryLevel = 2;
         ev(21, _recoveryLevel);
     }
@@ -162,7 +174,7 @@ void GSMController::handleError() {
             logger.log("[GSMController] Recovering (level 2): CIPSHUT\n");
             _stack.tcp.stop("recover");
             if (!_stack.at.enqueueHigh(
-                    { "AT+CIPSHUT", 10000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
+                    { "AT+CIPSHUT", Sim800Tcp::CIPSHUT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
                 return; // retry enqueue next tick
             }
             _errorRecoveryCmdPending = true;
@@ -173,7 +185,7 @@ void GSMController::handleError() {
             return;
         }
         _errorRecoveryCmdPending = false;
-        _cooldownUntilMs = now + 2000UL;
+        _cooldownUntilMs = now + GSM::ERROR_RECOVERY_COOLDOWN_MS;
         _recoveryLevel = 3;
         _restartPending = true;
         return;
@@ -184,10 +196,10 @@ void GSMController::handleError() {
         if (!_errorRecoveryCmdPending) {
             logger.log("[GSMController] Recovering (level 3): SAPBR reset\n");
             if (!_stack.at.enqueueHigh(
-                    { "AT+SAPBR=0,1", 8000, atExpectMask(AtSession::Expect::Ok), nullptr, "SAPBR0" })) {
+                    { "AT+SAPBR=0,1", GSM::SAPBR_DEACT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "SAPBR0" })) {
                 return;
             }
-            beginAwait(AwaitKind::OK, 8000);
+            beginAwait(AwaitKind::OK, GSM::SAPBR_DEACT_TIMEOUT_MS);
             _errorRecoveryCmdPending = true;
             ev(23);
             return;
@@ -197,7 +209,7 @@ void GSMController::handleError() {
         }
         resetAwait();
         _errorRecoveryCmdPending = false;
-        _cooldownUntilMs = now + 2000UL;
+        _cooldownUntilMs = now + GSM::ERROR_RECOVERY_COOLDOWN_MS;
         _recoveryLevel = 4;
         _restartPending = true;
         return;
@@ -207,7 +219,7 @@ void GSMController::handleError() {
     logger.log("[GSMController] Recovering (level 4): CFUN reset (cycle %u/%u)\n",
                (unsigned)(_errorRecoveryCycles + 1), (unsigned)GSM::ERROR_RECOVERY_MAX_CYCLES);
     if (!_stack.at.enqueueHigh(
-            { "AT+CFUN=1,1", 1000, atExpectMask(AtSession::Expect::AnyLine), nullptr, "CFUN" })) {
+            { "AT+CFUN=1,1", GSM::CFUN_ACCEPT_TIMEOUT_MS, atExpectMask(AtSession::Expect::AnyLine), nullptr, "CFUN" })) {
         return;
     }
     gsmNoteModemSoftReboot(true);

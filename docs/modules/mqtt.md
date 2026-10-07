@@ -92,7 +92,7 @@ MQTT-публикация статуса и подписка на команды
 |------|---------|
 | `id` | 1..`MqttCmd::ID_MAX_LEN` (16) |
 | `cmd` | `run` \| `stop` \| `list` \| `status` \| `set` \| `set_time` |
-| `program` / `name` / `ref` / `enabled` / `epoch` | по cmd (`set_time` требует `epoch` ≥ 1700000000) |
+| `program` / `name` / `ref` / `enabled` / `epoch` | по cmd (`set_time` требует `epoch` ≥ `TimeSync::MIN_SANE_EPOCH_UTC`) |
 
 ### 2) Reply (`{prefix}/reply`)
 
@@ -236,7 +236,7 @@ retained `"offline"` / `"online"`.
 
 SoftAP SSE `gsm` event mirrors `gsmState`, `csq`, and `mqttConnected` for local debug (`gsmState` не в MQTT Tele — канал жив только при рабочем контуре модема).
 
-**Time vs MQTT CIP:** modem cascade (CCLK/CIPGSMLOC/CNTP) cannot share the IP stack with MQTT TCP. Boot still runs cascade before first CIPSTART. On `sync_interval`, TimeSyncManager may briefly drain MQTT (offline + DISCONNECT + CIPCLOSE), run the same full cascade, then reconnect — same drain recipe as voice/SMS. Manual `set_time` still applies without tearing CIP. `time.stale` (48 h) is reported in status; schedule triggers still use `isSynced()`.
+**Time vs MQTT CIP:** full modem cascade (`CCLK` → `CIPSHUT` → `CIPGSMLOC` → optional `CNTP`) cannot share the IP stack with MQTT TCP. Boot still runs the full cascade before first CIPSTART. While unsynced with MQTT up, TimeSyncManager prefers **CCLK-lite** (`AT+CCLK?` only, no drain; soft-miss / busy use a short re-arm, not fail-backoff) so NITZ can succeed without flapping the broker; after several lite misses (or force) it drains MQTT (offline + DISCONNECT + CIPCLOSE), runs `CIPSHUT` then CIPGSMLOC/CNTP, then reconnects — same drain recipe as voice/SMS. Heavy cascade failures use stepped backoff (2→5→15→30 min). `+CIPGSMLOC` is waited after command `OK` (URC often arrives later). Manual `set_time` still applies without tearing CIP. `time.stale` (48 h) is reported in status; schedule triggers still use `isSynced()`. Log tags: `[MQTTClient]`, `[TimeSync]`, `[Cellular]`, `[GSMController]`.
 
 **Abnormal reboot fact** (always undelivered on boot, except clean reasons):
 

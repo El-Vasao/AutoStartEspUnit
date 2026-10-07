@@ -23,11 +23,7 @@ public:
 
     void begin();
     void setAppPorts(const AppPorts* ports) { _ports = ports; }
-    void setDeferMqttRx(bool (*fn)(void*), void* ctx) {
-        _deferMqttRx = fn;
-        _deferMqttRxCtx = ctx;
-    }
-    /// Modem control-plane busy (CIPSEND and/or CNTP) — gate Ctrl replies and new CIPSTART.
+    /// Modem control-plane busy (TCP epoch / time sync / voice) — gate TX, Ctrl replies, CIPSTART.
     void setCtrlPlaneBusy(bool (*fn)(void*), void* ctx) {
         _ctrlPlaneBusy = fn;
         _ctrlPlaneBusyCtx = ctx;
@@ -50,7 +46,6 @@ public:
     bool isSessionConnected() const { return _fsm.isConnected(); }
     /// Last MQTT session fail reason (`keepalive_timeout` / `tcp_drop` / …); "" if none.
     const char* getLastConnectFailReason() const;
-    bool isNonBlocking() const { return true; }
 
     void onProgramLifecycle(uint8_t programId, bool finishedOk);
     static void onProgramLifecycleThunk(void* ctx, uint8_t programId, bool finishedOk);
@@ -72,8 +67,6 @@ private:
     /// Latched while FSM is in/after Error until Connected edge clears it (avoids missing set when ensureTcp_ clears Error).
     bool _sessionErrorRecorded{false};
     const AppPorts* _ports{nullptr};
-    bool (*_deferMqttRx)(void*){nullptr};
-    void* _deferMqttRxCtx{nullptr};
     bool (*_ctrlPlaneBusy)(void*){nullptr};
     void* _ctrlPlaneBusyCtx{nullptr};
     void (*_onRxIncomplete)(void*, const uint8_t*, uint16_t, uint32_t){nullptr};

@@ -50,7 +50,7 @@ private:
 } // namespace
 
 // Layered with Sim800Tcp::CONNECT_WATCHDOG_MS (15s): transport recovers modem sooner; FSM gives up later.
-static constexpr uint32_t kTcpConnectTimeoutMs = 45000;
+static constexpr uint32_t kTcpConnectTimeoutMs = NetTiming::MQTT_TCP_CONNECT_TIMEOUT_MS;
 static constexpr uint32_t kMqttConnectTimeoutMs = NetTiming::MQTT_FSM_CONNECT_TIMEOUT_MS;
 
 MqttFsmClient::MqttFsmClient(Client& netClient)
@@ -674,7 +674,7 @@ bool MqttFsmClient::buildConnect_() {
     vh[vhLen++] = (uint8_t)(_cfg.keepAliveSec & 0xFF);
 
     // Payload: client id, will topic/msg, username/password (in this order)
-    uint8_t pl[200];
+    uint8_t pl[NetTiming::MQTT_CONNECT_PAYLOAD_MAX];
     uint16_t plLen = 0;
     uint16_t n = putStr_(pl + plLen, (uint16_t)(sizeof(pl) - plLen), _cfg.clientId);
     if (!n) return false;
@@ -749,7 +749,7 @@ bool MqttFsmClient::buildSubscribe_(const char* topic) {
     const uint16_t pid = _nextPacketId++;
     _subPacketId = pid;
 
-    uint8_t pl[128];
+    uint8_t pl[NetTiming::MQTT_SUBSCRIBE_PAYLOAD_MAX];
     uint16_t plLen = 0;
     uint16_t n = putStr_(pl + plLen, (uint16_t)(sizeof(pl) - plLen), topic);
     if (!n) return false;

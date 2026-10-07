@@ -2,6 +2,7 @@
 #include "program/ProgramExecutor.h"
 
 #include "core/Core.h"
+#include "gsm/GSMController.h"
 #include "io/RelayController.h"
 #include "core/ErrorManager.h"
 #include "io/HwMap.h"
@@ -102,6 +103,10 @@ bool ProgramExecutor::start(uint8_t programId) {
 }
 
 void ProgramExecutor::stop() {
+    // Preempt may interrupt CALL_OWNER/SMS_OWNER — abort modem epoch so ATD/CMGS is not orphaned.
+    if (core.getGSM().modemServiceEpochBusy()) {
+        core.getGSM().abortModemServiceEpoch();
+    }
     if (_running) {
         logger.log("[ProgramExecutor] Stopping program id=%u name=%s at step=%u/%u\n",
                    (unsigned)_programId, _currentProgramName, (unsigned)_currentStep, (unsigned)_localStepCount);

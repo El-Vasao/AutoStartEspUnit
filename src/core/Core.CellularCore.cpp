@@ -16,8 +16,8 @@
  * Принципы:
  * - После бута — settle `GSM::POST_BOOT_SETTLE_MS` до первого `gsm.begin()`.
  * - Неблокирующее обслуживание: GSM тикает в `service()`, MQTT — когда модем READY.
- * - First MQTT begin waits for boot time cascade (CCLK/CIPGSMLOC/CNTP before CIP).
- * - Periodic time sync may drain MQTT (same recipe as voice) so cascade can run.
+ * - First MQTT begin waits for boot time cascade (CCLK/CIPSHUT/CIPGSMLOC/CNTP before CIP).
+ * - CCLK-lite probes may run with MQTT up; full cascade drains MQTT (same recipe as voice).
  * - Leave READY drains MQTT (same as suspend) before bearer AT continues.
  * - Cellular suspend только в SETUP / EMERGENCY / OTA (см. Core.Modes); SoftAP в NORMAL
  *   сосуществует с GSM/MQTT.
@@ -35,12 +35,7 @@ void CellularCore::init(GSMController& gsm, MQTTClient& mqtt, WebServer& web, Ti
     _lastSettleLogMs = 0;
     _loggedBootNtpWait = false;
     _mqttStableNoted = false;
-    _mqtt->setDeferMqttRx(
-        [](void* ctx) -> bool {
-            return static_cast<GSMController*>(ctx)->shouldDeferMqttRead();
-        },
-        _gsm);
-    // MQTT Ctrl/CIPSTART: TCP epoch, time cascade, or voice/SMS exclusive epoch.
+    // MQTT Ctrl/CIPSTART: TCP epoch, heavy time cascade, CCLK-lite (mutex vs CIPSEND), or voice.
     _mqtt->setCtrlPlaneBusy(
         [](void* ctx) -> bool {
             auto* g = static_cast<GSMController*>(ctx);
@@ -61,21 +56,25 @@ void CellularCore::init(GSMController& gsm, MQTTClient& mqtt, WebServer& web, Ti
         this);
 }
 
-void CellularCore::drainMqttDisconnect_() {
-    if (!_gsm || !_mqtt) return;
+bool CellularCore::drainMqttDisconnect_() {
+    if (!_gsm || !_mqtt) return true;
     _mqtt->setReconnectEnabled(false);
-    _mqtt->disconnect();
-    for (uint8_t i = 0; i < 50; ++i) {
+    if (_mqttStarted || _mqtt->needsDisconnectDrain() || _mqtt->isSessionConnected()) {
+        _mqtt->disconnect();
+    }
+    for (uint8_t i = 0; i < Cellular::MQTT_DRAIN_MAX_TICKS; ++i) {
         _gsm->update();
         _mqtt->loop();
         if (!_mqtt->needsDisconnectDrain() && !_gsm->tcpBusBusy()) {
-            break;
+            _mqttStarted = false;
+            _mqttStableNoted = false;
+            _lastLoggedFailStreak = 0;
+            return true;
         }
         yield();
     }
-    _mqttStarted = false;
-    _mqttStableNoted = false;
-    _lastLoggedFailStreak = 0;
+    // Incomplete — keep draining next service(); do not arm voice/time AT yet.
+    return false;
 }
 
 void CellularCore::service() {
@@ -88,7 +87,7 @@ void CellularCore::service() {
             logger.log("[Cellular] GSM post-boot settle %u ms\n", (unsigned)GSM::POST_BOOT_SETTLE_MS);
         }
         if ((int32_t)(now - _bootSettleUntilMs) < 0) {
-            if (_lastSettleLogMs == 0 || (now - _lastSettleLogMs) >= 5000UL) {
+            if (_lastSettleLogMs == 0 || (now - _lastSettleLogMs) >= Cellular::SETTLE_LOG_INTERVAL_MS) {
                 _lastSettleLogMs = now;
                 const uint32_t left = _bootSettleUntilMs - now;
                 logger.log("[Cellular] GSM settle remaining ~%u ms\n", (unsigned)left);
@@ -108,22 +107,26 @@ void CellularCore::service() {
 
     // Exclusive voice/SMS epoch: drain MQTT before ATD/ATA/CMGS.
     if (_gsm->serviceEpochNeedsMqttDrain()) {
-        if (_mqttStarted) {
-            logger.log("[Cellular] draining MQTT for voice/SMS epoch\n");
-            drainMqttDisconnect_();
+        if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
+            if (_mqttStarted) {
+                logger.log("[Cellular] draining MQTT for voice/SMS epoch\n");
+            }
+            if (!drainMqttDisconnect_()) return;
         } else if (_mqtt) {
             _mqtt->setReconnectEnabled(false);
         }
         _gsm->notifyMqttDrainedForServiceEpoch();
     }
 
-    // Periodic time-sync yield: drain MQTT so CCLK→CIPGSMLOC→CNTP can run.
-    // Skip while voice owns the modem (mutual exclude).
+    // Heavy time-sync yield: drain MQTT so CCLK→CIPSHUT→CIPGSMLOC→CNTP can run.
+    // CCLK-lite does not request drain. Skip while voice owns the modem (mutual exclude).
     if (_timeSync && _timeSync->needsMqttDrainForSync() && !_gsm->modemServiceEpochBusy() &&
         !_gsm->serviceEpochNeedsMqttDrain()) {
-        if (_mqttStarted) {
-            logger.log("[Cellular] draining MQTT for time-sync yield\n");
-            drainMqttDisconnect_();
+        if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
+            if (_mqttStarted) {
+                logger.log("[Cellular] draining MQTT for time-sync yield\n");
+            }
+            if (!drainMqttDisconnect_()) return;
         } else if (_mqtt) {
             _mqtt->setReconnectEnabled(false);
         }
@@ -182,9 +185,10 @@ void CellularCore::service() {
         }
 
         const uint8_t failStreak = _mqtt->getConsecutiveConnectFails();
-        if (failStreak >= 3) {
+        if (failStreak >= Cellular::MQTT_FAIL_STREAK_REATTACH) {
             const uint32_t now = millis();
-            const bool canRequest = (_lastReattachRequestMs == 0) || (now - _lastReattachRequestMs >= 5000UL);
+            const bool canRequest = (_lastReattachRequestMs == 0) ||
+                (now - _lastReattachRequestMs >= Cellular::MQTT_REATTACH_REQUEST_COOLDOWN_MS);
             if (canRequest && !_gsm->tcpBusBusy() && !_gsm->timeSyncBusy() &&
                 !_gsm->modemServiceEpochBusy()) {
                 _lastReattachRequestMs = now;
@@ -193,7 +197,7 @@ void CellularCore::service() {
             if (failStreak != _lastLoggedFailStreak) {
                 _lastLoggedFailStreak = failStreak;
                 const char* why = _mqtt->getLastConnectFailReason();
-                logger.log("[Core] MQTT connect fails=%u reason=%s, requesting GSM reattach%s\n",
+                logger.log("[Cellular] MQTT connect fails=%u reason=%s, requesting GSM reattach%s\n",
                            (unsigned)failStreak, (why && why[0]) ? why : "?",
                            canRequest ? "" : " (cooldown)");
                 core.logHeapSnapshot("mqtt_connect_fail");
@@ -201,18 +205,18 @@ void CellularCore::service() {
         } else {
             _lastLoggedFailStreak = failStreak;
         }
-    } else if (_mqttStarted) {
+    } else if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
         // Leave READY (reattach/ERROR): drain offline+DISCONNECT like suspend (C1).
         logger.log("[Cellular] GSM left READY — draining MQTT\n");
-        drainMqttDisconnect_();
+        (void)drainMqttDisconnect_();
     }
 }
 
 void CellularCore::suspend() {
     if (!_gsm || !_mqtt || !_web) return;
     if (!_mqttStarted && !_gsmStarted) return;
-    if (_mqttStarted) {
-        drainMqttDisconnect_();
+    if (_mqttStarted || _mqtt->needsDisconnectDrain()) {
+        (void)drainMqttDisconnect_();
     }
     if (_gsmStarted) {
         _gsm->stop();

@@ -143,9 +143,9 @@ private:
     char _subTopic[TOPIC_MAX]{};
 
     // Outbound packet queue: wire-ready MQTT frames.
-    // Depth 3: Ctrl reserve + one Tele (coalesced) + one in-flight Ctrl (SUBSCRIBE/online/PING).
-    static constexpr uint16_t TX_MAX = 1024;
-    static constexpr uint8_t TX_Q_DEPTH = 3;
+    // Depth: Ctrl reserve + one Tele (coalesced) + one in-flight Ctrl (SUBSCRIBE/online/PING).
+    static constexpr uint16_t TX_MAX = NetTiming::MQTT_FRAME_MAX;
+    static constexpr uint8_t TX_Q_DEPTH = NetTiming::MQTT_TX_Q_DEPTH;
     uint8_t _txQ[TX_Q_DEPTH][TX_MAX]{};
     uint16_t _txQLen[TX_Q_DEPTH]{};
     OutClass _txQClass[TX_Q_DEPTH]{};
@@ -155,8 +155,8 @@ private:
     uint16_t _txOff{0};   ///< byte offset into head packet while writing
 
     // RX frame assembly
-    static constexpr uint16_t RX_MAX = 320;
-    static constexpr uint32_t RX_ASSEMBLE_TIMEOUT_MS = 3000;
+    static constexpr uint16_t RX_MAX = NetTiming::MQTT_RX_ASSEMBLE_MAX;
+    static constexpr uint32_t RX_ASSEMBLE_TIMEOUT_MS = NetTiming::MQTT_RX_ASSEMBLE_TIMEOUT_MS;
     uint8_t _rx[RX_MAX]{};
     uint16_t _rxLen{0};
     uint32_t _rxAssembleStartMs{0};

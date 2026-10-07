@@ -13,6 +13,7 @@
 #include "common/EspHal.h"
 #include "common/Logger.h"
 #include "common/Pins.h"
+#include "common/Utils.h"
 #include "common/Version.h"
 #include "core/Core.h"
 #include "core/TimeSyncManager.h"
@@ -81,7 +82,7 @@ void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
     s.lastProgramId = pe.getLastProgramId();
     {
         const uint32_t remMs = pe.getTimerRemainingMs();
-        s.timerRemainingSec = remMs ? (remMs + 999) / 1000 : 0;
+        s.timerRemainingSec = msToSecCeil(remMs);
     }
 
     s.thermostatRuntime = core.getThermostatRuntime();
@@ -124,7 +125,7 @@ void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
     }
 }
 
-static constexpr uint32_t kMqttPublishBudgetMs = 10;
+static constexpr uint32_t kMqttPublishBudgetMs = NetTiming::MQTT_PUBLISH_BUDGET_MS;
 
 MQTTClient::MQTTClient(Client& client)
     : _netClient(client), _lastStatusPublish(0), _lastReconnectAttempt(0), _fsm(client)
@@ -189,13 +190,14 @@ void MQTTClient::begin() {
         c.willRetain = false;
         c.willQos = 0;
     }
-    c.keepAliveSec = 30;
+    c.keepAliveSec = NetTiming::MQTT_KEEPALIVE_SEC;
     c.cleanSession = true;
     _fsm.begin(c);
 
     // One-line begin: lengths only for credentials (no plaintext pass on SSE).
-    logger.log("[MQTTClient] begin keepAlive=30s proto=%s idLen=%u userLen=%u passLen=%u "
+    logger.log("[MQTTClient] begin keepAlive=%us proto=%s idLen=%u userLen=%u passLen=%u "
                "avail=%s status=%s cmd=%s reply=%s\n",
+               (unsigned)NetTiming::MQTT_KEEPALIVE_SEC,
                (c.proto == MqttFsmClient::Proto::Mqtt31) ? "3.1" : "3.1.1",
                (unsigned)strlen(_mqttClientId),
                (unsigned)strlen(_mqttUser),
@@ -232,14 +234,11 @@ void MQTTClient::loop() {
     }
 
     MqttFsmClient::Budgets b{};
-    b.maxReadBytesPerTick = 256;
-    b.maxWriteBytesPerTick = 1024;
-    b.maxParseFramesPerTick = 4;
-    b.maxMsPerTick = 20;
-    // Always drain RX ring (shouldDeferMqttRead is false on SIM800).
-    b.shouldDeferRead = _deferMqttRx;
-    b.shouldDeferReadCtx = _deferMqttRxCtx;
-    // Block new CIPSTART while CNTP / CIPSEND owns the modem IP stack.
+    b.maxReadBytesPerTick = NetTiming::MQTT_TICK_MAX_READ_BYTES;
+    b.maxWriteBytesPerTick = NetTiming::MQTT_TICK_MAX_WRITE_BYTES;
+    b.maxParseFramesPerTick = NetTiming::MQTT_TICK_MAX_PARSE_FRAMES;
+    b.maxMsPerTick = NetTiming::MQTT_TICK_MAX_MS;
+    // Block new CIPSTART while TCP epoch / time sync / voice owns the modem.
     b.shouldBlockConnect = _ctrlPlaneBusy;
     b.shouldBlockConnectCtx = _ctrlPlaneBusyCtx;
     b.onRxIncomplete = _onRxIncomplete;
@@ -274,7 +273,7 @@ void MQTTClient::loop() {
             _lastStatusPublish = 0;
             _onlinePublishDue = _topicAvail[0] != '\0';
             _awaitFirstStatus = _topicStatus[0] != '\0';
-            _firstStatusAfterMs = millis() + 1500u;
+            _firstStatusAfterMs = millis() + NetTiming::MQTT_FIRST_STATUS_DELAY_MS;
             _havePublishedBaseline = false;
             // Clear sticky active; undelivered history remains for first full status last_err.
             if (core.getErrorManager().get() == ErrorCode::MQTT_CONNECT_FAIL) {
@@ -282,7 +281,7 @@ void MQTTClient::loop() {
             }
         }
 
-        static constexpr uint32_t kSubackTimeoutMs = 8000u;
+        static constexpr uint32_t kSubackTimeoutMs = NetTiming::MQTT_SUBACK_TIMEOUT_MS;
         const bool subConfirmed = _fsm.isSubscribeConfirmed();
         const bool subPending = _topicCmd[0] && _fsm.isSubscribePending();
         const bool subTimedOut =
@@ -299,29 +298,33 @@ void MQTTClient::loop() {
         }
         // Presence/tele only after SUBACK — avoid avail=online while /cmd is not subscribed.
         const bool subReady = !_topicCmd[0] || subConfirmed;
+        // Mutex vs CCLK-lite / heavy time / voice: do not enqueue new CIPSEND while AT owns UART.
+        const bool txOk = !modemCtrlBusy;
 
         static constexpr uint8_t kOnlinePayload[] = "online";
-        if (subReady && _onlinePublishDue && _topicAvail[0]) {
+        if (txOk && subReady && _onlinePublishDue && _topicAvail[0]) {
             if (_fsm.publish(_topicAvail, kOnlinePayload, sizeof(kOnlinePayload) - 1u, true, true)) {
                 _onlinePublishDue = false;
                 logger.log("[MQTTClient] pub avail online\n");
             }
         }
 
-        flushPending_();
-        drainInbound_();
+        if (txOk) {
+            flushPending_();
+            drainInbound_();
+        }
 
         const bool teleIdle = (_inboundCount == 0) && (_pendingCount == 0) && !_cmdBusy && !_fsm.hasCtrlOutbound();
 
-        if (subReady && teleIdle && _awaitFirstStatus) {
+        if (txOk && subReady && teleIdle && _awaitFirstStatus) {
             if ((int32_t)(millis() - _firstStatusAfterMs) >= 0 && publishStatus(true)) {
                 _awaitFirstStatus = false;
                 _lastStatusPublish = millis();
                 core.cooperate();
             }
-        } else if (subReady && teleIdle && _topicStatus[0]) {
+        } else if (txOk && subReady && teleIdle && _topicStatus[0]) {
             const auto& mqttCfg = config.getBase().mqtt;
-            const uint32_t interval_ms = mqttCfg.publish_interval_sec * 1000UL;
+            const uint32_t interval_ms = secToMs(mqttCfg.publish_interval_sec);
             const bool due = (_lastStatusPublish == 0) || (millis() - _lastStatusPublish >= interval_ms);
             if (due && publishStatus(false)) {
                 _lastStatusPublish = millis();

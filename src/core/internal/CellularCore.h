@@ -34,7 +34,8 @@ public:
     void suspend();
 
 private:
-    void drainMqttDisconnect_();
+    /// Drain MQTT disconnect + CIP idle. Returns false if still busy (retry next service).
+    bool drainMqttDisconnect_();
 
     GSMController* _gsm{nullptr};
     MQTTClient* _mqtt{nullptr};

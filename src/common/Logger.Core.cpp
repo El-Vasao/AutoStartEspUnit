@@ -24,7 +24,7 @@ void sseBroadcastLog(const char* message);
 
 void Logger::begin() {
 #ifdef SERIAL_DEBUG
-    Serial.begin(115200);
+    Serial.begin(GSM::UART_BAUD);
 #endif
 }
 

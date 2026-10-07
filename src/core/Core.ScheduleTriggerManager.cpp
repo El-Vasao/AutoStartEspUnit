@@ -4,6 +4,7 @@
 #include "config/Config.h"
 #include "core/TimeSyncManager.h"
 #include "common/Logger.h"
+#include "common/Utils.h"
 
 #include <string.h>
 #include <time.h>
@@ -14,11 +15,6 @@
  */
 
 namespace {
-uint32_t dayKeyFromTm(const struct tm& t) {
-    // tm_year since 1900, tm_yday 0..365
-    return (static_cast<uint32_t>(t.tm_year & 0x1FF) << 9) | static_cast<uint32_t>(t.tm_yday & 0x1FF);
-}
-
 /// Convert tm_wday (0=Sun) to schedule bit (bit0=Mon … bit6=Sun).
 uint8_t scheduleBitFromTmWday(int tmWday) {
     if (tmWday < 0 || tmWday > 6) return 0;
@@ -58,7 +54,7 @@ void ScheduleTriggerManager::update() {
     struct tm local {};
     if (!_timeSync.localBrokenDown(local)) return;
 
-    const uint32_t todayKey = dayKeyFromTm(local);
+    const uint32_t todayKey = calendarDayKey(local);
     const uint8_t dowBit = scheduleBitFromTmWday(local.tm_wday);
     const auto& full = _config.getBase();
 

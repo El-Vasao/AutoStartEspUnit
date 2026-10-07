@@ -7,6 +7,8 @@
 #include "core/ErrorManager.h"
 #include "io/HwMap.h"
 #include "common/Logger.h"
+#include "common/Constants.h"
+#include "common/Utils.h"
 #include "io/RelayController.h"
 #include "program/internal/ProgramExecutorInternal.h"
 
@@ -103,7 +105,7 @@ void ProgramExecutor::update() {
 
             if (_starter.attemptsLeft == 0) _starter.attemptsLeft = (step.retries ? step.retries : 1);
 
-            const uint32_t maxStarterMs = (uint32_t)vcfg.starter_max_time_sec * 1000UL;
+            const uint32_t maxStarterMs = secToMs((uint32_t)vcfg.starter_max_time_sec);
             const uint32_t attemptMs =
                 (actionId == ActionId::STARTER_TIMED) ? ((step.ms > 0 && step.ms < maxStarterMs) ? step.ms : maxStarterMs)
                                                      : maxStarterMs;
@@ -132,7 +134,7 @@ void ProgramExecutor::update() {
             }
 
             if (_starter.phase == 2) {
-                const uint32_t waitAfterMs = (uint32_t)vcfg.wait_after_start_sec * 1000UL;
+                const uint32_t waitAfterMs = secToMs((uint32_t)vcfg.wait_after_start_sec);
                 if (now - _starter.startedAtMs < waitAfterMs) return;
 
                 if (core.isEngineRunning()) {
@@ -157,7 +159,7 @@ void ProgramExecutor::update() {
             }
 
             if (_starter.phase == 3) {
-                if (now - _starter.startedAtMs < 1000UL) return;
+                if (now - _starter.startedAtMs < ProgramTiming::STARTER_RETRY_GAP_MS) return;
                 core.getRelay().on((uint8_t)starterRelay);
                 _starter.phase = 1;
                 _starter.startedAtMs = now;
@@ -358,7 +360,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::CALL_OWNER: {
             // UI default ms=1s is too short for a ring; treat <3s as "use modem default".
             uint32_t ringMs = step.ms;
-            if (ringMs < 3000UL) ringMs = GSM::VOICE_DEFAULT_RING_MS;
+            if (ringMs < ProgramTiming::CALL_OWNER_MIN_RING_MS) ringMs = GSM::VOICE_DEFAULT_RING_MS;
             if (!core.getGSM().requestCallOwner(ringMs)) {
                 logger.log("[ProgramExecutor] CALL_OWNER rejected (no phone / GSM busy)\n");
                 finish(false);

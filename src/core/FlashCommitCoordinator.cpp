@@ -30,21 +30,35 @@ void FlashCommitCoordinator::recordFlashCommitSnapshot(FlashCommitOp op, bool ok
     lastFlashCrc_ = crc;
 }
 
+void FlashCommitCoordinator::queueResetConfig() {
+    if (pendingFsOp_ != PendingFsOp::NONE && pendingFsOp_ != PendingFsOp::RESET_CONFIG) {
+        logger.log("[FlashCommit] queue overwrite: %u -> reset_config\n", (unsigned)pendingFsOp_);
+    }
+    pendingFsOp_ = PendingFsOp::RESET_CONFIG;
+}
+
+void FlashCommitCoordinator::queueResetPrograms() {
+    if (pendingFsOp_ != PendingFsOp::NONE && pendingFsOp_ != PendingFsOp::RESET_PROGRAMS) {
+        logger.log("[FlashCommit] queue overwrite: %u -> reset_programs\n", (unsigned)pendingFsOp_);
+    }
+    pendingFsOp_ = PendingFsOp::RESET_PROGRAMS;
+}
+
+void FlashCommitCoordinator::queueDeleteProgram(uint8_t id) {
+    if (pendingFsOp_ != PendingFsOp::NONE &&
+        !(pendingFsOp_ == PendingFsOp::DELETE_PROGRAM && pendingProgramId_ == id)) {
+        logger.log("[FlashCommit] queue overwrite: %u -> delete_program %u\n",
+                   (unsigned)pendingFsOp_, (unsigned)id);
+    }
+    pendingProgramId_ = id;
+    pendingFsOp_ = PendingFsOp::DELETE_PROGRAM;
+}
+
 void FlashCommitCoordinator::tick(Core& core) {
     core.feedWatchdog();
     espHalFeedWdt();
 
-    if (core.getProgramExecutor().isRunning()) {
-        if (isPending()) {
-            static uint32_t lastProgramBusyLog = 0;
-            const uint32_t now = millis();
-            if (now - lastProgramBusyLog >= 2000UL) {
-                lastProgramBusyLog = now;
-                logger.log("[FlashCommit] Deferred flash commit paused: program is running\n");
-            }
-        }
-        return;
-    }
+    // Program-running pause is owned by Core::update (tick is not called while PE runs).
 
     if (deferredPostedConfigApply_) {
         core.feedWatchdog();

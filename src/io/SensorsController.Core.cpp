@@ -24,9 +24,6 @@
 
 namespace {
 
-constexpr uint8_t kOwTimeoutFailStreak = 3;
-constexpr uint8_t kAdcSatFailStreak = 8;
-
 struct SensorsOwBackend {
     OneWire bus;
     DallasTemperature dallas;
@@ -57,14 +54,14 @@ SensorsController::SensorsController()
 
 void SensorsController::noteOneWireBusError_() {
     if (_owTimeoutStreak < 255) _owTimeoutStreak++;
-    if (_owTimeoutStreak == kOwTimeoutFailStreak) {
+    if (_owTimeoutStreak == Sensors::OW_TIMEOUT_FAIL_STREAK) {
         core.getErrorManager().set(ErrorCode::ONEWIRE_BUS_ERR);
     }
 }
 
 void SensorsController::noteAdcReadFail_() {
     if (_adcSatStreak < 255) _adcSatStreak++;
-    if (_adcSatStreak == kAdcSatFailStreak) {
+    if (_adcSatStreak == Sensors::ADC_SAT_FAIL_STREAK) {
         core.getErrorManager().set(ErrorCode::ADC_READ_FAIL);
     }
 }
@@ -81,7 +78,7 @@ void SensorsController::begin() {
 
     // Battery divider outputs ~0–1 V into ADC; 0 dB atten ≈ 0–1.1 V full-scale on ESP32-C3.
     analogSetAttenuation(ADC_0db);
-    analogReadResolution(12);
+    analogReadResolution(ADC::RESOLUTION_BITS);
 
     auto& ow = owBackend();
     ow.dallas.begin();

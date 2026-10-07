@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/Constants.h"
+
 class GSMController;
 
 /**
@@ -10,6 +12,5 @@ class GsmInitFsm {
 public:
     static void tick(GSMController& gsm);
 
-    static constexpr uint8_t kBaudCandidateCount = 5;
-    static uint32_t baudCandidateAt(uint8_t idx);
+    static constexpr uint8_t kBaudCandidateCount = GSM::UART_BAUD_CANDIDATE_COUNT;
 };

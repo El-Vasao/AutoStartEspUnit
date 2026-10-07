@@ -150,11 +150,6 @@ bool GSMController::sendAt(const char* cmd, const char* tag, AwaitKind kind, uin
     return true;
 }
 
-void GSMController::sendCommand(const char* cmd) {
-    // Legacy direct-serial path removed; keep wrapper to preserve call sites during migration.
-    sendAt(cmd, nullptr, AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
-}
-
 static const char* gsmStateToString(GSMState s) {
     switch (s) {
         case GSMState::IDLE:            return "IDLE";
@@ -274,7 +269,7 @@ bool GSMController::gsmParseStoredIprBaud(uint32_t& baudOut) const {
     while (*p == ' ' || *p == '\t' || *p == ':') p++;
     char* end = nullptr;
     const unsigned long u = strtoul(p, &end, 10);
-    if (end == p || u == 0UL || u > 4000000UL) return false;
+    if (end == p || u == 0UL || u > GSM::UART_BAUD_PARSE_MAX) return false;
     baudOut = (uint32_t)u;
     return true;
 }
@@ -315,12 +310,12 @@ void GSMController::leaveReadyForReattach_(const char* why) {
         return;
     }
     const uint32_t now = millis();
-    if (_reattachBackoffStep < 6) _reattachBackoffStep++;
-    uint32_t delayMs = 5000UL << (_reattachBackoffStep - 1); // 5s…160s
-    if (delayMs > 180000UL) delayMs = 180000UL;
+    if (_reattachBackoffStep < GSM::REATTACH_BACKOFF_MAX_STEP) _reattachBackoffStep++;
+    uint32_t delayMs = GSM::REATTACH_BACKOFF_BASE_MS << (_reattachBackoffStep - 1);
+    if (delayMs > GSM::REATTACH_BACKOFF_MAX_MS) delayMs = GSM::REATTACH_BACKOFF_MAX_MS;
     const int16_t rssi = _signal;
-    if (_signalBer >= 0 && (rssi < 6 || rssi == 99)) {
-        delayMs = (delayMs < 60000UL) ? 60000UL : delayMs;
+    if (_signalBer >= 0 && (rssi < GSM::REATTACH_WEAK_RSSI_MAX || rssi == GSM::REATTACH_RSSI_UNKNOWN)) {
+        delayMs = (delayMs < GSM::REATTACH_WEAK_RSSI_FLOOR_MS) ? GSM::REATTACH_WEAK_RSSI_FLOOR_MS : delayMs;
     }
     _reattachCooldownUntilMs = now + delayMs;
     _reattachRequested = false;

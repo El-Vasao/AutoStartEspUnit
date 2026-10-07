@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "common/Constants.h"
 #include "modem/ModemUart.h"
 
 class AtSession {
@@ -61,8 +62,8 @@ private:
 
     ModemUart& _uart;
 
-    static constexpr uint8_t QSIZE = 6;
-    static constexpr uint8_t HQSIZE = 2;
+    static constexpr uint8_t QSIZE = GSM::AT_QSIZE;
+    static constexpr uint8_t HQSIZE = GSM::AT_HQSIZE;
     Request _q[QSIZE]{};
     uint8_t _qHead{0};
     uint8_t _qCount{0};

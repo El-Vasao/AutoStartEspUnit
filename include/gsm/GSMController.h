@@ -84,12 +84,6 @@ public:
     // BER из последнего AT+CSQ (0..7), или -1 если ещё не было ответа
     int16_t getSignalBer() const { return _signalBer; }
 
-    // Текущая скорость UART, на которой работает модем (по мнению контроллера).
-    uint32_t getBaud() const { return _baud; }
-
-    // Сколько ретраев было в текущем состоянии.
-    uint8_t getRetryCount() const { return _retryCount; }
-
     // Возраст текущего состояния (мс).
     uint32_t getStateAgeMs() const { return millis() - _stateStartTime; }
 
@@ -118,9 +112,6 @@ public:
     /// Log Sim800 +IPD / send-epoch snapshot (MQTT rx_incomplete forensics).
     void logTcpRxForensic(const char* why) { _stack.tcp.logRxForensic(why); }
 
-    /// Legacy: always false — MQTT drains RX ring even mid-send.
-    bool shouldDeferMqttRead() const { return _stack.tcp.shouldDeferMqttRead(); }
-
     /// Who produced the last successful modem time sync (for status/debug).
     enum class TimeSource : uint8_t { None = 0, Cclk, Cipgsmloc, Cntp };
 
@@ -135,7 +126,9 @@ public:
     enum class TimeStep : uint8_t {
         Idle = 0,
         CclkProbe,
+        Cipshut,           ///< AT+CIPSHUT before IP-dependent hops (after MQTT CIPCLOSE)
         Cipgsmloc,
+        WaitCipgsmlocUrc,  ///< +CIPGSMLOC often arrives after OK
         Cntpcid,
         CntpSet,
         CntpRun,
@@ -143,20 +136,24 @@ public:
         CclkAfterCntp,
     };
 
-    /// Non-blocking cascade: CCLK/NITZ → CIPGSMLOC → CNTP. Returns false if busy / not ready / TCP active.
+    /// Non-blocking cascade: CCLK/NITZ → CIPSHUT → CIPGSMLOC → CNTP. Returns false if busy / not ready / TCP active.
     /// `ntpServer` may be empty to skip CNTP after CCLK/CIPGSMLOC fail.
     bool requestTimeSync(const char* ntpServer, int8_t tzOffsetHours);
-    /// Alias → requestTimeSync (legacy name).
-    bool requestNtpSync(const char* ntpServer, int8_t tzOffsetHours) {
-        return requestTimeSync(ntpServer, tzOffsetHours);
-    }
+    /// AT-only CCLK probe; allowed while MQTT CIP is up. Stale clock → soft miss (no fail mask).
+    bool requestCclkProbe(int8_t tzOffsetHours);
     bool timeSyncBusy() const { return _timeStep != TimeStep::Idle; }
-    bool ntpSyncBusy() const { return timeSyncBusy(); }
+    /// True while cascade is on CCLK-only probe (safe with TCP socket up).
+    bool timeCclkOnlyBusy() const {
+        return _timeCclkOnly && _timeStep == TimeStep::CclkProbe;
+    }
+    /// Heavy cascade owns CIP (not CCLK-lite) — defer reattach / block MQTT connect.
+    bool timeHeavySyncBusy() const {
+        return _timeStep != TimeStep::Idle && !_timeCclkOnly;
+    }
     /// Consumes a successful sync result (UTC epoch). Returns false if none pending.
     /// When CCLK carried a whole-hour TZ, `tzValidOut` is true and `tzHoursOut` is set.
     bool takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut = nullptr,
                           int8_t* tzHoursOut = nullptr, bool* tzValidOut = nullptr);
-    bool takeNtpEpochUtc(time_t& epochUtcOut) { return takeTimeEpochUtc(epochUtcOut, nullptr); }
     /// Consumes a terminal cascade failure. `failMaskOut` = TimeFailBit OR. Returns false if none.
     bool takeTimeSyncFail(uint8_t& failMaskOut);
 
@@ -165,14 +162,12 @@ public:
     /// CellularCore: drain MQTT then call notifyMqttDrainedForServiceEpoch().
     bool serviceEpochNeedsMqttDrain() const { return _voicePhase == VoicePhase::NeedMqttDrain; }
     void notifyMqttDrainedForServiceEpoch();
+    /// Program preempt / stop: hang up or cancel epoch so ATD/CMGS is not orphaned.
+    void abortModemServiceEpoch();
 
     /// Outbound program actions (owner_phone from config). Returns false if rejected.
     bool requestCallOwner(uint32_t timeoutMs);
     bool requestSmsOwner(const char* message);
-    /// True while an outbound call/SMS requested by ProgramExecutor is in flight.
-    bool voiceOpBusy() const {
-        return _voiceKind == VoiceKind::OutCall || _voiceKind == VoiceKind::OutSms;
-    }
     /// Consumes outbound completion. Returns false if not ready.
     bool takeVoiceOpResult(bool& okOut);
 
@@ -280,7 +275,7 @@ private:
         uint8_t state;
         uint16_t aux;
     };
-    static constexpr uint8_t EVENT_RING_SIZE = 8;
+    static constexpr uint8_t EVENT_RING_SIZE = GSM::EVENT_RING_SIZE;
     GsmEvent _ev[EVENT_RING_SIZE]{};
     uint8_t _evHead{0};
     void ev(uint8_t type, uint16_t aux = 0);
@@ -305,6 +300,8 @@ private:
     uint32_t _timeDeadlineMs{0};
     char _cclkSnap[48]{};
     char _cipgsmlocSnap[64]{};
+    /// When true, CclkProbe does not advance to CIPGSMLOC (lite path with MQTT up).
+    bool _timeCclkOnly{false};
 
     /// Voice / SMS exclusive epoch (CALL_OWNER, SMS_OWNER, inbound DTMF).
     VoiceKind _voiceKind{VoiceKind::None};
@@ -373,9 +370,6 @@ private:
     /// Prefer REG_FAIL when deregistered or no/weak CSQ; else APN_FAIL.
     ErrorCode classifyBearerFail_() const;
 
-    // Отправка AT-команды
-    void sendCommand(const char* cmd);
-
     // Обновить уровень сигнала
     void updateSignalQuality();
 
@@ -403,7 +397,9 @@ private:
     void timeMarkMethodFail_(uint8_t bit);
     void timeFailTerminal_(const char* why);
     void timeAdvanceToCipgsmloc_(uint32_t now);
+    void timeEnterCipgsmlocCmd_(uint32_t now);
     void timeAdvanceToCntpOrFail_(uint32_t now, const char* why);
+    void timeSoftMissCclkLite_(const char* why);
 
     void serviceVoice_(uint32_t now);
     void voiceReset_();

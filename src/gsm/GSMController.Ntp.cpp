@@ -1,6 +1,6 @@
 /**
  * @file GSMController.Ntp.cpp
- * @brief Non-blocking wall-clock cascade: CCLK/NITZ → CIPGSMLOC → CNTP → CCLK.
+ * @brief Non-blocking wall-clock cascade: CCLK/NITZ → CIPSHUT → CIPGSMLOC → CNTP → CCLK.
  */
 #include "gsm/GSMController.h"
 
@@ -77,7 +77,7 @@ bool parseCclkToUtc(const char* line, time_t& utcOut, int8_t* tzHoursOut = nullp
 
 /// Reject factory/NITZ-missing clocks (e.g. 04/01/01) — same floor as TimeSyncManager.
 bool cclkEpochSane(time_t utc) {
-    return utc >= 1700000000L; // ~2023-11
+    return utc >= TimeSync::MIN_SANE_EPOCH_UTC; // ~2023-11
 }
 
 bool parseCipgsmlocToUtc(const char* line, time_t& utcOut) {
@@ -94,7 +94,7 @@ bool parseCipgsmlocToUtc(const char* line, time_t& utcOut) {
         return false;
     }
     if (code != 0) return false;
-    if (yyyy < 2023 || MM < 1 || MM > 12 || dd < 1 || dd > 31) return false;
+    if (yyyy < TimeSync::MIN_SANE_YEAR || MM < 1 || MM > 12 || dd < 1 || dd > 31) return false;
     if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 60) return false;
 
     struct tm t {};
@@ -118,7 +118,7 @@ bool parseCipgsmlocToUtc(const char* line, time_t& utcOut) {
 
     if (asUtc == (time_t)-1) return false;
     utcOut = asUtc;
-    return utcOut >= 1700000000L;
+    return utcOut >= TimeSync::MIN_SANE_EPOCH_UTC;
 }
 
 int8_t tzHoursToQuarters(int8_t tzOffsetHours) {
@@ -133,6 +133,7 @@ int8_t tzHoursToQuarters(int8_t tzOffsetHours) {
 bool GSMController::requestTimeSync(const char* ntpServer, int8_t tzOffsetHours) {
     if (_timeStep != TimeStep::Idle) return false;
     if (_state != GSMState::READY) return false;
+    if (modemServiceEpochBusy()) return false;
     if (tcpSocketActive() || _stack.tcp.isBusBusy()) return false;
     if (_await != AwaitKind::NONE) return false;
 
@@ -152,12 +153,42 @@ bool GSMController::requestTimeSync(const char* ntpServer, int8_t tzOffsetHours)
     _timeFailMask = 0;
     _timeFailReady = false;
     _timeCmdSent = false;
+    _timeCclkOnly = false;
     _cclkSnap[0] = '\0';
     _cipgsmlocSnap[0] = '\0';
     _timeStep = TimeStep::CclkProbe;
     _timeDeadlineMs = millis() + GSM::CCLK_TIMEOUT_MS;
     logger.log("[GSMController] time cascade start server=%s tzq=%d\n",
                _ntpServer[0] ? _ntpServer : "(none)", (int)_ntpTzQuarters);
+    return true;
+}
+
+bool GSMController::requestCclkProbe(int8_t tzOffsetHours) {
+    if (_timeStep != TimeStep::Idle) return false;
+    if (_state != GSMState::READY) return false;
+    if (modemServiceEpochBusy()) return false;
+    // Refuse during CIPSEND/connect — handleReady would skip serviceTimeSync and timeout.
+    if (_stack.tcp.isTcpEpochBusy() || _stack.tcp.isBusBusy()) return false;
+    if (_await != AwaitKind::NONE) return false;
+
+    _ntpServer[0] = '\0';
+    _ntpTzQuarters = tzHoursToQuarters(tzOffsetHours);
+    _ntpUrcOk = false;
+    _ntpUrcFail = false;
+    _timeResultReady = false;
+    _timeEpochUtc = 0;
+    _timeSource = TimeSource::None;
+    _timeTzHours = 0;
+    _timeTzValid = false;
+    _timeFailMask = 0;
+    _timeFailReady = false;
+    _timeCmdSent = false;
+    _timeCclkOnly = true;
+    _cclkSnap[0] = '\0';
+    _cipgsmlocSnap[0] = '\0';
+    _timeStep = TimeStep::CclkProbe;
+    _timeDeadlineMs = millis() + GSM::CCLK_TIMEOUT_MS;
+    logger.log("[GSMController] time CCLK-lite probe start tzq=%d\n", (int)_ntpTzQuarters);
     return true;
 }
 
@@ -191,7 +222,8 @@ void GSMController::timeFailStep_(const char* why) {
     if (_timeStep == TimeStep::Idle) return;
     if (_timeStep == TimeStep::CclkProbe) {
         timeMarkMethodFail_(TimeFailCclk);
-    } else if (_timeStep == TimeStep::Cipgsmloc) {
+    } else if (_timeStep == TimeStep::Cipshut || _timeStep == TimeStep::Cipgsmloc ||
+               _timeStep == TimeStep::WaitCipgsmlocUrc) {
         timeMarkMethodFail_(TimeFailCipgsmloc);
     } else {
         timeMarkMethodFail_(TimeFailCntp);
@@ -207,6 +239,7 @@ void GSMController::timeFailTerminal_(const char* why) {
     resetAwait();
     _timeStep = TimeStep::Idle;
     _timeCmdSent = false;
+    _timeCclkOnly = false;
     _ntpUrcOk = false;
     _ntpUrcFail = false;
 }
@@ -222,6 +255,7 @@ void GSMController::timeFinishOk_(time_t epochUtc, TimeSource src, bool tzValid,
     resetAwait();
     _timeStep = TimeStep::Idle;
     _timeCmdSent = false;
+    _timeCclkOnly = false;
     const char* name = "?";
     switch (src) {
         case TimeSource::Cclk: name = "cclk"; break;
@@ -238,6 +272,18 @@ void GSMController::timeFinishOk_(time_t epochUtc, TimeSource src, bool tzValid,
 }
 
 void GSMController::timeAdvanceToCipgsmloc_(uint32_t now) {
+    // Reset CIP stack after MQTT CIPCLOSE so CIPGSMLOC/CNTP see a clean IP session.
+    resetAwait();
+    clearResponse();
+    _timeCmdSent = false;
+    _cipgsmlocSnap[0] = '\0';
+    _timeStep = TimeStep::Cipshut;
+    _timeDeadlineMs = now + Sim800Tcp::CIPSHUT_TIMEOUT_MS;
+    logger.log("[GSMController] time → CIPSHUT then CIPGSMLOC\n");
+}
+
+void GSMController::timeEnterCipgsmlocCmd_(uint32_t now) {
+    _stack.tcp.noteExternalCipShut();
     resetAwait();
     clearResponse();
     _timeCmdSent = false;
@@ -262,13 +308,24 @@ void GSMController::timeAdvanceToCntpOrFail_(uint32_t now, const char* why) {
     logger.log("[GSMController] time → CNTP (%s)\n", why ? why : "?");
 }
 
+void GSMController::timeSoftMissCclkLite_(const char* why) {
+    logger.log("[GSMController] time CCLK-lite miss: %s\n", why ? why : "?");
+    resetAwait();
+    _timeStep = TimeStep::Idle;
+    _timeCmdSent = false;
+    _timeCclkOnly = false;
+    _timeFailReady = false;
+    _timeResultReady = false;
+}
+
 void GSMController::serviceTimeSync(uint32_t now) {
     if (_timeStep == TimeStep::Idle) return;
 
     // Hard rule: never share the modem IP stack with CIP TCP (CIPGSMLOC/CNTP).
-    // CCLK probe is AT-only and safe even if TCP is up, but cascade starts only when TCP down.
+    // CCLK probe is AT-only and safe even if TCP is up.
     if (_timeStep != TimeStep::CclkProbe && tcpSocketActive()) {
-        if (_timeStep == TimeStep::Cipgsmloc) {
+        if (_timeStep == TimeStep::Cipshut || _timeStep == TimeStep::Cipgsmloc ||
+            _timeStep == TimeStep::WaitCipgsmlocUrc) {
             timeMarkMethodFail_(TimeFailCipgsmloc);
         } else {
             timeMarkMethodFail_(TimeFailCntp);
@@ -291,6 +348,16 @@ void GSMController::serviceTimeSync(uint32_t now) {
         timeFailTerminal_(why);
     };
 
+    auto finishCipgsmlocSnap_ = [&]() {
+        time_t utc = 0;
+        if (_cipgsmlocSnap[0] && parseCipgsmlocToUtc(_cipgsmlocSnap, utc)) {
+            timeFinishOk_(utc, TimeSource::Cipgsmloc);
+            return;
+        }
+        timeMarkMethodFail_(TimeFailCipgsmloc);
+        timeAdvanceToCntpOrFail_(now, "CIPGSMLOC parse");
+    };
+
     switch (_timeStep) {
     case TimeStep::CclkProbe:
         if (!_timeCmdSent) {
@@ -301,6 +368,12 @@ void GSMController::serviceTimeSync(uint32_t now) {
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
+            if (_timeCclkOnly) {
+                // Soft miss — do not sticky TIME_CCLK_FAIL during MQTT-up lite probes.
+                timeSoftMissCclkLite_("cclk_only_at");
+                return;
+            }
+            // Genuine AT fault — mark before fallback.
             timeMarkMethodFail_(TimeFailCclk);
             timeAdvanceToCipgsmloc_(now);
             return;
@@ -314,10 +387,31 @@ void GSMController::serviceTimeSync(uint32_t now) {
                 timeFinishOk_(utc, TimeSource::Cclk, tzOk, tzH);
                 return;
             }
+            if (_timeCclkOnly) {
+                timeSoftMissCclkLite_("stale");
+                return;
+            }
+            // Expected path until NITZ fills the modem clock — do not set TIME_CCLK_FAIL.
             logger.log("[GSMController] CCLK probe stale/unusable, next\n");
-            timeMarkMethodFail_(TimeFailCclk);
             timeAdvanceToCipgsmloc_(now);
         }
+        return;
+
+    case TimeStep::Cipshut:
+        if (!_timeCmdSent) {
+            // Tag TIMESHUT (not CIPSHUT) so Sim800TcpTransport::consumeAtResult does not swallow OK.
+            sendAt("AT+CIPSHUT", "TIMESHUT", AwaitKind::OK, Sim800Tcp::CIPSHUT_TIMEOUT_MS);
+            _timeCmdSent = true;
+            _timeDeadlineMs = now + Sim800Tcp::CIPSHUT_TIMEOUT_MS;
+            return;
+        }
+        if (_awaitError || awaitTimedOut(now)) {
+            logger.log("[GSMController] time CIPSHUT fail/timeout — continue CIPGSMLOC\n");
+            timeEnterCipgsmlocCmd_(now);
+            return;
+        }
+        if (!_awaitOk) return;
+        timeEnterCipgsmlocCmd_(now);
         return;
 
     case TimeStep::Cipgsmloc:
@@ -334,14 +428,24 @@ void GSMController::serviceTimeSync(uint32_t now) {
             return;
         }
         if (!_awaitOk) return;
-        {
-            time_t utc = 0;
-            if (_cipgsmlocSnap[0] && parseCipgsmlocToUtc(_cipgsmlocSnap, utc)) {
-                timeFinishOk_(utc, TimeSource::Cipgsmloc);
-                return;
-            }
+        // SIM800 often returns OK first, then +CIPGSMLOC — wait like WaitCntpUrc.
+        resetAwait();
+        clearResponse();
+        _timeCmdSent = false;
+        _timeStep = TimeStep::WaitCipgsmlocUrc;
+        // Always grant a full URC grace after OK (do not inherit a near-zero accept deadline).
+        _timeDeadlineMs = now + GSM::CIPGSMLOC_URC_GRACE_MS;
+        return;
+
+    case TimeStep::WaitCipgsmlocUrc:
+        if (_cipgsmlocSnap[0]) {
+            finishCipgsmlocSnap_();
+            return;
+        }
+        if ((int32_t)(now - _timeDeadlineMs) >= 0) {
             timeMarkMethodFail_(TimeFailCipgsmloc);
-            timeAdvanceToCntpOrFail_(now, "CIPGSMLOC parse");
+            timeAdvanceToCntpOrFail_(now, "CIPGSMLOC URC timeout");
+            return;
         }
         return;
 
@@ -442,6 +546,7 @@ void GSMController::serviceTimeSync(uint32_t now) {
 
     default:
         _timeStep = TimeStep::Idle;
+        _timeCclkOnly = false;
         return;
     }
 }

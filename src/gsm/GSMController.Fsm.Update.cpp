@@ -6,6 +6,7 @@
 
 #include "gsm/GsmInitPhase.h"
 #include "gsm/GsmInitFsm.h"
+#include "common/Constants.h"
 #include "common/Logger.h"
 
 #include <stdint.h>
@@ -33,9 +34,8 @@ void GSMController::gsmMaybeLogStallWatchdog(uint32_t now) {
         return;
     }
 
-    constexpr uint32_t kIntervalMs = 8000;
-    if ((int32_t)(now - _gsmStallFpSinceMs) < (int32_t)kIntervalMs) return;
-    if ((int32_t)(now - _gsmStallLastLogMs) < (int32_t)kIntervalMs) return;
+    if ((int32_t)(now - _gsmStallFpSinceMs) < (int32_t)GSM::STALL_LOG_INTERVAL_MS) return;
+    if ((int32_t)(now - _gsmStallLastLogMs) < (int32_t)GSM::STALL_LOG_INTERVAL_MS) return;
 
     _gsmStallLastLogMs = now;
 

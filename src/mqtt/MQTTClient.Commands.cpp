@@ -281,7 +281,7 @@ bool MQTTClient::validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const
             }
             return true;
         case MqttCommandKind::SetTime:
-            if (!cmd.hasEpoch || cmd.epoch < 1700000000UL) {
+            if (!cmd.hasEpoch || cmd.epoch < (uint32_t)TimeSync::MIN_SANE_EPOCH_UTC) {
                 errOut = MqttCmdErr::Args;
                 return false;
             }

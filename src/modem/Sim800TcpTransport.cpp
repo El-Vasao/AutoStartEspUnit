@@ -161,7 +161,7 @@ void Sim800TcpTransport::forceStackRecover_(const char* reason) {
     _didInitialCipShut = false;
     _closeQueued = false;
     if (!_recoverQueued) {
-        if (_at.enqueueHigh({ "AT+CIPSHUT", 10000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
+        if (_at.enqueueHigh({ "AT+CIPSHUT", Sim800Tcp::CIPSHUT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
             _recoverQueued = true;
             logger.log("[Sim800Tcp] stack recover CIPSHUT (%s)\n", reason ? reason : "?");
         } else {
@@ -233,20 +233,31 @@ void Sim800TcpTransport::stop(const char* reason) {
     if (wasConnectedOrConnecting && !_closeQueued) {
         _closeQueued = true;
         // CIPMUX=0 (single connection): CIPCLOSE without link id.
-        AtSession::Request r{ "AT+CIPCLOSE", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPCLOSE" };
+        AtSession::Request r{ "AT+CIPCLOSE", Sim800Tcp::AT_CONFIG_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPCLOSE" };
         (void)_at.enqueue(r);
     }
 }
 
+void Sim800TcpTransport::noteExternalCipShut() {
+    // Time-sync cascade owns AT+CIPSHUT (tag TIMESHUT) — invalidate warm CIPSTART cache.
+    clearIpConfigFlags_();
+    _didInitialCipShut = false;
+    _connected = false;
+    _connecting = false;
+    _closeQueued = false;
+    endSendEpoch_();
+    logger.log("[Sim800Tcp] noteExternalCipShut (time-sync)\n");
+}
+
 bool Sim800TcpTransport::enqueueIpConfig_() {
     // Order: CIPRXGET=0 → CIPHEAD=1 → CIPMUX=0. CIPHEAD is required for discardingTcpPayload_.
-    if (!_at.enqueue({ "AT+CIPRXGET=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPRXGET0" })) {
+    if (!_at.enqueue({ "AT+CIPRXGET=0", Sim800Tcp::AT_CONFIG_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPRXGET0" })) {
         return false;
     }
-    if (!_at.enqueue({ "AT+CIPHEAD=1", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPHEAD1" })) {
+    if (!_at.enqueue({ "AT+CIPHEAD=1", Sim800Tcp::AT_CONFIG_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPHEAD1" })) {
         return false;
     }
-    if (!_at.enqueue({ "AT+CIPMUX=0", 3000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPMUX0" })) {
+    if (!_at.enqueue({ "AT+CIPMUX=0", Sim800Tcp::AT_CONFIG_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPMUX0" })) {
         return false;
     }
     _ipConfigEnqueued = true;
@@ -269,7 +280,7 @@ bool Sim800TcpTransport::enqueueCipStart_() {
 bool Sim800TcpTransport::startConnect_() {
     // Warm modem after ESP-only reboot may still hold a stale TCP session — clear once.
     if (!_didInitialCipShut) {
-        if (!_at.enqueue({ "AT+CIPSHUT", 10000, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
+        if (!_at.enqueue({ "AT+CIPSHUT", Sim800Tcp::CIPSHUT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
             return false;
         }
         _didInitialCipShut = true;
@@ -732,7 +743,7 @@ void Sim800TcpTransport::startSend_() {
     // CIPMUX=0: CIPSEND without link id.
     snprintf(_cmdSend, sizeof(_cmdSend), "AT+CIPSEND=%u", (unsigned)_sendLen);
     // Expect prompt; when got prompt, bytes will be written using frozen _sendLen.
-    if (!_at.enqueue({ _cmdSend, 5000, atExpectMask(AtSession::Expect::Prompt), nullptr, "CIPSEND" })) {
+    if (!_at.enqueue({ _cmdSend, Sim800Tcp::CIPSEND_PROMPT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Prompt), nullptr, "CIPSEND" })) {
         logger.log("[Sim800Tcp] CIPSEND enqueue failed\n");
         _sendLen = 0;
         return;

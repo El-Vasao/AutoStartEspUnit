@@ -1,5 +1,6 @@
 #include "core/CoreHardRestart.h"
 #include "common/EspHal.h"
+#include "common/Constants.h"
 
 #include <WiFi.h>
 
@@ -14,6 +15,6 @@
     ESP.restart();
     while (true) {
         espHalFeedWdt();
-        delayMicroseconds(5000);
+        delayMicroseconds(Delays::HARD_RESTART_SPIN_US);
     }
 }

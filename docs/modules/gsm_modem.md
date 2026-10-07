@@ -70,7 +70,8 @@
 - После первого `service()` — settle **`GSM::POST_BOOT_SETTLE_MS` (20 s)** до `gsm.begin()`.
 - `mqtt.loop()` вызывается всегда при READY (mid-CIPSEND TX no-op, RX ring дренируется); reattach — по политике bearer, не блокируется только из‑за mid-send.
 - Hypothesis `AT`/`CGMI`: пауза **`HYP_RETRY_GAP_MS`** между повторами.
-- **Voice/SMS exclusive epoch:** пока `modemServiceEpochBusy()`, MQTT не стартует/не reconnect; при `serviceEpochNeedsMqttDrain()` — `drainMqttDisconnect_` затем `notifyMqttDrainedForServiceEpoch()`. `ctrlPlaneBusy` = TCP ∨ time ∨ voice/SMS.
+- **Voice/SMS exclusive epoch:** пока `modemServiceEpochBusy()`, MQTT не стартует/не reconnect; при `serviceEpochNeedsMqttDrain()` — `drainMqttDisconnect_` (только после полного CIP idle → `notifyMqttDrained*`). `ProgramExecutor::stop` abort’ит voice epoch. `ctrlPlaneBusy` = TCP ∨ time (вкл. CCLK-lite) ∨ voice/SMS — gates new CIPSEND.
+- **Time sync:** CCLK-lite при живом MQTT; heavy cascade после drain (`CIPSHUT`/`TIMESHUT` → CIPGSMLOC → CNTP). Reattach откладывается, пока heavy cascade busy.
 
 ### 3б) Voice / SMS / inbound DTMF
 

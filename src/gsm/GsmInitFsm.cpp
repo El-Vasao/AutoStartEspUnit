@@ -15,16 +15,8 @@
 #include <string.h>
 
 namespace {
-constexpr uint8_t kBaudCandidateCount = GsmInitFsm::kBaudCandidateCount;
 inline const uint32_t* baudCandidates() {
-    static const uint32_t kTable[kBaudCandidateCount] = {
-        GSM::UART_BAUD,
-        57600,
-        38400,
-        19200,
-        9600,
-    };
-    return kTable;
+    return GSM::UART_BAUD_CANDIDATES;
 }
 
 /// Порог эскалации hypothesis: PreCfun или baud search.
@@ -32,11 +24,6 @@ inline uint32_t hypEscalateAfterMs(bool didPreCfun) {
     return didPreCfun ? GSM::POST_CFUN_RETRY_MS : GSM::PRE_CFUN_AFTER_MS;
 }
 } // namespace
-
-uint32_t GsmInitFsm::baudCandidateAt(uint8_t idx) {
-    if (idx >= kBaudCandidateCount) return GSM::UART_BAUD;
-    return baudCandidates()[idx];
-}
 
 /// Public INIT entry used by GSMController::update (friend can call private handleInit).
 void GsmInitFsm::tick(GSMController& gsm) {
@@ -84,7 +71,7 @@ void GSMController::handleInit() {
                 return;
             }
             // UART_BAUD уже пробовали в hypothesis — начинаем со следующего кандидата.
-            _baudSearchBaudIdx = (kBaudCandidateCount > 1) ? 1 : 0;
+            _baudSearchBaudIdx = (GsmInitFsm::kBaudCandidateCount > 1) ? 1 : 0;
             logger.log("[GSMController] baud search round %u start (from %lu)\n",
                        (unsigned)_baudSearchRound,
                        (unsigned long)baudCandidates()[_baudSearchBaudIdx]);
@@ -130,7 +117,7 @@ void GSMController::handleInit() {
                 resetAwait();
                 clearResponse();
                 _baudSearchBaudIdx++;
-                if (_baudSearchBaudIdx >= kBaudCandidateCount) {
+                if (_baudSearchBaudIdx >= GsmInitFsm::kBaudCandidateCount) {
                     gsmOpenUart(GSM::UART_BAUD);
                     _baudCooldownUntilMs = now + GSM::BAUD_SEARCH_ROUND_COOLDOWN_MS;
                     _initPhase = GsmInitPhase::BsCooldown;
@@ -154,7 +141,7 @@ void GSMController::handleInit() {
                 resetAwait();
                 clearResponse();
                 _baudSearchBaudIdx++;
-                if (_baudSearchBaudIdx >= kBaudCandidateCount) {
+                if (_baudSearchBaudIdx >= GsmInitFsm::kBaudCandidateCount) {
                     gsmOpenUart(GSM::UART_BAUD);
                     _baudCooldownUntilMs = now + GSM::BAUD_SEARCH_ROUND_COOLDOWN_MS;
                     _initPhase = GsmInitPhase::BsCooldown;
@@ -172,7 +159,7 @@ void GSMController::handleInit() {
                 resetAwait();
                 clearResponse();
                 _baudSearchBaudIdx++;
-                if (_baudSearchBaudIdx >= kBaudCandidateCount) {
+                if (_baudSearchBaudIdx >= GsmInitFsm::kBaudCandidateCount) {
                     gsmOpenUart(GSM::UART_BAUD);
                     _baudCooldownUntilMs = now + GSM::BAUD_SEARCH_ROUND_COOLDOWN_MS;
                     _initPhase = GsmInitPhase::BsCooldown;
@@ -190,7 +177,7 @@ void GSMController::handleInit() {
                     resetAwait();
                     clearResponse();
                     _baudSearchBaudIdx++;
-                    if (_baudSearchBaudIdx >= kBaudCandidateCount) {
+                    if (_baudSearchBaudIdx >= GsmInitFsm::kBaudCandidateCount) {
                         gsmOpenUart(GSM::UART_BAUD);
                         _baudCooldownUntilMs = now + GSM::BAUD_SEARCH_ROUND_COOLDOWN_MS;
                         _initPhase = GsmInitPhase::BsCooldown;
@@ -220,7 +207,7 @@ void GSMController::handleInit() {
                 resetAwait();
                 clearResponse();
                 _baudSearchBaudIdx++;
-                if (_baudSearchBaudIdx >= kBaudCandidateCount) {
+                if (_baudSearchBaudIdx >= GsmInitFsm::kBaudCandidateCount) {
                     gsmOpenUart(GSM::UART_BAUD);
                     _baudCooldownUntilMs = now + GSM::BAUD_SEARCH_ROUND_COOLDOWN_MS;
                     _initPhase = GsmInitPhase::BsCooldown;

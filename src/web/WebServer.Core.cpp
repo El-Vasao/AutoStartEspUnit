@@ -56,6 +56,8 @@ WebServer::WebServer()
 bool WebServer::isFlashBusy() const {
     // Важно: здесь учитываем и “глобальные” deferred FS операции, и локальные POST-потоки web.
     // Это общий предохранитель от пересечения операций с flash/LittleFS.
+    // Also block config/program flash queues during OTA stream (Update + FS extract).
+    if (core.getMode() == CoreMode::OTA_UPDATE) return true;
     return flashCommit.isPending() || postedConfigJsonPending || postedProgramJsonPending;
 }
 

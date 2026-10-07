@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Client.h>
+#include "common/Constants.h"
 #include "modem/AtSession.h"
 
 // URC-first single-socket TCP transport for SIM800.
@@ -35,6 +36,9 @@ public:
     void abandonConnect(const char* reason = nullptr);
     void stop(const char* reason = nullptr);
 
+    /// Time-sync (or other non-TCP owner) ran AT+CIPSHUT — invalidate warm CIPSTART / IP config cache.
+    void noteExternalCipShut();
+
     // Non-blocking write: buffers into one CIPSEND staging area only (no auto-send).
     size_t write(const uint8_t* data, size_t len);
     /// Freeze staged bytes and start AT+CIPSEND=N. Call once per complete MQTT/TCP packet.
@@ -42,9 +46,6 @@ public:
 
     /// True while modem TX staging has bytes or CIPSEND is in flight (incl. post-'>' until SEND OK).
     bool hasBufferedTx() const { return _txLen != 0 || _sendInProgress || _modemTxLocked; }
-
-    /// Always false: MQTT must drain the RX ring (framed +IPD is safe mid-CIPSEND).
-    bool shouldDeferMqttRead() const { return false; }
 
     /// Sticky until consumed: RX ring overflow (would have desynced MQTT stream).
     bool takeRxOverflow();
@@ -103,20 +104,20 @@ private:
     /// Staged buffer is sealed; write() refuses until CIPSEND completes.
     bool _flushRequested{false};
 
-    char _host[64]{};
+    char _host[TextBytes::Mqtt::BROKER]{};
     uint16_t _port{0};
-    char _cmdStart[128]{};
+    char _cmdStart[GSM::CMD_BUFFER_SIZE]{};
     char _cmdSend[32]{};
 
     // RX ring (push mode); overflow marks session fatal (no drop-oldest desync).
-    static constexpr uint16_t RX_SIZE = 1024;
+    static constexpr uint16_t RX_SIZE = Sim800Tcp::TCP_BUF_SIZE;
     uint8_t _rx[RX_SIZE]{};
     uint16_t _rxHead{0};
     uint16_t _rxCount{0};
     bool _rxOverflow{false};
 
     // TX staging: one CIPSEND epoch, sized for one full MQTT packet.
-    static constexpr uint16_t TX_SIZE = 1024;
+    static constexpr uint16_t TX_SIZE = Sim800Tcp::TCP_BUF_SIZE;
     uint8_t _tx[TX_SIZE]{};
     uint16_t _txLen{0};
     /// Length frozen into AT+CIPSEND=N at startSend_ (must match bytes written on '>').
@@ -129,7 +130,7 @@ private:
     uint16_t _ipRead{0};
 
     // Raw push framing: sniff short CRLF control lines; pass binary through.
-    static constexpr uint8_t RAW_LINE_BUF_SIZE = 64;
+    static constexpr uint8_t RAW_LINE_BUF_SIZE = Sim800Tcp::RAW_LINE_BUF;
     char _rawLineBuf[RAW_LINE_BUF_SIZE]{};
     uint8_t _rawLineLen{0};
 

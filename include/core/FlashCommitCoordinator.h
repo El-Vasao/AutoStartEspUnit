@@ -37,12 +37,9 @@ public:
         deferredPostedProgramIndexPhase_ = false;
     }
 
-    void queueResetConfig() { pendingFsOp_ = PendingFsOp::RESET_CONFIG; }
-    void queueResetPrograms() { pendingFsOp_ = PendingFsOp::RESET_PROGRAMS; }
-    void queueDeleteProgram(uint8_t id) {
-        pendingProgramId_ = id;
-        pendingFsOp_ = PendingFsOp::DELETE_PROGRAM;
-    }
+    void queueResetConfig();
+    void queueResetPrograms();
+    void queueDeleteProgram(uint8_t id);
 
     bool isPending() const {
         return deferredPostedConfigApply_ || deferredPostedProgramApply_ || pendingFsOp_ != PendingFsOp::NONE;

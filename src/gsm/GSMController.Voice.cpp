@@ -45,6 +45,21 @@ void GSMController::notifyMqttDrainedForServiceEpoch() {
     logger.log("[GSMController] voice: MQTT drained, stopping TCP\n");
 }
 
+void GSMController::abortModemServiceEpoch() {
+    if (_voicePhase == VoicePhase::Idle) return;
+    logger.log("[GSMController] voice: abort (preempt/stop)\n");
+    if (_voicePhase == VoicePhase::NeedMqttDrain || _voicePhase == VoicePhase::StopTcp ||
+        _voicePhase == VoicePhase::FinishOk || _voicePhase == VoicePhase::FinishFail) {
+        voiceFinish_(false);
+        return;
+    }
+    _voiceResultOk = false;
+    if (_voicePhase != VoicePhase::HangupSend && _voicePhase != VoicePhase::HangupWait) {
+        resetAwait();
+        _voicePhase = VoicePhase::HangupSend;
+    }
+}
+
 bool GSMController::requestCallOwner(uint32_t timeoutMs) {
     if (_voicePhase != VoicePhase::Idle) return false;
     if (_state != GSMState::READY) return false;

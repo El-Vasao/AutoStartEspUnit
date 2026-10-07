@@ -10,12 +10,13 @@ class Config;
 class GSMController;
 
 /**
- * Soft wall clock: cascade CCLK → CIPGSMLOC → (optional CNTP) on SIM800, then settimeofday.
- * CCLK/CIPGSMLOC always; CNTP only when config time.enabled (NTP).
+ * Soft wall clock: cascade CCLK → CIPSHUT → CIPGSMLOC → (optional CNTP) on SIM800, then settimeofday.
+ * CCLK/CIPGSMLOC always on full cascade; CNTP only when config time.enabled (NTP).
  * Survives soft reboot via RTC_DATA_ATTR snapshot until next network sync.
  *
- * Modem cascade needs CIP idle (serialized with MQTT). Periodic sync_interval may
- * request an MQTT drain yield so the full cascade can run while always-on MQTT.
+ * While MQTT CIP is up: prefer AT-only CCLK-lite probes (no drain). Full cascade
+ * (CIPGSMLOC/CNTP) requests an MQTT drain yield after several lite misses or on force.
+ * Failed attempts use stepped backoff (2→5→15→30 min) instead of a fixed 120 s loop.
  */
 class TimeSyncManager {
 public:
@@ -36,17 +37,16 @@ public:
     /// Apply epoch from MQTT/admin override (UTC seconds since 1970).
     void applyEpochUtc(time_t epochUtc, const char* source = "override");
 
-    void requestSync();
-
     /// True when CellularCore may start MQTT (boot time cascade done / skipped / timed out).
     bool isBootTimeSettled() const { return _bootTimeSettled; }
-    /// Legacy alias.
-    bool isBootNtpSettled() const { return isBootTimeSettled(); }
 
     /// CellularCore should drain MQTT/CIP before cascade (periodic yield).
     bool needsMqttDrainForSync() const { return _yieldPhase == YieldPhase::NeedMqttDrain; }
     /// Hold MQTT reconnect for drain + cascade (same role as modemServiceEpochBusy for voice).
-    bool isSyncYieldEpochBusy() const { return _yieldPhase != YieldPhase::Idle; }
+    /// Stays true while heavy GSM cascade still runs after yield budget (IP owns modem).
+    bool isSyncYieldEpochBusy() const {
+        return _yieldPhase != YieldPhase::Idle || _heavyAttempt;
+    }
     /// CellularCore finished drainMqttDisconnect_ (or reconnect already off).
     void notifyMqttDrainedForSync();
 
@@ -74,6 +74,13 @@ private:
     uint32_t _yieldDeadlineMs{0};
     bool _yieldCascadeStarted{false};
 
+    /// Stepped fail backoff (0..TIME_SYNC_BACKOFF_MAX_STEP).
+    uint8_t _failStep{0};
+    /// CCLK-lite soft/AT misses since last heavy cascade.
+    uint8_t _liteMisses{0};
+    bool _cclkLiteStarted{false};
+    bool _heavyAttempt{false};
+
     static constexpr uint32_t RTC_MAGIC = 0xC10C710Eu;
 
     void loadFromRtc_();
@@ -83,5 +90,11 @@ private:
     void setLastSource_(const char* source);
     void clearYield_(const char* why);
     void armYieldDeadline_(uint32_t now);
+    void scheduleRetry_(uint32_t now);
+    /// Short re-arm without advancing `_failStep` (lite soft-miss / transient busy).
+    void scheduleLiteRetry_(uint32_t now);
+    void resetFailBackoff_();
     bool tryStartCascade_(uint32_t now, const char* ntpServer, int8_t tzOffsetHours);
+    bool tryStartCclkLite_(uint32_t now, int8_t tzOffsetHours);
+    bool wantHeavyCascade_() const;
 };

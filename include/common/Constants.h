@@ -199,10 +199,22 @@ namespace Timing {
 
     constexpr uint32_t MILLIS_PER_DAY = 86400000UL;
 
-    /// TimeSync: retry CNTP after failure.
+    /// TimeSync: first fail-retry delay (also backoff step 0).
     constexpr uint32_t TIME_SYNC_RETRY_MS = 120000;
+    /// Fail-retry backoff steps after step 0 (2 → 5 → 15 → 30 min cap).
+    constexpr uint32_t TIME_SYNC_BACKOFF_5MIN_MS = 300000UL;
+    constexpr uint32_t TIME_SYNC_BACKOFF_15MIN_MS = 900000UL;
+    constexpr uint32_t TIME_SYNC_BACKOFF_30MIN_MS = 1800000UL;
+    constexpr uint8_t TIME_SYNC_BACKOFF_MAX_STEP = 3;
+    /// CCLK-lite misses while MQTT up before forcing a full drain cascade.
+    constexpr uint8_t TIME_SYNC_LITE_BEFORE_HEAVY = 3;
+    /// Short re-arm when CCLK-lite cannot start (AT bus busy mid-CIPSEND).
+    constexpr uint32_t TIME_SYNC_LITE_BUSY_RETRY_MS = 5000;
     /// UI/status: mark sync stale after this age (still keep soft clock).
     constexpr uint32_t TIME_SYNC_STALE_MS = 172800000UL; // 48 h
+
+    /// Throttle for "flash busy, defer FS op" log lines (Core + FlashCommitCoordinator).
+    constexpr uint32_t DEFERRED_FLASH_BUSY_LOG_MS = 2000UL;
 }
 
 // ============================================================
@@ -237,12 +249,39 @@ namespace OTA {
 namespace ADC {
     /// ESP32-C3 ADC with attenuation — calibrate later against known battery voltage.
     constexpr float VREF = 3.3f;
-    constexpr uint16_t MAX_RAW = 4095;   ///< 12-bit ADC (0..4095)
+    constexpr uint8_t RESOLUTION_BITS = 12;
+    constexpr uint16_t MAX_RAW = (1u << RESOLUTION_BITS) - 1u; ///< 12-bit ADC (0..4095)
     constexpr uint8_t SAMPLES = 10;      ///< окно усреднения
     constexpr uint8_t DIVIDER_RATIO = 15;
     /// Approx if attenuation set so ~1 V at divider output ≈ full scale; needs field cal.
     /// Physical divider still outputs ~0–1 V into ADC (see SensorsController::begin).
-    constexpr float DEFAULT_COEFF = (1.0f * DIVIDER_RATIO) / 4095.0f;
+    constexpr float DEFAULT_COEFF = (1.0f * DIVIDER_RATIO) / static_cast<float>(MAX_RAW);
+}
+
+/// DS18B20 / ADC fault escalation (SensorsController).
+namespace Sensors {
+    constexpr uint8_t OW_TIMEOUT_FAIL_STREAK = 3;
+    constexpr uint8_t ADC_SAT_FAIL_STREAK = 8;
+}
+
+/// ProgramExecutor action timings (not from config).
+namespace ProgramTiming {
+    /// Pause between starter retry attempts (phase 3).
+    constexpr uint32_t STARTER_RETRY_GAP_MS = 1000UL;
+    /// CALL_OWNER: ring duration below this uses modem default (`GSM::VOICE_DEFAULT_RING_MS`).
+    constexpr uint32_t CALL_OWNER_MIN_RING_MS = 3000UL;
+}
+
+/// Soft wall-clock sanity (reject pre-~2023-11 UTC).
+namespace TimeSync {
+    constexpr long MIN_SANE_EPOCH_UTC = 1700000000L;
+    constexpr int MIN_SANE_YEAR = 2023;
+}
+
+/// Factory / SAX fallback defaults (must match DefaultConfig.h intent).
+namespace Defaults {
+    constexpr uint16_t MQTT_PUBLISH_INTERVAL_SEC = 60;
+    constexpr uint8_t TIME_SYNC_INTERVAL_HOURS = 6;
 }
 
 // ============================================================
@@ -312,25 +351,16 @@ namespace JsonBytes {
         /// Лимит BSS для SSE (только incremental: hardware/program/... — полный live в GET /bootstrap).
         /// Прежний monolithic статус был ~782 B; худший блок — hardware с tempSensors; 800 + малая маржа.
         constexpr size_t SSE_STATUS_JSON_MAX = 832;
-        constexpr size_t API_RESPONSE_JSON_MAX = 1024;
         /// Cap for buffered API JSON (`sendJsonBuffered`), incl. merged `/bootstrap`.
         constexpr size_t BOOTSTRAP_JSON_MAX = 4096;
-        /// Устаревшее имя: бюджет под большой ответ тем же порядком, что `MAX_FILE_JSON_BYTES`.
-        constexpr size_t DOC_CAPACITY = MAX_FILE_JSON_BYTES;
-        constexpr size_t SSE_STATUS_DOC_CAPACITY = DOC_CAPACITY;
-        constexpr size_t API_RESPONSE_DOC_CAPACITY = DOC_CAPACITY;
     }
 
     namespace Mqtt {
-        constexpr size_t CMD_DOC_CAPACITY = 384;
         constexpr size_t CMD_JSON_MAX = 256; ///< макс. размер входящей JSON-команды (payload) + '\0'
-        /// Лимит тела MQTT PUBLISH (JSON) при `MqttFsmClient::TX_MAX=1024` и длине топика до `TextBytes::Mqtt::TOPIC-1`.
+        /// Лимит тела MQTT PUBLISH (JSON) при frame max 1024 и длине топика до `TextBytes::Mqtt::TOPIC-1`.
         /// Wire: payload + 1 (fixed) + ≤4 (RL) + 2 (topic len) + topicLen ≤ TX_MAX.
         constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 900;
-        constexpr size_t STATUS_JSON_MAX = STATUS_PAYLOAD_MAX_BYTES;
-        constexpr size_t STATUS_DOC_CAPACITY = STATUS_PAYLOAD_MAX_BYTES;
         constexpr size_t LIST_PROGRAMS_JSON_MAX = 960; ///< list reply: envelope + programs array
-        constexpr size_t LIST_PROGRAMS_DOC_CAPACITY = MAX_FILE_JSON_BYTES;
         /// status cmd fat /reply: id+code + nested status object (≤ STATUS_PAYLOAD_MAX_BYTES).
         constexpr size_t STATUS_REPLY_JSON_MAX = 960;
         /// Voltage change below this does not count as significant / does not enter a delta.
@@ -342,10 +372,6 @@ namespace JsonBytes {
         /// timerRemaining (sec) change below this does not count as significant (unless running flips).
         constexpr uint32_t STATUS_TIMER_EPS_SEC = 1;
     }
-
-    namespace Programs {
-        constexpr size_t INDEX_FILTER_DOC_CAPACITY = 64;
-    }
 }
 
 /// MQTT cmd/reply queue limits (wire contract in docs/modules/mqtt.md).
@@ -356,7 +382,6 @@ namespace MqttCmd {
     constexpr uint8_t ID_MAX_LEN = 16;
 
     constexpr uint16_t CODE_OK = 200;
-    constexpr uint16_t CODE_CREATED = 201;   ///< reserved (not used on wire; run has no mid-ack)
     constexpr uint16_t CODE_ACCEPTED = 202;  ///< received / queued
     constexpr uint16_t CODE_BAD_REQUEST = 400;
     constexpr uint16_t CODE_NOT_FOUND = 404;
@@ -378,6 +403,34 @@ namespace NetTiming {
     /// Keepalive dead-man: force Error if no MQTT RX for (keepAliveSec * NUM / DEN).
     constexpr uint16_t MQTT_KEEPALIVE_DEADMAN_NUM = 3;
     constexpr uint16_t MQTT_KEEPALIVE_DEADMAN_DEN = 2;
+
+    /// MQTT CONNECT keepAlive field (seconds); also drives PINGREQ cadence.
+    constexpr uint16_t MQTT_KEEPALIVE_SEC = 30;
+    /// Delay before first status publish after session comes up.
+    constexpr uint32_t MQTT_FIRST_STATUS_DELAY_MS = 1500;
+    /// SUBACK wait / resubscribe timeout.
+    constexpr uint32_t MQTT_SUBACK_TIMEOUT_MS = 8000;
+    /// Wall budget for encode+queue of one status publish (ms).
+    constexpr uint32_t MQTT_PUBLISH_BUDGET_MS = 10;
+    /// MqttFsmClient TCP connect wall-clock (layered over Sim800Tcp CONNECT_TIMEOUT_MS).
+    constexpr uint32_t MQTT_TCP_CONNECT_TIMEOUT_MS = 45000;
+
+    /// One MQTT/TCP frame staging size (MqttFsm TX slot + Sim800Tcp RX/TX rings).
+    constexpr uint16_t MQTT_FRAME_MAX = 1024;
+    /// MqttFsmClient outbound queue depth (Ctrl reserve + Tele + in-flight).
+    constexpr uint8_t MQTT_TX_Q_DEPTH = 3;
+    /// RX assemble buffer (incomplete frame).
+    constexpr uint16_t MQTT_RX_ASSEMBLE_MAX = 320;
+    constexpr uint32_t MQTT_RX_ASSEMBLE_TIMEOUT_MS = 3000;
+    /// Stack CONNECT / SUBSCRIBE payload scratch.
+    constexpr uint16_t MQTT_CONNECT_PAYLOAD_MAX = 200;
+    constexpr uint16_t MQTT_SUBSCRIBE_PAYLOAD_MAX = 128;
+
+    /// Per-tick FSM budgets passed to MqttFsmClient::tick.
+    constexpr uint16_t MQTT_TICK_MAX_READ_BYTES = 256;
+    constexpr uint16_t MQTT_TICK_MAX_WRITE_BYTES = MQTT_FRAME_MAX;
+    constexpr uint8_t MQTT_TICK_MAX_PARSE_FRAMES = 4;
+    constexpr uint8_t MQTT_TICK_MAX_MS = 20;
 }
 
 // ============================================================
@@ -423,6 +476,8 @@ namespace WebSseLimits {
     constexpr size_t SSE_QUEUE_RESERVED = 1;
     constexpr size_t STATUS_QUEUE_MAX = SSE_SOFT_QUEUE_MAX;
     constexpr size_t STATUS_FORCE_QUEUE_MAX = 8;
+    /// How long after last SSE activity to keep diag tail logging.
+    constexpr uint32_t DIAG_TAIL_MS = 5000UL;
 }
 
 // ============================================================
@@ -453,6 +508,8 @@ namespace Delays {
 
     constexpr uint32_t OTA_MODE_SWITCH_MS = 100;
     constexpr uint32_t REBOOT_HTTP_REPLY_MS = 100;
+    /// Spin delay after failed ESP.restart() (delayMicroseconds).
+    constexpr uint32_t HARD_RESTART_SPIN_US = 5000;
 }
 
 // ============================================================
@@ -464,6 +521,16 @@ namespace GSM {
 
     /// Целевая скорость UART MCU↔модем (гипотеза по умолчанию; проверка/запись NV через `AT+IPR?` / `AT+IPR=`).
     constexpr uint32_t UART_BAUD = 115200;
+    /// Baud search table: hypothesis first, then common SIM800 rates.
+    inline constexpr uint32_t UART_BAUD_CANDIDATES[] = {
+        UART_BAUD,
+        57600,
+        38400,
+        19200,
+        9600,
+    };
+    constexpr uint8_t UART_BAUD_CANDIDATE_COUNT =
+        sizeof(UART_BAUD_CANDIDATES) / sizeof(UART_BAUD_CANDIDATES[0]);
     /// Пауза после `Serial.begin` на старте и при возврате к гипотезе между раундами поиска скорости.
     constexpr uint32_t UART_SETTLE_MS = 80;
     /// Quiet после `begin()` до первой hypothesis AT (модему нужно время после питания/рестарта ESP).
@@ -489,8 +556,6 @@ namespace GSM {
     constexpr uint8_t INIT_CGATT_RETRY_MAX = 8;
     /// Таймаут `AT+CGMI` (шаг подтверждения производителя); отдельное имя для тюнинга (число по умолчанию = AT_OK_TIMEOUT_MS).
     constexpr uint32_t MODEM_ID_VERIFY_TIMEOUT_MS = AT_OK_TIMEOUT_MS;
-    /// Опционально: принудительный фоллбэк после длительной тишины на RX (0 = выкл.; не используется без кода в INIT).
-    constexpr uint32_t BAUD_FALLBACK_SILENCE_FORCE_MS = 0;
     /// Лимит неудачных раундов поиска baud подряд (0 = без лимита).
     constexpr uint8_t BAUD_SEARCH_MAX_PASSES = 4;
     /// Подстрока в ответе на `AT+CGMI` (ожидаемый производитель; SIM800 семейство).
@@ -514,7 +579,23 @@ namespace GSM {
     constexpr uint8_t ERROR_RECOVERY_MAX_CYCLES = 3;
     /// After exhausting L1–L4 cycles, wait this long before another attempt (or until UI reboot).
     constexpr uint32_t ERROR_RECOVERY_EXHAUSTED_MS = 300000UL; // 5 min
+    /// Short cooldown between ERROR recovery AT steps (CIPSHUT / SAPBR deact).
+    constexpr uint32_t ERROR_RECOVERY_COOLDOWN_MS = 2000UL;
+    /// AT+SAPBR=0,1 deactivate accept timeout.
+    constexpr uint32_t SAPBR_DEACT_TIMEOUT_MS = 8000UL;
+    /// AT+CFUN=1,1 AnyLine accept timeout during recovery.
+    constexpr uint32_t CFUN_ACCEPT_TIMEOUT_MS = 1000UL;
+    /// Stall-fingerprint log cadence while INIT/GPRS is stuck.
+    constexpr uint32_t STALL_LOG_INTERVAL_MS = 8000UL;
 
+    /// Reattach exponential backoff: base << (step-1), capped.
+    constexpr uint32_t REATTACH_BACKOFF_BASE_MS = 5000UL;
+    constexpr uint8_t REATTACH_BACKOFF_MAX_STEP = 6;
+    constexpr uint32_t REATTACH_BACKOFF_MAX_MS = 180000UL;
+    /// Floor delay when RSSI is weak/unknown.
+    constexpr uint32_t REATTACH_WEAK_RSSI_FLOOR_MS = 60000UL;
+    constexpr int16_t REATTACH_WEAK_RSSI_MAX = 6;
+    constexpr int16_t REATTACH_RSSI_UNKNOWN = 99;
     /// Modem NTP (AT+CNTP): accept timeout for setup commands.
     constexpr uint32_t CNTP_AT_TIMEOUT_MS = 10000;
     /// Wait for +CNTP: URC after AT+CNTP kick.
@@ -523,11 +604,19 @@ namespace GSM {
     constexpr uint32_t CCLK_TIMEOUT_MS = 5000;
     /// AT+CIPGSMLOC=2,1 (GSM location time) — can be slow.
     constexpr uint32_t CIPGSMLOC_TIMEOUT_MS = 45000;
-    /// CellularCore: max wait for boot time cascade (CCLK→CIPGSMLOC→CNTP) before MQTT.
-    constexpr uint32_t BOOT_TIME_BUDGET_MS =
-        CCLK_TIMEOUT_MS + CIPGSMLOC_TIMEOUT_MS + CNTP_AT_TIMEOUT_MS * 3UL + CNTP_SYNC_TIMEOUT_MS + 15000UL;
-    /// Alias kept for older call sites.
-    constexpr uint32_t BOOT_NTP_BUDGET_MS = BOOT_TIME_BUDGET_MS;
+    /// After CIPGSMLOC OK, wait this long for late +CIPGSMLOC URC.
+    constexpr uint32_t CIPGSMLOC_URC_GRACE_MS = 5000UL;
+    /// Escalate ERROR recovery level if bring-up stuck this long (same order as exhausted wait).
+    constexpr uint32_t BRINGUP_ESCALATE_MS = ERROR_RECOVERY_EXHAUSTED_MS;
+    /// Max baud accepted when parsing AT+IPR? / IPR write.
+    constexpr uint32_t UART_BAUD_PARSE_MAX = 4000000UL;
+    /// Diagnostic event ring depth (GSMController).
+    constexpr uint8_t EVENT_RING_SIZE = 8;
+    /// AtSession normal / high-priority queue depths.
+    constexpr uint8_t AT_QSIZE = 6;
+    constexpr uint8_t AT_HQSIZE = 2;
+    /// ModemUart framed line buffer.
+    constexpr uint16_t UART_LINE_BUF = 160;
 
     // RX ring for waiter/diagnostic snippets. Keep compact to save RAM.
     constexpr size_t RESPONSE_BUFFER_SIZE = 128;
@@ -573,6 +662,37 @@ namespace Sim800Tcp {
 
     /// Stack recovers without CONNECT OK before asking GSM for bearer reattach.
     constexpr uint8_t STACK_RECOVER_REATTACH_THRESHOLD = 3;
+
+    /// Short AT accept for CIPCLOSE / CIPRXGET / CIPHEAD / CIPMUX.
+    constexpr uint32_t AT_CONFIG_TIMEOUT_MS = 3000;
+    /// CIPSHUT accept (transport recover + GSM ERROR recovery).
+    constexpr uint32_t CIPSHUT_TIMEOUT_MS = 10000;
+    /// CIPSEND wait for '>' prompt.
+    constexpr uint32_t CIPSEND_PROMPT_TIMEOUT_MS = 5000;
+    /// RX ring + TX staging size (must match NetTiming::MQTT_FRAME_MAX).
+    constexpr uint16_t TCP_BUF_SIZE = NetTiming::MQTT_FRAME_MAX;
+    /// Short CRLF control-line sniff buffer in raw push parser.
+    constexpr uint8_t RAW_LINE_BUF = 64;
+}
+
+/// Boot/yield time cascade budget (defined after Sim800Tcp so CIPSHUT timeout is shared).
+namespace GSM {
+    constexpr uint32_t BOOT_BUDGET_SLACK_MS = 15000UL;
+    constexpr uint32_t BOOT_TIME_BUDGET_MS =
+        CCLK_TIMEOUT_MS + Sim800Tcp::CIPSHUT_TIMEOUT_MS + CIPGSMLOC_TIMEOUT_MS +
+        CNTP_AT_TIMEOUT_MS * 3UL + CNTP_SYNC_TIMEOUT_MS + BOOT_BUDGET_SLACK_MS;
+}
+
+/// CellularCore glue (GSM + MQTT). Placed after Sim800Tcp to reuse stack-recover thresholds.
+namespace Cellular {
+    /// MQTT disconnect drain loop budget (gsm.update + mqtt.loop iterations).
+    constexpr uint8_t MQTT_DRAIN_MAX_TICKS = 50;
+    /// Cadence for "settle remaining" progress log during post-boot quiet.
+    constexpr uint32_t SETTLE_LOG_INTERVAL_MS = 5000UL;
+    /// Consecutive MQTT connect fails before requesting GSM bearer reattach.
+    constexpr uint8_t MQTT_FAIL_STREAK_REATTACH = Sim800Tcp::STACK_RECOVER_REATTACH_THRESHOLD;
+    /// Min gap between Cellular→GSM reattach requests (same order as stack recover cooldown).
+    constexpr uint32_t MQTT_REATTACH_REQUEST_COOLDOWN_MS = Sim800Tcp::STACK_RECOVER_COOLDOWN_MS;
 }
 
 // ============================================================
@@ -594,5 +714,7 @@ namespace Time {
     constexpr uint32_t MS_PER_SEC = 1000UL;
     constexpr float MS_PER_SEC_F = 1000.0f;
     constexpr float SEC_PER_MIN_F = 60.0f;
+    constexpr uint32_t SEC_PER_HOUR = 3600UL;
+    constexpr uint32_t MS_PER_HOUR = SEC_PER_HOUR * MS_PER_SEC;
 }
 

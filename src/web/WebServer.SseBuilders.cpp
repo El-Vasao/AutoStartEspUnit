@@ -7,6 +7,7 @@
 #include "config/Config.h"
 #include "config/SensorRomResolve.h"
 #include "common/Pins.h"
+#include "common/Utils.h"
 #include "core/ErrorManager.h"
 #include "core/FlashCommitCoordinator.h"
 #include "gsm/GSMController.h"
@@ -211,7 +212,7 @@ static void emitProgramFields(Print& p, bool* needComma, const SseStatusPort& st
     p.print("\"timerRemaining\":");
     {
         const uint32_t remMs = st.program->getTimerRemainingMs();
-        const uint32_t remSec = remMs ? (remMs + 999) / 1000 : 0;
+        const uint32_t remSec = msToSecCeil(remMs);
         p.print(remSec);
     }
 
@@ -281,7 +282,7 @@ void emitFlashPayload(Print& p, const SseStatusPort& st) {
 
 void emitClocksPayload(Print& p, const SseStatusPort& st) {
     const uint32_t remMs = st.program ? st.program->getTimerRemainingMs() : 0;
-    const uint32_t remSec = remMs ? (remMs + 999) / 1000 : 0;
+    const uint32_t remSec = msToSecCeil(remMs);
     const bool prog = st.program && st.program->isRunning();
     bool c = false;
     p.print('{');

@@ -325,7 +325,7 @@ public:
                         t_->mqtt.topic_prefix[--n] = '\0';
                     }
                 } else if (streq(pending_, "publish_interval_sec"))
-                    t_->mqtt.publish_interval_sec = parseU16(v, 30);
+                    t_->mqtt.publish_interval_sec = parseU16(v, Defaults::MQTT_PUBLISH_INTERVAL_SEC);
                 break;
             case St::Vehicle:
                 if (streq(pending_, "adc_voltage_coeff")) t_->vehicle.adc_voltage_coeff = parseF(v, 1.0f);
@@ -420,7 +420,7 @@ public:
                     t_->time.tz_offset_hours = static_cast<int8_t>(mins / 60);
                 }
                 else if (streq(pending_, "sync_interval_hours"))
-                    t_->time.sync_interval_hours = parseU32(v, 6);
+                    t_->time.sync_interval_hours = parseU32(v, Defaults::TIME_SYNC_INTERVAL_HOURS);
                 break;
             case St::InTrigObj:
                 if (streq(pending_, "id")) trig_.id = parseU16(v, 0);

@@ -6,6 +6,8 @@
 #include <FS.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <time.h>
+
 #include "common/Constants.h"
 
 /** 
@@ -66,10 +68,20 @@ inline size_t safe_strcpy(char* dst, const char* src, size_t dstSize) {
 }
 
 // Преобразование миллисекунд в секунды
-inline uint32_t msToSec(uint32_t ms) { return ms / 1000; }
+inline uint32_t msToSec(uint32_t ms) { return ms / Time::MS_PER_SEC; }
 
 // Преобразование секунд в миллисекунды
-inline uint32_t secToMs(uint32_t sec) { return sec * 1000UL; }
+inline uint32_t secToMs(uint32_t sec) { return sec * Time::MS_PER_SEC; }
+
+/// Ceil-divide milliseconds to whole seconds (timer remaining displays).
+inline uint32_t msToSecCeil(uint32_t ms) {
+    return ms ? (ms + Time::MS_PER_SEC - 1u) / Time::MS_PER_SEC : 0;
+}
+
+/// Pack calendar day as (tm_year & 0x1FF) << 9 | (tm_yday & 0x1FF) for once-per-day keys.
+inline uint32_t calendarDayKey(const struct tm& t) {
+    return (static_cast<uint32_t>(t.tm_year & 0x1FF) << 9) | static_cast<uint32_t>(t.tm_yday & 0x1FF);
+}
 
 // Проверка, находится ли значение в заданном диапазоне (включительно)
 template<typename T>

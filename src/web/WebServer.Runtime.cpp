@@ -35,7 +35,7 @@ extern DNSServer dnsServer;
 extern IPAddress apIP;
 
 namespace {
-constexpr uint32_t kSseDiagTailMs = 5000UL;
+constexpr uint32_t kSseDiagTailMs = WebSseLimits::DIAG_TAIL_MS;
 
 uint8_t apMaxConnectionsForMode(CoreMode mode) {
     switch (mode) {

@@ -12,12 +12,6 @@
  * @brief Логика battery-saver (реакция на низкое напряжение, лимиты попыток/сутки).
  */
 
-namespace {
-uint32_t calendarDayKey(const struct tm& t) {
-    return (static_cast<uint32_t>(t.tm_year & 0x1FF) << 9) | static_cast<uint32_t>(t.tm_yday & 0x1FF);
-}
-} // namespace
-
 BatterySaverManager::BatterySaverManager(Config& config, SensorsController& sensors, ProgramExecutor& executor,
                                          TimeSyncManager& timeSync)
     : _config(config),

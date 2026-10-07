@@ -14,10 +14,11 @@
 
 /**
  * @file Core.TimeSyncManager.cpp
- * @brief Soft wall clock + SIM800 time cascade (CCLK → CIPGSMLOC → CNTP).
+ * @brief Soft wall clock + SIM800 time cascade (CCLK → CIPSHUT → CIPGSMLOC → CNTP).
  *
- * CCLK + CIPGSMLOC always run. CNTP only when time.enabled (NTP).
- * Periodic sync_interval may yield MQTT CIP (NeedMqttDrain → CascadeArmed).
+ * CCLK + CIPGSMLOC always run on full cascade. CNTP only when time.enabled (NTP).
+ * With MQTT up: CCLK-lite probes first; heavy cascade yields MQTT after lite misses.
+ * Failures use stepped backoff (2→5→15→30 min).
  */
 
 namespace {
@@ -53,6 +54,7 @@ void clearTimeSyncErrorsIfActive_() {
 }
 
 void applyTimeSyncFailMask_(uint8_t mask) {
+    if (mask == 0) return;
     ErrorManager& em = core.getErrorManager();
     if (mask & GSMController::TimeFailCclk) {
         em.set(ErrorCode::TIME_CCLK_FAIL);
@@ -68,6 +70,15 @@ void applyTimeSyncFailMask_(uint8_t mask) {
 const char* ntpServerForCascade_(const TimeConfig& tcfg) {
     if (!tcfg.enabled) return "";
     return tcfg.ntp_server;
+}
+
+uint32_t backoffDelayMs_(uint8_t step) {
+    switch (step) {
+        case 0: return Timing::TIME_SYNC_RETRY_MS;
+        case 1: return Timing::TIME_SYNC_BACKOFF_5MIN_MS;
+        case 2: return Timing::TIME_SYNC_BACKOFF_15MIN_MS;
+        default: return Timing::TIME_SYNC_BACKOFF_30MIN_MS;
+    }
 }
 } // namespace
 
@@ -85,6 +96,9 @@ void TimeSyncManager::begin() {
     _yieldDeadlineMs = 0;
     _yieldCascadeStarted = false;
     _bootTimeSettled = false;
+    resetFailBackoff_();
+    _cclkLiteStarted = false;
+    _heavyAttempt = false;
 }
 
 void TimeSyncManager::setLastSource_(const char* source) {
@@ -111,10 +125,35 @@ void TimeSyncManager::armYieldDeadline_(uint32_t now) {
     logger.log("[TimeSync] yield budget %u ms\n", (unsigned)GSM::BOOT_TIME_BUDGET_MS);
 }
 
+void TimeSyncManager::resetFailBackoff_() {
+    _failStep = 0;
+    _liteMisses = 0;
+}
+
+void TimeSyncManager::scheduleRetry_(uint32_t now) {
+    const uint32_t delay = backoffDelayMs_(_failStep);
+    _nextAttemptMs = now + delay;
+    logger.log("[TimeSync] retry in %lu ms (backoff step %u, liteMisses=%u)\n",
+               (unsigned long)delay, (unsigned)_failStep, (unsigned)_liteMisses);
+    if (_failStep < Timing::TIME_SYNC_BACKOFF_MAX_STEP) {
+        _failStep = static_cast<uint8_t>(_failStep + 1);
+    }
+}
+
+void TimeSyncManager::scheduleLiteRetry_(uint32_t now) {
+    _nextAttemptMs = now + Timing::TIME_SYNC_LITE_BUSY_RETRY_MS;
+    logger.log("[TimeSync] lite re-arm in %lu ms (liteMisses=%u)\n",
+               (unsigned long)Timing::TIME_SYNC_LITE_BUSY_RETRY_MS, (unsigned)_liteMisses);
+}
+
 void TimeSyncManager::notifyMqttDrainedForSync() {
     if (_yieldPhase != YieldPhase::NeedMqttDrain) return;
     _yieldPhase = YieldPhase::CascadeArmed;
     logger.log("[TimeSync] MQTT drained, cascade armed\n");
+}
+
+bool TimeSyncManager::wantHeavyCascade_() const {
+    return _forceRequest || _liteMisses >= Timing::TIME_SYNC_LITE_BEFORE_HEAVY;
 }
 
 bool TimeSyncManager::tryStartCascade_(uint32_t now, const char* ntpServer, int8_t tzOffsetHours) {
@@ -129,8 +168,22 @@ bool TimeSyncManager::tryStartCascade_(uint32_t now, const char* ntpServer, int8
     }
     _bootAttemptStarted = true;
     _forceRequest = false;
-    // Floor until success handler replaces with sync_interval, or fail → retry.
+    _heavyAttempt = true;
+    _cclkLiteStarted = false;
+    // Floor until success / scheduleRetry_ on fail.
     _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
+    return true;
+}
+
+bool TimeSyncManager::tryStartCclkLite_(uint32_t now, int8_t tzOffsetHours) {
+    if (!_gsm.requestCclkProbe(tzOffsetHours)) {
+        return false;
+    }
+    _forceRequest = false;
+    _heavyAttempt = false;
+    _cclkLiteStarted = true;
+    _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
+    logger.log("[TimeSync] CCLK-lite started\n");
     return true;
 }
 
@@ -153,15 +206,10 @@ int16_t TimeSyncManager::tzOffsetHours() const {
 bool TimeSyncManager::localBrokenDown(struct tm& out) const {
     if (!_synced) return false;
     time_t utc = epochUtc();
-    const int32_t offSec = (int32_t)tzOffsetHours() * 3600;
+    const int32_t offSec = (int32_t)tzOffsetHours() * (int32_t)Time::SEC_PER_HOUR;
     time_t local = utc + (time_t)offSec;
     if (!gmtime_r(&local, &out)) return false;
     return true;
-}
-
-void TimeSyncManager::requestSync() {
-    _forceRequest = true;
-    _nextAttemptMs = 0;
 }
 
 void TimeSyncManager::applyEpochUtc(time_t epochUtc, const char* source) {
@@ -169,7 +217,7 @@ void TimeSyncManager::applyEpochUtc(time_t epochUtc, const char* source) {
 }
 
 void TimeSyncManager::applyEpochInternal_(time_t epochUtc, const char* source, bool persistRtc) {
-    if (epochUtc < 1700000000L) { // sanity: before ~2023-11
+    if (epochUtc < TimeSync::MIN_SANE_EPOCH_UTC) { // sanity: before ~2023-11
         logger.log("[TimeSync] reject epoch=%ld source=%s\n", (long)epochUtc, source ? source : "?");
         return;
     }
@@ -182,6 +230,9 @@ void TimeSyncManager::applyEpochInternal_(time_t epochUtc, const char* source, b
     setLastSource_(source);
     if (persistRtc) saveToRtc_();
     clearTimeSyncErrorsIfActive_();
+    resetFailBackoff_();
+    _cclkLiteStarted = false;
+    _heavyAttempt = false;
     logger.log("[TimeSync] synced epoch=%ld tz=%+dh source=%s\n", (long)epochUtc, (int)tzOffsetHours(),
                source ? source : "?");
     markBootTimeSettled_("ok");
@@ -193,7 +244,7 @@ void TimeSyncManager::loadFromRtc_() {
     if (rec.magic != RTC_MAGIC) return;
     uint16_t crc = calculateCRC16((const uint8_t*)&rec, sizeof(rec) - sizeof(rec.crc));
     if (crc != rec.crc) return;
-    if (rec.epoch < 1700000000L) return;
+    if (rec.epoch < TimeSync::MIN_SANE_EPOCH_UTC) return;
 
     struct timeval tv;
     tv.tv_sec = (time_t)rec.epoch;
@@ -241,8 +292,8 @@ void TimeSyncManager::update() {
         applyEpochInternal_(got, sourceFromGsm(src), true);
         _forceRequest = false;
         const uint32_t intervalMs =
-            tcfg.sync_interval_hours ? (tcfg.sync_interval_hours * 3600UL * 1000UL)
-                                     : (6UL * 3600UL * 1000UL);
+            tcfg.sync_interval_hours ? (tcfg.sync_interval_hours * Time::MS_PER_HOUR)
+                                     : (Defaults::TIME_SYNC_INTERVAL_HOURS * Time::MS_PER_HOUR);
         _nextAttemptMs = now + intervalMs;
         return;
     }
@@ -254,7 +305,25 @@ void TimeSyncManager::update() {
         markBootTimeSettled_("fail");
         clearYield_("fail");
         _forceRequest = false;
-        _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
+        _cclkLiteStarted = false;
+        if (_heavyAttempt) {
+            _liteMisses = 0; // after heavy, try lite again before next drain
+            _heavyAttempt = false;
+            scheduleRetry_(now); // fail-backoff only after a real heavy attempt
+        } else {
+            if (_liteMisses < 255) _liteMisses++;
+            _heavyAttempt = false;
+            scheduleLiteRetry_(now);
+        }
+        return;
+    }
+
+    // CCLK-lite soft miss (stale / tcp_epoch / reattach) — no fail-backoff.
+    if (_cclkLiteStarted && !_gsm.timeSyncBusy()) {
+        _cclkLiteStarted = false;
+        if (_liteMisses < 255) _liteMisses++;
+        logger.log("[TimeSync] CCLK-lite soft miss (liteMisses=%u)\n", (unsigned)_liteMisses);
+        scheduleLiteRetry_(now);
         return;
     }
 
@@ -263,19 +332,27 @@ void TimeSyncManager::update() {
         markBootTimeSettled_("attempt_done");
     }
 
-    // Yield budget: release MQTT hold even if cascade never started / failed.
+    // Yield budget: release MQTT hold phase; keep `_heavyAttempt` while GSM cascade still runs.
     if (_yieldPhase != YieldPhase::Idle && _yieldDeadlineMs != 0 &&
         (int32_t)(now - _yieldDeadlineMs) >= 0) {
         clearYield_("budget");
         _forceRequest = false;
-        _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
+        if (!_gsm.timeSyncBusy()) {
+            _heavyAttempt = false;
+            scheduleRetry_(now);
+        } else {
+            // Cascade still running — takeFail/ok will schedule; keep a short floor.
+            _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
+        }
     }
 
     // Yield cascade finished without a result (fail / abort) — release MQTT.
+    // (Normal fail path already clearYield + scheduleRetry via takeTimeSyncFail.)
     if (_yieldPhase == YieldPhase::CascadeArmed && _yieldCascadeStarted && !_gsm.timeSyncBusy()) {
         clearYield_("attempt_done");
         _forceRequest = false;
-        _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
+        _heavyAttempt = false;
+        scheduleRetry_(now);
     }
 
     if (_gsm.timeSyncBusy()) return;
@@ -290,6 +367,8 @@ void TimeSyncManager::update() {
         if (_gsm.modemServiceEpochBusy()) return;
         if (tryStartCascade_(now, ntpSrv, tcfg.tz_offset_hours)) {
             _yieldCascadeStarted = true;
+        } else {
+            scheduleLiteRetry_(now); // busy — do not escalate fail-backoff
         }
         // Stay armed until busy finishes (success → apply clears; fail → takeTimeSyncFail) or budget.
         return;
@@ -303,16 +382,23 @@ void TimeSyncManager::update() {
     // Do not fight voice/SMS exclusive epoch.
     if (_gsm.modemServiceEpochBusy() || _gsm.serviceEpochNeedsMqttDrain()) return;
 
-    // MQTT CIP up: request drain yield instead of starting cascade.
+    // MQTT CIP up: CCLK-lite without drain, or heavy yield after misses / force.
     if (_gsm.tcpSocketActive() || _gsm.tcpBusBusy()) {
-        _yieldPhase = YieldPhase::NeedMqttDrain;
-        armYieldDeadline_(now);
-        logger.log("[TimeSync] yield: need MQTT drain for cascade\n");
+        if (wantHeavyCascade_()) {
+            _yieldPhase = YieldPhase::NeedMqttDrain;
+            armYieldDeadline_(now);
+            logger.log("[TimeSync] yield: need MQTT drain for cascade (liteMisses=%u force=%u)\n",
+                       (unsigned)_liteMisses, (unsigned)_forceRequest);
+            return;
+        }
+        if (!tryStartCclkLite_(now, tcfg.tz_offset_hours)) {
+            scheduleLiteRetry_(now);
+        }
         return;
     }
 
-    // TCP already down — start cascade immediately (boot / post-disconnect).
+    // TCP already down — start full cascade immediately (boot / post-disconnect).
     if (!tryStartCascade_(now, ntpSrv, tcfg.tz_offset_hours)) {
-        _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
+        scheduleLiteRetry_(now);
     }
 }

@@ -7,6 +7,7 @@
 #include "config/Config.h"
 #include "common/Logger.h"
 #include "common/Pins.h"
+#include "common/Utils.h"
 #include "common/ErrorCodes.h"
 #include "fs/FSManager.h"
 #include "web/WebServer.h"
@@ -274,7 +275,7 @@ void Core::handleNormal() {
     if (wcfg.ap_timeout_enabled && wcfg.ap_timeout_sec > 0 && impl.modeManager.getCurrentMode() == CoreMode::NORMAL) {
         if (webServer.isActive() && webServer.activeUiSessionCount() == 0) {
             const uint32_t idleMs = millis() - webServer.lastUiActivityMs();
-            const uint32_t timeoutMs = (uint32_t)wcfg.ap_timeout_sec * 1000UL;
+            const uint32_t timeoutMs = secToMs((uint32_t)wcfg.ap_timeout_sec);
             if (idleMs >= timeoutMs) {
                 logger.log("[Core] AP timeout reached (%us), switching to NORMAL_SILENT\n",
                            (unsigned)wcfg.ap_timeout_sec);
