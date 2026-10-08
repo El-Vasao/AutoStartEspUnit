@@ -200,10 +200,10 @@
       {
         "name": "Функции",
         "actions": [
-          { "value": "BATTERY_SAVER_ON", "label": "Battery Saver ON", "params": [] },
-          { "value": "BATTERY_SAVER_OFF", "label": "Battery Saver OFF", "params": [] },
-          { "value": "THERMOSTAT_ON", "label": "Термостат ON", "params": [] },
-          { "value": "THERMOSTAT_OFF", "label": "Термостат OFF", "params": [] }
+          { "value": "BATTERY_SAVER_ON", "label": "Защита АКБ: вкл", "params": [] },
+          { "value": "BATTERY_SAVER_OFF", "label": "Защита АКБ: выкл", "params": [] },
+          { "value": "THERMOSTAT_ON", "label": "Термостат: вкл", "params": [] },
+          { "value": "THERMOSTAT_OFF", "label": "Термостат: выкл", "params": [] }
         ]
       },
       {

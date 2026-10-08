@@ -395,17 +395,17 @@
                     </div>
                 </div>
 
-                <!-- Функции (Battery Saver и Термостат) -->
+                <!-- Функции (Защита АКБ и Термостат) -->
                 <div class="card">
                     <h3>Функции</h3>
                     <div class="tile-grid-wide" x-show="$store.deviceStatus.loaded">
-                            <!-- Battery Saver -->
+                            <!-- Защита АКБ -->
                             <div
                                 class="tile tile-wide"
                                 :class="$store.deviceRuntime.batterySaverEnabled ? 'feature-on' : 'feature-off'"
                                 data-gesture="batterySaver"
                             >
-                                <div class="tile-name">🔋 Battery Saver</div>
+                                <div class="tile-name">Защита АКБ</div>
                                 <div class="tile-sub">
                                     <span x-text="'Запуск при ' + $store.settings.battery_saver.voltage_start_threshold + ' В'"></span>
                                     <span x-show="$store.deviceStatus.voltage" x-text="' | Текущее: ' + $store.uiFormat.formatVoltage($store.deviceStatus.voltage)"></span>
@@ -418,12 +418,12 @@
                                 :class="$store.deviceRuntime.thermostatEnabled ? 'feature-on' : 'feature-off'"
                                 data-gesture="thermostat"
                             >
-                                <div class="tile-name">🌡️ Термостат</div>
+                                <div class="tile-name">Термостат</div>
                                 <div class="tile-sub">
                                     <span x-text="$store.uiFormat.sensorLabelById($store.settings.thermostat.sensor_id)"></span>
                                     <span x-text="' | ' + ($store.settings.thermostat.comparison === 'above' ? 'выше' : 'ниже') + ' ' + $store.settings.thermostat.lower_threshold + '°C'"></span>
                                 </div>
-                                <div class="tile-sub" x-text="'Программы: ↓' + ($store.settings.thermostat.program_id_lower || '—') + ' ↑' + ($store.settings.thermostat.program_id_upper || '—')"></div>
+                                <div class="tile-sub" x-text="'Низкая: ' + ($store.settings.thermostat.program_id_lower || '—') + ' · Высокая: ' + ($store.settings.thermostat.program_id_upper || '—')"></div>
                             </div>
                     </div>
                     <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка данных...</div>
@@ -655,7 +655,7 @@
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'inputs', invalid: $store.settingsForm.subtabHasErrors('inputs'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('inputs') && !$store.settingsForm.subtabHasErrors('inputs') }" @click="$store.uiState.activeSubTab = 'inputs'" :disabled="$store.deviceOta.started">Входы</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'triggers', invalid: $store.settingsForm.subtabHasErrors('triggers'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('triggers') && !$store.settingsForm.subtabHasErrors('triggers') }" @click="$store.uiState.activeSubTab = 'triggers'" :disabled="$store.deviceOta.started">Триггеры</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'thermostat', invalid: $store.settingsForm.subtabHasErrors('thermostat'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('thermostat') && !$store.settingsForm.subtabHasErrors('thermostat') }" @click="$store.uiState.activeSubTab = 'thermostat'" :disabled="$store.deviceOta.started">Термостат</button>
-                    <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'battery', invalid: $store.settingsForm.subtabHasErrors('battery'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('battery') && !$store.settingsForm.subtabHasErrors('battery') }" @click="$store.uiState.activeSubTab = 'battery'" :disabled="$store.deviceOta.started">Battery Saver</button>
+                    <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'battery', invalid: $store.settingsForm.subtabHasErrors('battery'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('battery') && !$store.settingsForm.subtabHasErrors('battery') }" @click="$store.uiState.activeSubTab = 'battery'" :disabled="$store.deviceOta.started">Защита АКБ</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'time', invalid: $store.settingsForm.subtabHasErrors('time'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('time') && !$store.settingsForm.subtabHasErrors('time') }" @click="$store.uiState.activeSubTab = 'time'" :disabled="$store.deviceOta.started">Время</button>
                 </nav>
 

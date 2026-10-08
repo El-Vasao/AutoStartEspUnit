@@ -184,7 +184,7 @@
       async resetAll() {
         Alpine.store('uiDialog').show({
           title: 'Сброс всех программ',
-          message: '⚠️ Вы уверены, что хотите удалить ВСЕ программы? Это действие необратимо.',
+          message: 'Вы уверены, что хотите удалить ВСЕ программы? Это действие необратимо.',
           onConfirm: async () => {
             this.loading = true;
             try {

@@ -25,12 +25,12 @@
       const v = String(raw || '').trim();
       const map = {
         boot: { text: 'Система: Загрузка', tone: 'info' },
-        emergency_ap: { text: 'Система: ⚠ Авария', tone: 'danger' },
-        setup_ap: { text: 'Система: ⚠ Настройка', tone: 'warning' },
-        normal: { text: 'Система: ✓ Норма', tone: 'success' },
-        normal_silent: { text: 'Система: ✓ Тихий', tone: 'success' },
+        emergency_ap: { text: 'Система: Авария', tone: 'danger' },
+        setup_ap: { text: 'Система: Настройка', tone: 'warning' },
+        normal: { text: 'Система: Норма', tone: 'success' },
+        normal_silent: { text: 'Система: Тихий', tone: 'success' },
         ota_update: { text: 'Система: Обновление', tone: 'warning' },
-        reboot_required: { text: 'Система: ⚠ Перезагрузите', tone: 'danger' },
+        reboot_required: { text: 'Система: Перезагрузите', tone: 'danger' },
       };
 
       const hit = map[v];
@@ -50,8 +50,8 @@
         GPRS_SETUP: { text: 'GSM: APN', tone: 'info' },
         GPRS_ATTACH: { text: 'GSM: GPRS attach', tone: 'info' },
         GPRS_GETIP: { text: 'GSM: IP', tone: 'info' },
-        READY: { text: 'GSM: ✓ Готов', tone: 'success' },
-        ERROR: { text: 'GSM: ✗ Ошибка', tone: 'danger' },
+        READY: { text: 'GSM: Готов', tone: 'success' },
+        ERROR: { text: 'GSM: Ошибка', tone: 'danger' },
       };
 
       const hit = map[v];
