@@ -10,7 +10,7 @@
           "label": "Имя сети",
           "placeholder": "",
           "helpTitle": "Имя сети",
-          "help": "Имя точки доступа, которую поднимает устройство. К ней подключаетесь, чтобы открыть эту страницу."
+          "help": "Имя сети Wi‑Fi устройства."
         },
         {
           "key": "password",
@@ -19,29 +19,34 @@
           "label": "Пароль",
           "placeholder": "",
           "helpTitle": "Пароль",
-          "help": "Пароль от этой точки доступа. Нужен, чтобы подключиться к устройству с телефона или ноутбука."
+          "help": "Пароль сети Wi‑Fi устройства."
         },
         {
           "key": "ap_timeout_enabled",
           "path": "wifi.ap_timeout_enabled",
           "type": "toggle",
-          "label": "Автоотключение Wi‑Fi",
-          "labelOn": "Автоотключение: включено",
-          "labelOff": "Автоотключение: выключено",
-          "helpTitle": "Автоотключение Wi‑Fi",
-          "help": "Если включено, точка доступа сама выключится через заданное время после запуска. Так меньше расход питания."
+          "label": "Автовыключение Wi‑Fi",
+          "labelOn": "Вкл",
+          "labelOff": "Выкл",
+          "helpTitle": "Автовыключение Wi‑Fi",
+          "help": "Выключает Wi‑Fi через заданное время после старта."
         },
         {
           "key": "ap_timeout_sec",
           "path": "wifi.ap_timeout_sec",
           "type": "number",
           "valueType": "int",
-          "label": "Через сколько секунд",
+          "label": "Таймаут (с)",
           "step": "1",
           "min": "0",
-          "showIf": { "eq": { "path": "wifi.ap_timeout_enabled", "value": true } },
-          "helpTitle": "Через сколько секунд",
-          "help": "Сколько ждать после включения устройства, прежде чем выключить точку доступа."
+          "showIf": {
+            "eq": {
+              "path": "wifi.ap_timeout_enabled",
+              "value": true
+            }
+          },
+          "helpTitle": "Таймаут (с)",
+          "help": "Секунды до выключения Wi‑Fi. 0 — выключить сразу после старта."
         }
       ]
     },
@@ -54,23 +59,23 @@
           "type": "text",
           "label": "APN",
           "helpTitle": "APN",
-          "help": "Точка доступа оператора для интернета по SIM. Обычно указана в настройках тарифа или у поддержки оператора."
+          "help": "Точка доступа оператора для интернета по SIM."
         },
         {
           "key": "apn_user",
           "path": "gsm.apn_user",
           "type": "text",
-          "label": "Логин APN",
-          "helpTitle": "Логин APN",
-          "help": "Нужен только если оператор требует логин. Часто можно оставить пустым."
+          "label": "Логин",
+          "helpTitle": "Логин",
+          "help": "Логин APN. Пусто, если оператор его не задаёт."
         },
         {
           "key": "apn_pass",
           "path": "gsm.apn_pass",
           "type": "text",
-          "label": "Пароль APN",
-          "helpTitle": "Пароль APN",
-          "help": "Нужен только если оператор требует пароль. Часто можно оставить пустым."
+          "label": "Пароль",
+          "helpTitle": "Пароль",
+          "help": "Пароль APN. Пусто, если оператор его не задаёт."
         },
         {
           "key": "owner_phone",
@@ -79,16 +84,16 @@
           "label": "Номер владельца",
           "placeholder": "+71234567890",
           "helpTitle": "Номер владельца",
-          "help": "Ваш номер для звонков, SMS и команд с телефона, если эти функции включены."
+          "help": "Номер владельца в формате +7… для звонков и SMS."
         },
         {
           "key": "dtmf_password",
           "path": "gsm.dtmf_password",
           "type": "text",
-          "label": "Код с телефона",
+          "label": "Код звонка",
           "placeholder": "",
-          "helpTitle": "Код с телефона",
-          "help": "Код, который набираете кнопками во время звонка на устройство, чтобы дать команду."
+          "helpTitle": "Код звонка",
+          "help": "Код, который вводят тонами во время звонка на устройство."
         }
       ]
     },
@@ -99,9 +104,9 @@
           "key": "broker",
           "path": "mqtt.broker",
           "type": "text",
-          "label": "Сервер",
-          "helpTitle": "Сервер",
-          "help": "Адрес MQTT-сервера: имя или IP, например mqtt.example.com."
+          "label": "Брокер",
+          "helpTitle": "Брокер",
+          "help": "Адрес MQTT-брокера."
         },
         {
           "key": "port",
@@ -112,7 +117,7 @@
           "min": "1",
           "max": "65535",
           "helpTitle": "Порт",
-          "help": "Порт сервера. Чаще всего 1883, для защищённого соединения — 8883."
+          "help": "Порт брокера: 1883 или 8883."
         },
         {
           "key": "client_id",
@@ -120,15 +125,15 @@
           "type": "text",
           "label": "Имя клиента",
           "helpTitle": "Имя клиента",
-          "help": "Как устройство представляется серверу. Должно быть уникальным среди всех подключений."
+          "help": "Имя клиента на брокере. Должно быть уникальным."
         },
         {
           "key": "user",
           "path": "mqtt.user",
           "type": "text",
-          "label": "Пользователь",
-          "helpTitle": "Пользователь",
-          "help": "Логин, если сервер просит авторизацию. Иначе оставьте пустым."
+          "label": "Логин",
+          "helpTitle": "Логин",
+          "help": "Логин MQTT. Пусто — без авторизации."
         },
         {
           "key": "pass",
@@ -136,26 +141,26 @@
           "type": "text",
           "label": "Пароль",
           "helpTitle": "Пароль",
-          "help": "Пароль к MQTT, если нужна авторизация. Идёт вместе с полем «Пользователь»."
+          "help": "Пароль MQTT."
         },
         {
           "key": "topic_prefix",
           "path": "mqtt.topic_prefix",
           "type": "text",
-          "label": "Общий путь топиков",
-          "helpTitle": "Общий путь топиков",
-          "help": "Общая часть пути без слэша в конце. К ней устройство само дописывает status, cmd и другие суффиксы."
+          "label": "Префикс топиков",
+          "helpTitle": "Префикс топиков",
+          "help": "Начало имён топиков, без «/» в конце."
         },
         {
           "key": "publish_interval_sec",
           "path": "mqtt.publish_interval_sec",
           "type": "number",
           "valueType": "int",
-          "label": "Как часто слать статус (сек)",
+          "label": "Интервал статуса (с)",
           "min": "1",
           "max": "3600",
-          "helpTitle": "Как часто слать статус (сек)",
-          "help": "Пауза между регулярными сообщениями о состоянии устройства."
+          "helpTitle": "Интервал статуса (с)",
+          "help": "Как часто публиковать статус, в секундах."
         }
       ]
     },
@@ -163,54 +168,66 @@
       "title": "Автомобиль",
       "fields": [
         {
+          "key": "adc_calibrate_voltage",
+          "path": "vehicle.adc_calibrate_voltage",
+          "type": "number",
+          "label": "Измеренное напряжение (В)",
+          "step": "0.01",
+          "min": "0.01",
+          "placeholderLive": "voltage",
+          "helpTitle": "Измеренное напряжение",
+          "help": "Введите напряжение с мультиметра при текущем подключении АКБ и сохраните — коэффициент пересчитается автоматически."
+        },
+        {
           "key": "adc_voltage_coeff",
           "path": "vehicle.adc_voltage_coeff",
           "type": "number",
-          "label": "Калибровка напряжения",
-          "step": "0.01",
+          "hidden": true,
+          "label": "Коэффициент АЦП",
+          "step": "0.000001",
           "min": "0",
-          "helpTitle": "Калибровка напряжения",
-          "help": "Множитель, чтобы показания совпали с реальными вольтами. Меняйте только при калибровке."
+          "helpTitle": "Коэффициент АЦП",
+          "help": "Служебное поле: сохраняется в конфиге, редактируется только через калибровку."
         },
         {
           "key": "starter_max_time_sec",
           "path": "vehicle.starter_max_time_sec",
           "type": "number",
           "valueType": "int",
-          "label": "Макс. время стартера (сек)",
+          "label": "Макс. стартер (с)",
           "min": "1",
-          "helpTitle": "Макс. время стартера (сек)",
-          "help": "Дольше этой паузы стартер крутить нельзя — защита от перегрева."
+          "helpTitle": "Макс. стартер (с)",
+          "help": "Сколько секунд реле стартера может быть включено без перерыва."
         },
         {
           "key": "wait_after_start_sec",
           "path": "vehicle.wait_after_start_sec",
           "type": "number",
           "valueType": "int",
-          "label": "Пауза после запуска (сек)",
+          "label": "Пауза после старта (с)",
           "min": "0",
-          "helpTitle": "Пауза после запуска (сек)",
-          "help": "Сколько ждать после попытки запуска, прежде чем проверять результат или идти дальше."
+          "helpTitle": "Пауза после старта (с)",
+          "help": "Пауза после запуска перед проверкой, что двигатель работает."
         },
         {
           "key": "engine_running_voltage_threshold",
           "path": "vehicle.engine_running_voltage_threshold",
           "type": "number",
-          "label": "Порог «двигатель заведён» (В)",
+          "label": "Порог «заведён» (В)",
           "step": "0.1",
           "min": "0",
-          "helpTitle": "Порог «двигатель заведён» (В)",
-          "help": "При контроле по напряжению: выше этого значения двигатель считается заведённым."
+          "helpTitle": "Порог «заведён» (В)",
+          "help": "Напряжение, выше которого двигатель считается заведённым."
         },
         {
           "key": "engine_stopped_voltage_threshold",
           "path": "vehicle.engine_stopped_voltage_threshold",
           "type": "number",
-          "label": "Порог «двигатель заглушен» (В)",
+          "label": "Порог «заглушен» (В)",
           "step": "0.1",
           "min": "0",
-          "helpTitle": "Порог «двигатель заглушен» (В)",
-          "help": "Ниже этого значения двигатель считается заглушенным. Нужен небольшой зазор с порогом «заведён», чтобы не мигало туда-сюда."
+          "helpTitle": "Порог «заглушен» (В)",
+          "help": "Ниже этого напряжения двигатель заглушен. До порога «заведён» состояние не меняется."
         },
         {
           "key": "starter_relay_id",
@@ -219,30 +236,41 @@
           "label": "Реле стартера",
           "optionsFrom": "relays",
           "helpTitle": "Реле стартера",
-          "help": "Реле, которое реально подключено к стартеру. Ошибка здесь опасна — проверьте проводку."
+          "help": "Реле, которое включает стартер."
         },
         {
           "key": "engine_detection_source",
           "path": "vehicle.engine_detection_source",
           "type": "select",
-          "label": "Как понять, что двигатель заведён",
+          "label": "Контроль двигателя",
           "options": [
-            { "value": "voltage", "label": "По напряжению" },
-            { "value": "input", "label": "По входу" }
+            {
+              "value": "voltage",
+              "label": "Напряжение"
+            },
+            {
+              "value": "input",
+              "label": "Вход"
+            }
           ],
-          "helpTitle": "Как понять, что двигатель заведён",
-          "help": "Либо по напряжению бортсети, либо по отдельному сигналу на входе."
+          "helpTitle": "Контроль двигателя",
+          "help": "Как определять работу двигателя: по напряжению или по входу."
         },
         {
           "key": "engine_input_id",
           "path": "vehicle.engine_input_id",
           "type": "select",
           "valueType": "int",
-          "label": "Вход «двигатель работает»",
-          "showIf": { "eq": { "path": "vehicle.engine_detection_source", "value": "input" } },
+          "label": "Вход двигателя",
+          "showIf": {
+            "eq": {
+              "path": "vehicle.engine_detection_source",
+              "value": "input"
+            }
+          },
           "optionsFrom": "inputIds",
-          "helpTitle": "Вход «двигатель работает»",
-          "help": "Какой вход означает, что двигатель заведён. Только для режима «по входу»."
+          "helpTitle": "Вход двигателя",
+          "help": "Вход сигнала «двигатель работает»."
         }
       ]
     },
@@ -255,27 +283,27 @@
           "key": "rom",
           "pathTmpl": "sensors.{i}.rom",
           "type": "select",
-          "label": "Адрес датчика",
+          "label": "ROM",
           "optionsFrom": "sensorRoms",
-          "helpTitle": "Адрес датчика",
-          "help": "Выберите датчик температуры из найденных на шине. У каждого свой уникальный адрес."
+          "helpTitle": "ROM",
+          "help": "Адрес датчика на шине 1-Wire."
         },
         {
           "key": "name",
           "pathTmpl": "sensors.{i}.name",
           "type": "text",
-          "label": "Название",
-          "helpTitle": "Название",
-          "help": "Как датчик будет называться в интерфейсе, например Двигатель или Салон."
+          "label": "Имя",
+          "helpTitle": "Имя",
+          "help": "Имя датчика в интерфейсе."
         },
         {
           "key": "coeff",
           "pathTmpl": "sensors.{i}.coeff",
           "type": "number",
-          "label": "Поправка температуры",
+          "label": "Смещение (°C)",
           "step": "0.1",
-          "helpTitle": "Поправка температуры",
-          "help": "Сдвиг показаний, если датчик врёт на долю градуса. Обычно не трогают."
+          "helpTitle": "Смещение (°C)",
+          "help": "Поправка к показанию температуры, °C."
         }
       ]
     },
@@ -288,11 +316,11 @@
           "bind": "enabled",
           "pathTmpl": "inputs.{i}.enabled",
           "type": "toggle",
-          "label": "Включён",
-          "labelOn": "Вход включён",
-          "labelOff": "Вход выключен",
-          "helpTitle": "Включён",
-          "help": "Участвует ли этот вход в работе сразу после включения устройства."
+          "label": "Активен",
+          "labelOn": "Вкл",
+          "labelOff": "Выкл",
+          "helpTitle": "Активен",
+          "help": "Вход обрабатывается после старта."
         },
         {
           "bind": "id",
@@ -301,34 +329,57 @@
           "label": "ID",
           "hidden": true,
           "helpTitle": "ID",
-          "help": "Внутренний номер входа."
+          "help": "Идентификатор входа."
         },
         {
           "bind": "name",
           "pathTmpl": "inputs.{i}.name",
           "type": "text",
-          "label": "Название",
-          "helpTitle": "Название",
-          "help": "Как вход будет называться в интерфейсе, например Зажигание или Дверь."
+          "label": "Имя",
+          "helpTitle": "Имя",
+          "help": "Имя входа в интерфейсе."
         },
         {
           "bind": "type",
           "pathTmpl": "inputs.{i}.type",
           "type": "select",
           "label": "Тип",
-          "options": [ { "value": 0, "label": "Вкл/выкл" }, { "value": 1, "label": "Счётчик импульсов" } ],
+          "options": [
+            {
+              "value": 0,
+              "label": "Дискретный"
+            },
+            {
+              "value": 1,
+              "label": "Импульсный"
+            }
+          ],
           "helpTitle": "Тип",
-          "help": "«Вкл/выкл» — просто есть сигнал или нет. Счётчик — для оборотов и похожих сигналов."
+          "help": "Дискретный — вкл/выкл. Импульсный — обороты."
         },
         {
           "bind": "active_state",
           "pathTmpl": "inputs.{i}.active_state",
           "type": "select",
           "label": "Активный уровень",
-          "showIf": { "eq": { "pathTmpl": "inputs.{i}.type", "value": 0 } },
-          "options": [ { "value": true, "label": "Высокий" }, { "value": false, "label": "Низкий" } ],
+          "showIf": {
+            "eq": {
+              "pathTmpl": "inputs.{i}.type",
+              "value": 0
+            }
+          },
+          "options": [
+            {
+              "value": true,
+              "label": "Высокий"
+            },
+            {
+              "value": false,
+              "label": "Низкий"
+            }
+          ],
           "helpTitle": "Активный уровень",
-          "help": "Какой уровень на входе считать «сработало». Смотрите по схеме подключения."
+          "help": "Какой уровень считать активным: высокий или низкий."
         },
         {
           "bind": "pulse.pulses_per_rev",
@@ -337,10 +388,15 @@
           "valueType": "int",
           "min": "1",
           "step": "1",
-          "label": "Импульсов на оборот",
-          "showIf": { "eq": { "pathTmpl": "inputs.{i}.type", "value": 1 } },
-          "helpTitle": "Импульсов на оборот",
-          "help": "Сколько импульсов приходится на один оборот. Зависит от датчика и схемы."
+          "label": "Имп./оборот",
+          "showIf": {
+            "eq": {
+              "pathTmpl": "inputs.{i}.type",
+              "value": 1
+            }
+          },
+          "helpTitle": "Имп./оборот",
+          "help": "Сколько импульсов датчик даёт за один оборот."
         },
         {
           "bind": "pulse.threshold_rpm",
@@ -349,71 +405,391 @@
           "valueType": "int",
           "min": "0",
           "step": "1",
-          "label": "Порог срабатывания (об/мин)",
-          "showIf": { "eq": { "pathTmpl": "inputs.{i}.type", "value": 1 } },
-          "helpTitle": "Порог срабатывания (об/мин)",
-          "help": "Ниже этого значения сигнал игнорируется — меньше ложных срабатываний от шума."
+          "label": "Порог (об/мин)",
+          "showIf": {
+            "eq": {
+              "pathTmpl": "inputs.{i}.type",
+              "value": 1
+            }
+          },
+          "helpTitle": "Порог (об/мин)",
+          "help": "Обороты ниже этого значения не учитываются."
         }
       ]
     },
     "triggers": {
       "title": "Триггеры",
       "inputFields": [
-        { "bind": "id", "type": "number", "label": "ID", "hidden": true, "helpTitle": "ID", "help": "Внутренний номер триггера." },
-        { "bind": "enabled", "type": "toggle", "label": "Включён", "labelOn": "Триггер включён", "labelOff": "Триггер выключен", "helpTitle": "Включён", "help": "Работает ли триггер сразу после включения устройства." },
-        { "bind": "input_id", "type": "select", "valueType": "int", "label": "Вход", "optionsFrom": "inputIds", "helpTitle": "Вход", "help": "Какой вход отслеживать." },
-        { "bind": "trigger_level", "type": "select", "label": "Уровень срабатывания", "options": [ { "value": 0, "label": "Низкий" }, { "value": 1, "label": "Высокий" } ], "helpTitle": "Уровень срабатывания", "help": "При каком уровне на входе запускать программу." },
-        { "bind": "program_id", "type": "select", "label": "Программа", "optionsFrom": "programs", "helpTitle": "Программа", "help": "Какую программу запустить при срабатывании." }
+        {
+          "bind": "id",
+          "type": "number",
+          "label": "ID",
+          "hidden": true,
+          "helpTitle": "ID",
+          "help": "Идентификатор триггера."
+        },
+        {
+          "bind": "enabled",
+          "type": "toggle",
+          "label": "Активен",
+          "labelOn": "Вкл",
+          "labelOff": "Выкл",
+          "helpTitle": "Активен",
+          "help": "Триггер работает после старта."
+        },
+        {
+          "bind": "input_id",
+          "type": "select",
+          "valueType": "int",
+          "label": "Вход",
+          "optionsFrom": "inputIds",
+          "helpTitle": "Вход",
+          "help": "Вход, по которому запускается программа."
+        },
+        {
+          "bind": "trigger_level",
+          "type": "select",
+          "label": "Уровень",
+          "options": [
+            {
+              "value": 0,
+              "label": "Низкий"
+            },
+            {
+              "value": 1,
+              "label": "Высокий"
+            }
+          ],
+          "helpTitle": "Уровень",
+          "help": "Уровень входа для запуска."
+        },
+        {
+          "bind": "program_id",
+          "type": "select",
+          "label": "Программа",
+          "optionsFrom": "programs",
+          "helpTitle": "Программа",
+          "help": "Программа, которая запускается."
+        }
       ],
       "tempFields": [
-        { "bind": "id", "type": "number", "label": "ID", "hidden": true, "helpTitle": "ID", "help": "Внутренний номер триггера." },
-        { "bind": "enabled", "type": "toggle", "label": "Включён", "labelOn": "Триггер включён", "labelOff": "Триггер выключен", "helpTitle": "Включён", "help": "Работает ли триггер сразу после включения устройства." },
-        { "bind": "sensor_id", "type": "select", "label": "Датчик", "optionsFrom": "sensorIds", "helpTitle": "Датчик", "help": "Датчик температуры, за которым следит триггер." },
-        { "bind": "sensor_name", "type": "text", "label": "Имя датчика", "hidden": true, "helpTitle": "Имя датчика", "help": "Сохранённое название выбранного датчика." },
-        { "bind": "comparison", "type": "select", "label": "Условие", "options": [ { "value": "above", "label": "Выше" }, { "value": "below", "label": "Ниже" } ], "helpTitle": "Условие", "help": "Срабатывать, когда температура выше или ниже порога." },
-        { "bind": "threshold", "type": "number", "label": "Порог (°C)", "step": "0.1", "helpTitle": "Порог (°C)", "help": "Температура, относительно которой срабатывает триггер." },
-        { "bind": "program_id", "type": "select", "label": "Программа", "optionsFrom": "programs", "helpTitle": "Программа", "help": "Какую программу запустить при срабатывании." }
+        {
+          "bind": "id",
+          "type": "number",
+          "label": "ID",
+          "hidden": true,
+          "helpTitle": "ID",
+          "help": "Идентификатор триггера."
+        },
+        {
+          "bind": "enabled",
+          "type": "toggle",
+          "label": "Активен",
+          "labelOn": "Вкл",
+          "labelOff": "Выкл",
+          "helpTitle": "Активен",
+          "help": "Триггер работает после старта."
+        },
+        {
+          "bind": "sensor_id",
+          "type": "select",
+          "label": "Датчик",
+          "optionsFrom": "sensorIds",
+          "helpTitle": "Датчик",
+          "help": "Датчик для проверки температуры."
+        },
+        {
+          "bind": "sensor_name",
+          "type": "text",
+          "label": "Имя датчика",
+          "hidden": true,
+          "helpTitle": "Имя датчика",
+          "help": "Имя выбранного датчика."
+        },
+        {
+          "bind": "comparison",
+          "type": "select",
+          "label": "Условие",
+          "options": [
+            {
+              "value": "above",
+              "label": "Выше"
+            },
+            {
+              "value": "below",
+              "label": "Ниже"
+            }
+          ],
+          "helpTitle": "Условие",
+          "help": "Запуск, если температура выше или ниже порога."
+        },
+        {
+          "bind": "threshold",
+          "type": "number",
+          "label": "Порог (°C)",
+          "step": "0.1",
+          "helpTitle": "Порог (°C)",
+          "help": "Температура запуска, °C."
+        },
+        {
+          "bind": "program_id",
+          "type": "select",
+          "label": "Программа",
+          "optionsFrom": "programs",
+          "helpTitle": "Программа",
+          "help": "Программа, которая запускается."
+        }
       ],
       "scheduleFields": [
-        { "bind": "id", "type": "number", "label": "ID", "hidden": true, "helpTitle": "ID", "help": "Внутренний номер расписания." },
-        { "bind": "enabled", "type": "toggle", "label": "Включён", "labelOn": "Расписание включено", "labelOff": "Расписание выключено", "helpTitle": "Включён", "help": "Запуск программы по местному времени. Часы устройства должны быть верными." },
-        { "bind": "hour", "type": "number", "valueType": "int", "label": "Час", "min": "0", "max": "23", "step": "1", "helpTitle": "Час", "help": "Час по времени устройства, от 0 до 23." },
-        { "bind": "minute", "type": "number", "valueType": "int", "label": "Минута", "min": "0", "max": "59", "step": "1", "helpTitle": "Минута", "help": "Минута по времени устройства, от 0 до 59." },
-        { "bind": "days_mask", "type": "number", "valueType": "int", "label": "Дни недели", "min": "0", "max": "127", "step": "1", "helpTitle": "Дни недели", "help": "Сложите числа нужных дней: Пн 1, Вт 2, Ср 4, Чт 8, Пт 16, Сб 32, Вс 64. Каждый день — 127." },
-        { "bind": "program_id", "type": "select", "label": "Программа", "optionsFrom": "programs", "helpTitle": "Программа", "help": "Какую программу запускать по расписанию." }
+        {
+          "bind": "id",
+          "type": "number",
+          "label": "ID",
+          "hidden": true,
+          "helpTitle": "ID",
+          "help": "Идентификатор расписания."
+        },
+        {
+          "bind": "enabled",
+          "type": "toggle",
+          "label": "Активен",
+          "labelOn": "Вкл",
+          "labelOff": "Выкл",
+          "helpTitle": "Активен",
+          "help": "Запуск по часам устройства. Нужна синхронизация времени."
+        },
+        {
+          "bind": "hour",
+          "type": "number",
+          "valueType": "int",
+          "label": "Час",
+          "min": "0",
+          "max": "23",
+          "step": "1",
+          "helpTitle": "Час",
+          "help": "Час запуска, 0–23."
+        },
+        {
+          "bind": "minute",
+          "type": "number",
+          "valueType": "int",
+          "label": "Минута",
+          "min": "0",
+          "max": "59",
+          "step": "1",
+          "helpTitle": "Минута",
+          "help": "Минута запуска, 0–59."
+        },
+        {
+          "bind": "days_mask",
+          "type": "number",
+          "valueType": "int",
+          "label": "Дни недели",
+          "min": "0",
+          "max": "127",
+          "step": "1",
+          "helpTitle": "Дни недели",
+          "help": "Дни запуска, сумма: Пн 1, Вт 2, Ср 4, Чт 8, Пт 16, Сб 32, Вс 64. Будни — 31, все дни — 127."
+        },
+        {
+          "bind": "program_id",
+          "type": "select",
+          "label": "Программа",
+          "optionsFrom": "programs",
+          "helpTitle": "Программа",
+          "help": "Программа, которая запускается."
+        }
       ]
     },
     "thermostat": {
       "title": "Термостат",
       "fields": [
-        { "key": "enabled", "path": "thermostat.enabled", "type": "toggle", "label": "Включён", "labelOn": "Термостат включён", "labelOff": "Термостат выключен", "helpTitle": "Включён", "help": "Автоматически запускать программы, когда температура выходит за заданные рамки." },
-        { "key": "sensor_id", "path": "thermostat.sensor_id", "type": "select", "label": "Датчик", "optionsFrom": "sensorIds", "helpTitle": "Датчик", "help": "Датчик, по которому термостат смотрит температуру." },
-        { "key": "sensor_name", "path": "thermostat.sensor_name", "type": "text", "label": "Имя датчика", "hidden": true, "helpTitle": "Имя датчика", "help": "Сохранённое название выбранного датчика." },
-        { "key": "comparison", "path": "thermostat.comparison", "type": "select", "label": "Условие", "options": [ { "value": "above", "label": "Выше" }, { "value": "below", "label": "Ниже" } ], "helpTitle": "Условие", "help": "На что реагировать в первую очередь: на рост выше порога или на падение ниже." },
-        { "key": "lower_threshold", "path": "thermostat.lower_threshold", "type": "number", "label": "Нижний порог (°C)", "step": "0.1", "helpTitle": "Нижний порог (°C)", "help": "Нижняя граница. Между нижним и верхним порогом — зона спокойствия, без лишних переключений." },
-        { "key": "upper_threshold", "path": "thermostat.upper_threshold", "type": "number", "label": "Верхний порог (°C)", "step": "0.1", "helpTitle": "Верхний порог (°C)", "help": "Верхняя граница. Между нижним и верхним порогом — зона спокойствия, без лишних переключений." },
-        { "key": "program_id_lower", "path": "thermostat.program_id_lower", "type": "select", "label": "Программа при низкой температуре", "optionsFrom": "programs", "helpTitle": "Программа при низкой температуре", "help": "Запускается, когда температура уходит вниз за нижний порог." },
-        { "key": "program_id_upper", "path": "thermostat.program_id_upper", "type": "select", "label": "Программа при высокой температуре", "optionsFrom": "programs", "helpTitle": "Программа при высокой температуре", "help": "Запускается, когда температура уходит вверх за верхний порог." }
+        {
+          "key": "enabled",
+          "path": "thermostat.enabled",
+          "type": "toggle",
+          "label": "Активен",
+          "labelOn": "Вкл",
+          "labelOff": "Выкл",
+          "helpTitle": "Активен",
+          "help": "Запускает программы, когда температура выходит за пороги."
+        },
+        {
+          "key": "sensor_id",
+          "path": "thermostat.sensor_id",
+          "type": "select",
+          "label": "Датчик",
+          "optionsFrom": "sensorIds",
+          "helpTitle": "Датчик",
+          "help": "Датчик температуры."
+        },
+        {
+          "key": "sensor_name",
+          "path": "thermostat.sensor_name",
+          "type": "text",
+          "label": "Имя датчика",
+          "hidden": true,
+          "helpTitle": "Имя датчика",
+          "help": "Имя выбранного датчика."
+        },
+        {
+          "key": "comparison",
+          "path": "thermostat.comparison",
+          "type": "select",
+          "label": "Условие",
+          "options": [
+            {
+              "value": "above",
+              "label": "Выше"
+            },
+            {
+              "value": "below",
+              "label": "Ниже"
+            }
+          ],
+          "helpTitle": "Условие",
+          "help": "Что важнее у границы: рост или падение температуры."
+        },
+        {
+          "key": "lower_threshold",
+          "path": "thermostat.lower_threshold",
+          "type": "number",
+          "label": "Нижний порог (°C)",
+          "step": "0.1",
+          "helpTitle": "Нижний порог (°C)",
+          "help": "Нижний порог, °C. Между порогами повторного запуска нет."
+        },
+        {
+          "key": "upper_threshold",
+          "path": "thermostat.upper_threshold",
+          "type": "number",
+          "label": "Верхний порог (°C)",
+          "step": "0.1",
+          "helpTitle": "Верхний порог (°C)",
+          "help": "Верхний порог, °C. Должен быть выше нижнего."
+        },
+        {
+          "key": "program_id_lower",
+          "path": "thermostat.program_id_lower",
+          "type": "select",
+          "label": "Программа «ниже»",
+          "optionsFrom": "programs",
+          "helpTitle": "Программа «ниже»",
+          "help": "Программа, когда температура падает ниже нижнего порога."
+        },
+        {
+          "key": "program_id_upper",
+          "path": "thermostat.program_id_upper",
+          "type": "select",
+          "label": "Программа «выше»",
+          "optionsFrom": "programs",
+          "helpTitle": "Программа «выше»",
+          "help": "Программа, когда температура поднимается выше верхнего порога."
+        }
       ]
     },
     "battery": {
       "title": "Защита АКБ",
       "fields": [
-        { "key": "enabled", "path": "battery_saver.enabled", "type": "toggle", "label": "Включён", "labelOn": "Защита АКБ включена", "labelOff": "Защита АКБ выключена", "helpTitle": "Включён", "help": "Если напряжение просело — запустить выбранную программу (например, автозапуск), чтобы подзарядить АКБ." },
-        { "key": "voltage_start_threshold", "path": "battery_saver.voltage_start_threshold", "type": "number", "label": "Порог запуска (В)", "step": "0.1", "helpTitle": "Порог запуска (В)", "help": "Если напряжение АКБ падает ниже этого значения, устройство может запустить выбранную программу." },
-        { "key": "voltage_abort_threshold", "path": "battery_saver.voltage_abort_threshold", "type": "number", "label": "Порог стоп (В)", "step": "0.1", "helpTitle": "Порог стоп (В)", "help": "Если напряжение упало ещё ниже — сразу прекратить попытки, чтобы не убить аккумулятор." },
-        { "key": "hysteresis", "path": "battery_saver.hysteresis", "type": "number", "label": "Запас (В)", "step": "0.1", "helpTitle": "Запас (В)", "help": "Небольшой запас по напряжению, чтобы не дёргать программу туда-сюда около порога." },
-        { "key": "min_low_voltage_duration_sec", "path": "battery_saver.min_low_voltage_duration_sec", "type": "number", "valueType": "int", "label": "Держать низкое напряжение (сек)", "step": "1", "helpTitle": "Держать низкое напряжение (сек)", "help": "Сколько секунд напряжение должно оставаться низким, прежде чем считать это реальным, а не кратким скачком." },
-        { "key": "min_time_between_attempts_sec", "path": "battery_saver.min_time_between_attempts_sec", "type": "number", "valueType": "int", "label": "Пауза между попытками (сек)", "step": "1", "helpTitle": "Пауза между попытками (сек)", "help": "Минимальный перерыв между двумя срабатываниями защиты АКБ." },
-        { "key": "max_attempts_per_day", "path": "battery_saver.max_attempts_per_day", "type": "number", "valueType": "int", "label": "Попыток в сутки", "step": "1", "helpTitle": "Попыток в сутки", "help": "Сколько раз за сутки защита АКБ может сработать." },
-        { "key": "program_id", "path": "battery_saver.program_id", "type": "select", "label": "Программа", "optionsFrom": "programs", "helpTitle": "Программа", "help": "Какую программу запускать при срабатывании защиты АКБ." }
+        {
+          "key": "enabled",
+          "path": "battery_saver.enabled",
+          "type": "toggle",
+          "label": "Активен",
+          "labelOn": "Вкл",
+          "labelOff": "Выкл",
+          "helpTitle": "Активен",
+          "help": "Запускает программу при долгой просадке напряжения АКБ."
+        },
+        {
+          "key": "voltage_start_threshold",
+          "path": "battery_saver.voltage_start_threshold",
+          "type": "number",
+          "label": "Порог запуска (В)",
+          "step": "0.1",
+          "helpTitle": "Порог запуска (В)",
+          "help": "Ниже этого напряжения можно запускать программу. Выше порога отмены."
+        },
+        {
+          "key": "voltage_abort_threshold",
+          "path": "battery_saver.voltage_abort_threshold",
+          "type": "number",
+          "label": "Порог отмены (В)",
+          "step": "0.1",
+          "helpTitle": "Порог отмены (В)",
+          "help": "Ниже этого напряжения попытки прекращаются."
+        },
+        {
+          "key": "hysteresis",
+          "path": "battery_saver.hysteresis",
+          "type": "number",
+          "label": "Запас (В)",
+          "step": "0.1",
+          "helpTitle": "Запас (В)",
+          "help": "Запас напряжения, чтобы не срабатывать повторно от колебаний."
+        },
+        {
+          "key": "min_low_voltage_duration_sec",
+          "path": "battery_saver.min_low_voltage_duration_sec",
+          "type": "number",
+          "valueType": "int",
+          "label": "Длительность просадки (с)",
+          "step": "1",
+          "helpTitle": "Длительность просадки (с)",
+          "help": "Сколько секунд напряжение должно держаться ниже порога."
+        },
+        {
+          "key": "min_time_between_attempts_sec",
+          "path": "battery_saver.min_time_between_attempts_sec",
+          "type": "number",
+          "valueType": "int",
+          "label": "Пауза между попытками (с)",
+          "step": "1",
+          "helpTitle": "Пауза между попытками (с)",
+          "help": "Минимальная пауза между срабатываниями, секунды."
+        },
+        {
+          "key": "max_attempts_per_day",
+          "path": "battery_saver.max_attempts_per_day",
+          "type": "number",
+          "valueType": "int",
+          "label": "Попыток в сутки",
+          "step": "1",
+          "helpTitle": "Попыток в сутки",
+          "help": "Сколько раз в сутки защита может сработать."
+        },
+        {
+          "key": "program_id",
+          "path": "battery_saver.program_id",
+          "type": "select",
+          "label": "Программа",
+          "optionsFrom": "programs",
+          "helpTitle": "Программа",
+          "help": "Программа при срабатывании защиты."
+        }
       ]
     },
     "time": {
       "title": "Время",
       "fields": [
-        { "key": "enabled", "path": "time.enabled", "type": "toggle", "label": "Сверка по интернету", "labelOn": "Сверка включена", "labelOff": "Сверка выключена", "helpTitle": "Сверка по интернету", "help": "Подтягивать точное время с NTP-сервера через модем. Для расписания часы всё равно должны быть верными." },
-        { "key": "ntp_server", "path": "time.ntp_server", "type": "text", "label": "NTP-сервер", "helpTitle": "NTP-сервер", "help": "Адрес сервера времени, например ru.pool.ntp.org." },
+        {
+          "key": "enabled",
+          "path": "time.enabled",
+          "type": "toggle",
+          "label": "Синхронизация NTP",
+          "labelOn": "Вкл",
+          "labelOff": "Выкл",
+          "helpTitle": "Синхронизация NTP",
+          "help": "Синхронизация часов через интернет. Нужна для расписания."
+        },
+        {
+          "key": "ntp_server",
+          "path": "time.ntp_server",
+          "type": "text",
+          "label": "NTP-сервер",
+          "helpTitle": "NTP-сервер",
+          "help": "Адрес сервера времени."
+        },
         {
           "key": "tz_offset_hours",
           "path": "time.tz_offset_hours",
@@ -421,38 +797,128 @@
           "valueType": "int",
           "label": "Часовой пояс",
           "helpTitle": "Часовой пояс",
-          "help": "Смещение относительно UTC. Для Москвы обычно UTC+3. Время ниже обновляется сразу, ещё до сохранения. Иногда пояс подставится из сети сам.",
+          "help": "Часовой пояс относительно UTC.",
           "options": [
-            { "value": -12, "label": "UTC−12" },
-            { "value": -11, "label": "UTC−11" },
-            { "value": -10, "label": "UTC−10" },
-            { "value": -9, "label": "UTC−9" },
-            { "value": -8, "label": "UTC−8" },
-            { "value": -7, "label": "UTC−7" },
-            { "value": -6, "label": "UTC−6" },
-            { "value": -5, "label": "UTC−5" },
-            { "value": -4, "label": "UTC−4" },
-            { "value": -3, "label": "UTC−3" },
-            { "value": -2, "label": "UTC−2" },
-            { "value": -1, "label": "UTC−1" },
-            { "value": 0, "label": "UTC±0" },
-            { "value": 1, "label": "UTC+1" },
-            { "value": 2, "label": "UTC+2" },
-            { "value": 3, "label": "UTC+3 (Москва)" },
-            { "value": 4, "label": "UTC+4" },
-            { "value": 5, "label": "UTC+5" },
-            { "value": 6, "label": "UTC+6" },
-            { "value": 7, "label": "UTC+7" },
-            { "value": 8, "label": "UTC+8" },
-            { "value": 9, "label": "UTC+9" },
-            { "value": 10, "label": "UTC+10" },
-            { "value": 11, "label": "UTC+11" },
-            { "value": 12, "label": "UTC+12" },
-            { "value": 13, "label": "UTC+13" },
-            { "value": 14, "label": "UTC+14" }
+            {
+              "value": -12,
+              "label": "UTC−12"
+            },
+            {
+              "value": -11,
+              "label": "UTC−11"
+            },
+            {
+              "value": -10,
+              "label": "UTC−10"
+            },
+            {
+              "value": -9,
+              "label": "UTC−9"
+            },
+            {
+              "value": -8,
+              "label": "UTC−8"
+            },
+            {
+              "value": -7,
+              "label": "UTC−7"
+            },
+            {
+              "value": -6,
+              "label": "UTC−6"
+            },
+            {
+              "value": -5,
+              "label": "UTC−5"
+            },
+            {
+              "value": -4,
+              "label": "UTC−4"
+            },
+            {
+              "value": -3,
+              "label": "UTC−3"
+            },
+            {
+              "value": -2,
+              "label": "UTC−2"
+            },
+            {
+              "value": -1,
+              "label": "UTC−1"
+            },
+            {
+              "value": 0,
+              "label": "UTC±0"
+            },
+            {
+              "value": 1,
+              "label": "UTC+1"
+            },
+            {
+              "value": 2,
+              "label": "UTC+2"
+            },
+            {
+              "value": 3,
+              "label": "UTC+3 (Москва)"
+            },
+            {
+              "value": 4,
+              "label": "UTC+4"
+            },
+            {
+              "value": 5,
+              "label": "UTC+5"
+            },
+            {
+              "value": 6,
+              "label": "UTC+6"
+            },
+            {
+              "value": 7,
+              "label": "UTC+7"
+            },
+            {
+              "value": 8,
+              "label": "UTC+8"
+            },
+            {
+              "value": 9,
+              "label": "UTC+9"
+            },
+            {
+              "value": 10,
+              "label": "UTC+10"
+            },
+            {
+              "value": 11,
+              "label": "UTC+11"
+            },
+            {
+              "value": 12,
+              "label": "UTC+12"
+            },
+            {
+              "value": 13,
+              "label": "UTC+13"
+            },
+            {
+              "value": 14,
+              "label": "UTC+14"
+            }
           ]
         },
-        { "key": "sync_interval_hours", "path": "time.sync_interval_hours", "type": "number", "valueType": "int", "label": "Как часто сверять время (часы)", "step": "1", "helpTitle": "Как часто сверять время (часы)", "help": "Через сколько часов снова сверять время после удачной синхронизации (от 1 до 168)." }
+        {
+          "key": "sync_interval_hours",
+          "path": "time.sync_interval_hours",
+          "type": "number",
+          "valueType": "int",
+          "label": "Интервал (ч)",
+          "step": "1",
+          "helpTitle": "Интервал (ч)",
+          "help": "Как часто повторять синхронизацию, в часах."
+        }
       ]
     }
   }

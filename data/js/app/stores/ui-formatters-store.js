@@ -54,7 +54,7 @@
           const list = Array.isArray(s?.sensors) ? s.sensors : [];
           const hit = list.find(x => x && Number(x.id) === sid);
           const name = String(hit?.name || '').trim();
-          return name || ('Sensor #' + sid);
+          return name || ('Датчик ' + sid);
         } catch (e) {}
         return '—';
       },
@@ -88,7 +88,7 @@
       },
       formatWallClock(st) {
         try {
-          if (!st || !st.timeSynced || !st.epoch) return st?.timeSynced === false ? 'нет sync' : '—';
+          if (!st || !st.timeSynced || !st.epoch) return st?.timeSynced === false ? 'нет времени' : '—';
           return this.formatWallClockPreview(st.tzOffsetHours, st);
         } catch (e) {
           return '—';
@@ -97,7 +97,7 @@
       /** Preview using UI-selected TZ hours (may differ from saved/device TZ). */
       formatWallClockPreview(tzHours, st) {
         try {
-          if (!st || !st.timeSynced || !st.epoch) return st?.timeSynced === false ? 'нет sync (ожидание NTP)' : '—';
+          if (!st || !st.timeSynced || !st.epoch) return st?.timeSynced === false ? 'нет времени' : '—';
           const offH = Number(tzHours);
           const hours = Number.isFinite(offH) ? offH : (Number(st.tzOffsetHours) || 0);
           const d = new Date((Number(st.epoch) + hours * 3600) * 1000);

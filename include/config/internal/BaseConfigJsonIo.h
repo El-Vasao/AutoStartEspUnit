@@ -15,7 +15,11 @@ uint16_t crc16SerializedBaseConfig(const BaseConfig& cfg, size_t* outLen);
 
 /// Populate `cfg` из JSON объекта конфига (SAX через JsonStreamingParser / JsonListener; семантика полей как прежний fill).
 /// Listener sets `failed`/`rootNotObject` on error; clears before parse starts.
-bool parseBaseConfigStreamingFromFile(File& file, BaseConfig& cfg);
+/// Optional: `outHasAdcCalibrate` / `outAdcCalibrateVoltage` capture ephemeral
+/// `vehicle.adc_calibrate_voltage` (not stored in BaseConfig / not emitted).
+bool parseBaseConfigStreamingFromFile(File& file, BaseConfig& cfg,
+                                      bool* outHasAdcCalibrate = nullptr,
+                                      float* outAdcCalibrateVoltage = nullptr);
 
 /// Parse defaults from embedded PROGMEM JSON (full document object).
 bool parseBaseConfigStreamingFromProgmem(BaseConfig& cfg, const char* pgmDoc);

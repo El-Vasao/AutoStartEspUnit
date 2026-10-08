@@ -35,19 +35,18 @@
     try {
       const kw = String(e?.keyword || '');
       const params = e?.params || {};
-      if (kw === 'maxLength') return `Максимальная длина: ${params.limit}`;
-      if (kw === 'minLength') return `Минимальная длина: ${params.limit}`;
-      if (kw === 'minimum') return `Минимум: ${params.limit}`;
-      if (kw === 'maximum') return `Максимум: ${params.limit}`;
+      if (kw === 'maxLength') return `Не длиннее ${params.limit}`;
+      if (kw === 'minLength') return `Не короче ${params.limit}`;
+      if (kw === 'minimum') return `Не меньше ${params.limit}`;
+      if (kw === 'maximum') return `Не больше ${params.limit}`;
       if (kw === 'pattern') return 'Неверный формат';
-      if (kw === 'type') return 'Неверный тип';
+      if (kw === 'type') return 'Неверное значение';
       if (kw === 'enum') return 'Недопустимое значение';
-      if (kw === 'additionalProperties') return 'Лишнее поле (не поддерживается)';
-      if (kw === 'required') return 'Обязательное поле отсутствует';
-      return String(e?.message || 'Некорректное значение');
+      if (kw === 'additionalProperties') return 'Лишнее поле';
+      if (kw === 'required') return 'Обязательно';
+      return String(e?.message || 'Неверное значение');
     } catch (e2) {
-      return 'Некорректное значение';
+      return 'Неверное значение';
     }
   };
 })();
-

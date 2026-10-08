@@ -98,9 +98,7 @@ void GSMController::handleGprsAttach() {
             resetAwait();
             clearResponse();
             _retryCount = 0;
-            if (core.getErrorManager().get() == ErrorCode::GSM_APN_FAIL) {
-                core.getErrorManager().clear();
-            }
+            core.getErrorManager().clear(ErrorCode::GSM_APN_FAIL);
             logger.log("[GSMController] SAPBR already up (warm), skip open\n");
             changeState(GSMState::READY);
             updateSignalQuality();
@@ -139,9 +137,7 @@ void GSMController::handleGprsAttach() {
         resetAwait();
         clearResponse();
         _retryCount = 0;
-        if (core.getErrorManager().get() == ErrorCode::GSM_APN_FAIL) {
-            core.getErrorManager().clear();
-        }
+        core.getErrorManager().clear(ErrorCode::GSM_APN_FAIL);
         logger.log("[GSMController] SAPBR open failed but IP present (already up)\n");
         changeState(GSMState::READY);
         updateSignalQuality();
@@ -207,9 +203,7 @@ void GSMController::handleGprsGetIp() {
     if (_awaitGotIp) {
         clearResponse();
         _retryCount = 0;
-        if (core.getErrorManager().get() == ErrorCode::GSM_APN_FAIL) {
-            core.getErrorManager().clear();
-        }
+        core.getErrorManager().clear(ErrorCode::GSM_APN_FAIL);
         changeState(GSMState::READY);
         // One-shot diagnostics at READY entry (non-blocking): request CSQ now.
         updateSignalQuality();

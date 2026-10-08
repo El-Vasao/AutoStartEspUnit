@@ -247,7 +247,7 @@
           if (res.ok) return true;
 
           const errs = res.errorsByPath || {};
-          const first = (arr) => Array.isArray(arr) && arr.length ? String(arr[0]) : 'Некорректное значение';
+          const first = (arr) => Array.isArray(arr) && arr.length ? String(arr[0]) : 'Неверное значение';
 
           // Map Ajv dotted paths to existing UI error keys.
           for (const p of Object.keys(errs)) {
@@ -266,7 +266,7 @@
 
           // Fallback: if nothing mapped, show a generic message.
           if (!Object.keys(this.errors).length) {
-            this.errors.steps = 'Некорректные данные программы';
+            this.errors.steps = 'Неверные данные программы';
           }
           return false;
         },
@@ -315,8 +315,8 @@
 
         deleteProgram() {
           this.$store.uiDialog.show({
-            title: 'Удаление программы',
-            message: `Вы уверены, что хотите удалить программу "${this.form.name}"?`,
+            title: 'Удаление',
+            message: `Удалить «${this.form.name}»?`,
             onConfirm: () => this.$store.programs.delete(this.form.id)
           });
         },

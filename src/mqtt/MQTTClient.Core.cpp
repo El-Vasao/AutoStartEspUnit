@@ -276,9 +276,7 @@ void MQTTClient::loop() {
             _firstStatusAfterMs = millis() + NetTiming::MQTT_FIRST_STATUS_DELAY_MS;
             _havePublishedBaseline = false;
             // Clear sticky active; undelivered history remains for first full status last_err.
-            if (core.getErrorManager().get() == ErrorCode::MQTT_CONNECT_FAIL) {
-                core.getErrorManager().clear();
-            }
+            core.getErrorManager().clear(ErrorCode::MQTT_CONNECT_FAIL);
         }
 
         static constexpr uint32_t kSubackTimeoutMs = NetTiming::MQTT_SUBACK_TIMEOUT_MS;

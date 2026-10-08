@@ -36,7 +36,7 @@ struct TemperatureSensorData {
  *
  * Напряжение:
  * - чтение АЦП с фильтрацией (скользящее среднее) для подавления шумов.
- * - коэффициент калибровки задаётся в конфиге (`vehicle.adc_voltage_coeff`).
+ * - `voltage = raw × vehicle.adc_voltage_coeff` (калибровка по измеренному напряжению).
  */
 class SensorsController {
 public:
@@ -94,6 +94,13 @@ public:
     // Время последнего измерения напряжения
     uint32_t getLastVoltageTime() const { return _voltageData.lastReadTime; }
 
+    /// True once the sliding ADC window is full (safe to calibrate).
+    bool isAdcFilterReady() const { return _adcFillCount >= ADC::SAMPLES; }
+
+    /// Derive `adc_voltage_coeff` from a multimeter reading. Uses private raw only;
+    /// returns false if filter not ready, raw too low, or measuredVolts ≤ 0.
+    bool computeAdcVoltageCoeff(float measuredVolts, float& outCoeff) const;
+
 private:
     TemperatureSensorData _sensorData[HardwareLimits::SENSORS]; ///< данные датчиков
     SensorRomAddress _foundAddresses[HardwareLimits::SENSORS];  ///< адреса найденных датчиков
@@ -123,6 +130,7 @@ private:
     uint8_t _voltageIndex;                   ///< текущий индекс в буфере
     uint32_t _lastVoltageRead;                ///< время последнего чтения АЦП (мс)
     uint8_t _adcFillCount{0};                 ///< samples collected toward a full filter window
+    uint16_t _lastAdcAvg{0};                  ///< last averaged raw for calibration
 
     // Обновление напряжения (чтение АЦП, скользящее среднее)
     void updateVoltage();

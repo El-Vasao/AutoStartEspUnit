@@ -32,7 +32,7 @@
         const errs = Alpine.store('settings')?.validationErrors;
         if (!errs || !Array.isArray(errs) || errs.length === 0) return '';
         const hit = errs.find(e => String(e?.field || '') === p && String(e?.source || 'server') === 'server');
-        return hit ? String(hit?.message || 'Некорректное значение') : '';
+        return hit ? String(hit?.message || 'Неверное значение') : '';
       },
       getError(path) {
         // Priority: client regex errors first, then server validation errors.
@@ -56,13 +56,12 @@
         const v = Alpine.store('settingsValidator');
         if (!path || !st || !v || !v.loaded) {
           // Fail closed: if validator is unavailable, do not pretend value is valid.
-          const reason = v ? String(v._lastInitError || '') : '';
-          if (path) this._setClientError(path, reason ? `Валидация недоступна: ${reason}` : 'Валидация недоступна (схема не загружена)');
+          if (path) this._setClientError(path, 'Проверка недоступна');
           return { ok: false };
         }
         const data = st.getConfigForSave?.() || {};
         const res = v.validatePath(data, path);
-        this._setClientError(path, res.ok ? '' : (res.message || 'Некорректное значение'));
+        this._setClientError(path, res.ok ? '' : (res.message || 'Неверное значение'));
         return { ok: !!res.ok };
       },
       fieldWithPath(field, path) {
@@ -152,11 +151,11 @@
         return coerceByValueType(valueType, raw, field?.default);
       },
       toggleStateText(v) {
-        return v ? 'Включен' : 'Выключен';
+        return v ? 'Вкл' : 'Выкл';
       },
       toggleLabel(field, v) {
         if (field && (field.labelOn || field.labelOff)) {
-          return v ? (field.labelOn ?? 'Включен') : (field.labelOff ?? 'Выключен');
+          return v ? (field.labelOn ?? 'Вкл') : (field.labelOff ?? 'Выкл');
         }
         return this.toggleStateText(v);
       },
@@ -417,8 +416,7 @@
           const v = Alpine.store('settingsValidator');
           const st = Alpine.store('settings') || {};
           if (!v || !v.loaded) {
-            const reason = v ? String(v._lastInitError || '') : '';
-            return [{ field: '__schema__', message: reason ? `Валидация недоступна: ${reason}` : 'Валидация недоступна (схема не загружена)' }];
+            return [{ field: '__schema__', message: 'Проверка недоступна' }];
           }
 
           const data = st.getConfigForSave?.() || {};

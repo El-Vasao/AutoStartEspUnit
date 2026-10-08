@@ -9,19 +9,19 @@
       title: '',
       message: '',
       cancelLabel: 'Отмена',
-      confirmLabel: 'Подтвердить',
+      confirmLabel: 'Да',
       extraLabel: '',
       onConfirm: null,
       onCancel: null,
       onExtra: null,
       _lastFocus: null,
 
-      show({ title, message, onConfirm, onCancel = null, onExtra = null, cancelLabel = 'Отмена', confirmLabel = 'Подтвердить', extraLabel = '' }) {
+      show({ title, message, onConfirm, onCancel = null, onExtra = null, cancelLabel = 'Отмена', confirmLabel = 'Да', extraLabel = '' }) {
         try { this._lastFocus = document.activeElement; } catch (e) { this._lastFocus = null; }
         this.title = title;
         this.message = message;
         this.cancelLabel = String(cancelLabel || 'Отмена');
-        this.confirmLabel = String(confirmLabel || 'Подтвердить');
+        this.confirmLabel = String(confirmLabel || 'Да');
         this.extraLabel = String(extraLabel || '');
         this.onConfirm = onConfirm;
         this.onCancel = onCancel;

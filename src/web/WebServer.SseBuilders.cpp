@@ -280,6 +280,25 @@ void emitFlashPayload(Print& p, const SseStatusPort& st) {
     p.print('}');
 }
 
+void emitActiveErrorsArray(Print& p, const SseStatusPort& st) {
+    p.print('[');
+    if (st.errors) {
+        ErrorSnapshotEntry buf[ErrorHistory::CAPACITY]{};
+        const uint8_t n = st.errors->copyActive(buf, ErrorHistory::CAPACITY);
+        for (uint8_t i = 0; i < n; i++) {
+            if (i) p.print(',');
+            p.print("{\"code\":");
+            p.print((unsigned)buf[i].code);
+            p.print(",\"msg\":\"");
+            escapeJsonString(p, buf[i].msg);
+            p.print("\",\"active\":");
+            p.print(buf[i].active ? "true" : "false");
+            p.print('}');
+        }
+    }
+    p.print(']');
+}
+
 void emitClocksPayload(Print& p, const SseStatusPort& st) {
     const uint32_t remMs = st.program ? st.program->getTimerRemainingMs() : 0;
     const uint32_t remSec = msToSecCeil(remMs);
@@ -299,9 +318,8 @@ void emitClocksPayload(Print& p, const SseStatusPort& st) {
     p.print("\"freeHeap\":");
     p.print(static_cast<unsigned long>(st.freeHeap));
     commaOut(p, &c);
-    p.print("\"lastError\":\"");
-    escapeJsonString(p, st.errors ? st.errors->getMessage() : "OK");
-    p.print('"');
+    p.print("\"activeErrors\":");
+    emitActiveErrorsArray(p, st);
     commaOut(p, &c);
     p.print("\"epoch\":");
     p.print(static_cast<unsigned long>(st.epochUtc));
@@ -335,9 +353,8 @@ void emitSnapshotPayload(Print& p, const SseStatusPort& st) {
     p.print(static_cast<unsigned long>(st.uptimeSec));
 
     commaOut(p, &c);
-    p.print("\"lastError\":\"");
-    escapeJsonString(p, st.errors ? st.errors->getMessage() : "OK");
-    p.print('"');
+    p.print("\"activeErrors\":");
+    emitActiveErrorsArray(p, st);
 
     commaOut(p, &c);
     p.print("\"engineRunning\":");

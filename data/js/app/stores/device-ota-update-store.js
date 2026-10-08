@@ -13,7 +13,7 @@
       setFile(file) { this.file = file; },
       async start() {
         if (this.started) return;
-        if (!this.file) { Alpine.store('uiStatusBar').flash('Выберите файл обновления.', 'warning', 4000); return; }
+        if (!this.file) { Alpine.store('uiStatusBar').flash('Выберите файл .bin', 'warning', 4000); return; }
         Alpine.store('uiStatusBar').clearHardwareError();
         this.started = true;
         this.uploading = true;
@@ -29,17 +29,17 @@
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
             this.progress = (e.loaded / e.total * 100).toFixed(1);
-            this.status = 'Загрузка и прошивка…';
+            this.status = 'Загрузка…';
           }
         };
         xhr.onload = () => {
           if (xhr.status === 200) {
             this.progress = 100;
-            this.status = 'Обновление принято, ожидайте перезагрузку…';
+            this.status = 'Готово. Ожидание перезагрузки…';
             // Stream OTA flashes during upload; device reboots after final.
           } else {
             APP.utils.LS.del('otaInProgress');
-            Alpine.store('uiStatusBar').setHardwareError('Ошибка загрузки файла обновления. Перезагрузите устройство при необходимости.');
+            Alpine.store('uiStatusBar').setHardwareError('Ошибка прошивки.');
             this.status = 'Ошибка загрузки';
             this.started = false;
             this.uploading = false;
@@ -47,7 +47,7 @@
         };
         xhr.onerror = () => {
           APP.utils.LS.del('otaInProgress');
-          Alpine.store('uiStatusBar').setHardwareError('Ошибка сети при загрузке OTA. Проверьте соединение.');
+          Alpine.store('uiStatusBar').setHardwareError('Ошибка сети при прошивке.');
           this.status = 'Ошибка сети';
           this.started = false;
           this.uploading = false;

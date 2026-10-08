@@ -67,9 +67,7 @@ void SensorsController::noteAdcReadFail_() {
 }
 
 void SensorsController::clearSensorErrorIf_(ErrorCode code) {
-    if (core.getErrorManager().get() == code) {
-        core.getErrorManager().clear();
-    }
+    core.getErrorManager().clear(code);
 }
 
 void SensorsController::begin() {
@@ -256,12 +254,18 @@ void SensorsController::updateVoltage() {
     _voltageIndex = (_voltageIndex + 1) % ADC::SAMPLES;
     if (_adcFillCount < ADC::SAMPLES) _adcFillCount++;
 
+    // Average only filled samples — dividing a sparse buffer by SAMPLES
+    // understates raw and blows up calibrate (coeff = V / raw).
     uint32_t sum = 0;
-    for (uint8_t i = 0; i < ADC::SAMPLES; i++) {
-        sum += _voltageBuffer[i];
+    const uint8_t n = _adcFillCount;
+    if (n >= ADC::SAMPLES) {
+        for (uint8_t i = 0; i < ADC::SAMPLES; i++) sum += _voltageBuffer[i];
+    } else {
+        for (uint8_t i = 0; i < n; i++) sum += _voltageBuffer[i];
     }
-    uint16_t avg = sum / ADC::SAMPLES;
+    const uint16_t avg = (n > 0) ? static_cast<uint16_t>(sum / n) : 0;
 
+    _lastAdcAvg = avg;
     _voltageData.voltage = calculateVoltage(avg);
     _voltageData.valid = true;
     _voltageData.lastReadTime = now;
@@ -279,6 +283,15 @@ void SensorsController::updateVoltage() {
 }
 
 float SensorsController::calculateVoltage(uint16_t raw) const {
-    float coeff = config.getBase().vehicle.adc_voltage_coeff;
-    return raw * (ADC::VREF / ADC::MAX_RAW) * ADC::DIVIDER_RATIO * coeff;
+    return raw * config.getBase().vehicle.adc_voltage_coeff;
+}
+
+bool SensorsController::computeAdcVoltageCoeff(float measuredVolts, float& outCoeff) const {
+    // Near-zero raw (sparse window / open pin) would yield a huge coeff.
+    constexpr uint16_t kMinAdcRawForCalibrate = 50;
+    if (!(measuredVolts > 0.0f) || !isAdcFilterReady() || _lastAdcAvg < kMinAdcRawForCalibrate) {
+        return false;
+    }
+    outCoeff = measuredVolts / static_cast<float>(_lastAdcAvg);
+    return true;
 }

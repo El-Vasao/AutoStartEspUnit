@@ -43,12 +43,12 @@
           } catch (e2) {
             this.items = [];
             this.loadOk = false;
-            Alpine.store('uiNotification').error('Некорректный формат списка программ');
+            Alpine.store('uiNotification').error('Неверный список программ');
           }
         } catch (e) {
           this.items = [];
           this.loadOk = false;
-          Alpine.store('uiNotification').error('Ошибка загрузки программ');
+          Alpine.store('uiNotification').error('Не удалось загрузить программы');
         } finally {
           this.loading = false;
           this.loaded = true;
@@ -70,7 +70,7 @@
           return this.current;
         } catch (e) {
           this.editingMode = null;
-          Alpine.store('uiNotification').error('Ошибка загрузки программы');
+          Alpine.store('uiNotification').error('Не удалось загрузить программу');
           return null;
         } finally {
           this.loading = false;
@@ -85,7 +85,7 @@
             body: `run=${id}`
           });
           if (ok && data.success) Alpine.store('uiNotification').success('Программа запущена');
-          else Alpine.store('uiNotification').error('Не удалось запустить программу');
+          else Alpine.store('uiNotification').error('Не удалось запустить');
         } catch (e) {
           Alpine.store('uiNotification').error('Ошибка сети');
         }
@@ -93,14 +93,14 @@
 
       async delete(id) {
         Alpine.store('uiDialog').show({
-          title: 'Удаление программы',
-          message: 'Вы уверены, что хотите удалить программу?',
+          title: 'Удаление',
+          message: 'Удалить программу?',
           onConfirm: async () => {
             try {
               const self = this;
               const res = await APP.api.runFlashWrite({
                 Alpine,
-                busyTitle: 'Сохранение',
+                busyTitle: 'Удаление',
                 busyMessage: 'Удаление программы…',
                 expectedLastOp: 'delete_program',
                 timeoutMsCommit: 8000,
@@ -111,7 +111,7 @@
                 }
               });
               if (res.busy409) return;
-              if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка при удалении');
+              if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка удаления');
             } catch (e) {}
           }
         });
@@ -124,14 +124,14 @@
           try {
             const pv = Alpine.store('programValidator');
             pv?.load?.();
-            const vr = pv?.validateProgramDataHard?.(programData) || { ok: false, errorsByPath: { __schema__: ['Валидация недоступна'] } };
+            const vr = pv?.validateProgramDataHard?.(programData) || { ok: false, errorsByPath: { __schema__: ['Проверка недоступна'] } };
             if (!vr.ok) {
-              const reason = (vr.errorsByPath?.__schema__ && vr.errorsByPath.__schema__[0]) ? String(vr.errorsByPath.__schema__[0]) : 'Некорректные данные программы';
+              const reason = (vr.errorsByPath?.__schema__ && vr.errorsByPath.__schema__[0]) ? String(vr.errorsByPath.__schema__[0]) : 'Неверные данные программы';
               Alpine.store('uiNotification').error(reason);
               return;
             }
           } catch (e0) {
-            Alpine.store('uiNotification').error('Ошибка валидации программы');
+            Alpine.store('uiNotification').error('Проверьте поля программы');
             return;
           }
 
@@ -139,7 +139,7 @@
           const res = await APP.api.runFlashWrite({
             Alpine,
             busyTitle: 'Сохранение',
-            busyMessage: 'Сохранение программы…',
+            busyMessage: 'Запись программы…',
             expectedLastOp: 'save_program',
             timeoutMsCommit: 8000,
             request: async () => await APP.api.apiJson(programEndpoint(), {
@@ -155,7 +155,7 @@
             }
           });
           if (res.busy409) return;
-          if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка при сохранении');
+          if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка сохранения');
         } finally {
           this.loading = false;
         }
@@ -183,16 +183,16 @@
 
       async resetAll() {
         Alpine.store('uiDialog').show({
-          title: 'Сброс всех программ',
-          message: 'Вы уверены, что хотите удалить ВСЕ программы? Это действие необратимо.',
+          title: 'Сброс программ',
+          message: 'Удалить все программы? Вернуть их нельзя.',
           onConfirm: async () => {
             this.loading = true;
             try {
               const self = this;
               const res = await APP.api.runFlashWrite({
                 Alpine,
-                busyTitle: 'Сохранение',
-                busyMessage: 'Сброс всех программ…',
+                busyTitle: 'Сброс',
+                busyMessage: 'Сброс программ…',
                 expectedLastOp: 'reset_programs',
                 timeoutMsCommit: 10000,
                 request: async () => await APP.api.apiJson(programsPostUrl(), {
@@ -201,12 +201,12 @@
                   body: 'reset=1'
                 }),
                 onCommitOk: async () => {
-                  Alpine.store('uiNotification').success('Все программы удалены');
+                  Alpine.store('uiNotification').success('Программы удалены');
                   await self.loadList(true);
                 }
               });
               if (res.busy409) return;
-              if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка при сбросе программ');
+              if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка сброса');
             } finally {
               this.loading = false;
             }

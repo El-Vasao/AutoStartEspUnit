@@ -3,12 +3,25 @@
 
 #include "common/Constants.h"
 #include "common/Utils.h"
+#include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 namespace config_internal {
 
 namespace {
+
+/// Arduino Print(float) defaults to 2 decimals — small coeffs (e.g. 0.004) become 0.00.
+void printJsonFloat(Print& p, float v) {
+    if (!isfinite(v)) {
+        p.print("0");
+        return;
+    }
+    char buf[32];
+    snprintf(buf, sizeof buf, "%.8g", static_cast<double>(v));
+    p.print(buf);
+}
 
 void writeEscaped(Print& p, const char* s) {
     p.print('"');
@@ -124,13 +137,13 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
 
     comma(o, &c), o.print("\"vehicle\":");
     o.print('{'), c = false;
-    comma(o, &c), o.print("\"adc_voltage_coeff\":"), o.print(cfg.vehicle.adc_voltage_coeff);
+    comma(o, &c), o.print("\"adc_voltage_coeff\":"), printJsonFloat(o, cfg.vehicle.adc_voltage_coeff);
     comma(o, &c), o.print("\"starter_max_time_sec\":"), o.print(cfg.vehicle.starter_max_time_sec);
     comma(o, &c), o.print("\"wait_after_start_sec\":"), o.print(cfg.vehicle.wait_after_start_sec);
     comma(o, &c), o.print("\"engine_running_voltage_threshold\":"),
-        o.print(cfg.vehicle.engine_running_voltage_threshold);
+        printJsonFloat(o, cfg.vehicle.engine_running_voltage_threshold);
     comma(o, &c), o.print("\"engine_stopped_voltage_threshold\":"),
-        o.print(cfg.vehicle.engine_stopped_voltage_threshold);
+        printJsonFloat(o, cfg.vehicle.engine_stopped_voltage_threshold);
     comma(o, &c), o.print("\"starter_relay_id\":"), o.print(cfg.vehicle.starter_relay_id);
     comma(o, &c), o.print("\"engine_detection_source\":"), writeEscaped(o, cfg.vehicle.engine_detection_source);
     comma(o, &c), o.print("\"engine_input_id\":"), o.print(cfg.vehicle.engine_input_id);
@@ -142,7 +155,7 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         o.print('{'), c = false;
         const SensorConfig& sc = cfg.sensors[i];
         if (sc.id != 0) comma(o, &c), o.print("\"id\":"), o.print(sc.id);
-        comma(o, &c), o.print("\"coeff\":"), o.print(sc.coeff);
+        comma(o, &c), o.print("\"coeff\":"), printJsonFloat(o, sc.coeff);
         if (sc.rom[0] != '\0') comma(o, &c), o.print("\"rom\":"), writeEscaped(o, sc.rom);
         if (sc.name[0] != '\0') comma(o, &c), o.print("\"name\":"), writeEscaped(o, sc.name);
         o.print('}');
@@ -177,8 +190,8 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
     comma(o, &c), o.print("\"sensor_id\":"), o.print(cfg.thermostat.sensor_id);
     comma(o, &c), o.print("\"sensor_name\":"), writeEscaped(o, findSensorNameById(cfg, cfg.thermostat.sensor_id));
     comma(o, &c), o.print("\"comparison\":"), writeEscaped(o, cfg.thermostat.comparison);
-    comma(o, &c), o.print("\"lower_threshold\":"), o.print(cfg.thermostat.lower_threshold);
-    comma(o, &c), o.print("\"upper_threshold\":"), o.print(cfg.thermostat.upper_threshold);
+    comma(o, &c), o.print("\"lower_threshold\":"), printJsonFloat(o, cfg.thermostat.lower_threshold);
+    comma(o, &c), o.print("\"upper_threshold\":"), printJsonFloat(o, cfg.thermostat.upper_threshold);
     comma(o, &c), o.print("\"program_id_lower\":"), o.print(cfg.thermostat.program_id_lower);
     comma(o, &c), o.print("\"program_id_upper\":"), o.print(cfg.thermostat.program_id_upper);
     o.print('}');
@@ -187,10 +200,10 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
     o.print('{'), c = false;
     comma(o, &c), o.print("\"enabled\":"), cfg.battery_saver.enabled ? o.print("true") : o.print("false");
     comma(o, &c), o.print("\"voltage_start_threshold\":"),
-        o.print(cfg.battery_saver.voltage_start_threshold);
+        printJsonFloat(o, cfg.battery_saver.voltage_start_threshold);
     comma(o, &c), o.print("\"voltage_abort_threshold\":"),
-        o.print(cfg.battery_saver.voltage_abort_threshold);
-    comma(o, &c), o.print("\"hysteresis\":"), o.print(cfg.battery_saver.hysteresis);
+        printJsonFloat(o, cfg.battery_saver.voltage_abort_threshold);
+    comma(o, &c), o.print("\"hysteresis\":"), printJsonFloat(o, cfg.battery_saver.hysteresis);
     comma(o, &c),
         o.print("\"min_low_voltage_duration_sec\":"), o.print(cfg.battery_saver.min_low_voltage_duration_sec);
     comma(o, &c),
@@ -232,7 +245,7 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         comma(o, &c), o.print("\"sensor_id\":"), o.print(tt.sensor_id);
         comma(o, &c), o.print("\"sensor_name\":"), writeEscaped(o, findSensorNameById(cfg, tt.sensor_id));
         comma(o, &c), o.print("\"comparison\":"), writeEscaped(o, tt.comparison);
-        comma(o, &c), o.print("\"threshold\":"), o.print(tt.threshold);
+        comma(o, &c), o.print("\"threshold\":"), printJsonFloat(o, tt.threshold);
         comma(o, &c), o.print("\"program_id\":"), o.print(tt.program_id);
         o.print('}');
     }

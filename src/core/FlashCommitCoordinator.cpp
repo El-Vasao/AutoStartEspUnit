@@ -66,7 +66,8 @@ void FlashCommitCoordinator::tick(Core& core) {
         logger.log("[FlashCommit] Config: deferred apply start %s (heap=%u)\n",
                    HttpPostJson::TMP_CONFIG, espHalFreeHeap());
         const uint16_t beforeCrc = config.getCRC();
-        const bool cfgOk = config.applyPostedConfigJsonFile(HttpPostJson::TMP_CONFIG);
+        const bool cfgOk =
+            config.applyPostedConfigJsonFile(HttpPostJson::TMP_CONFIG, core.getSensors());
         core.feedWatchdog();
         espHalFeedWdt();
 

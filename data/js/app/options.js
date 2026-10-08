@@ -29,7 +29,7 @@
       if (from === 'inputIds') {
         const s = Alpine.store('settings');
         const list = Array.isArray(s?.inputs) ? s.inputs : [];
-        const out = [{ value: 0, label: '— не выбран —' }];
+        const out = [{ value: 0, label: '— нет —' }];
         for (let idx = 0; idx < list.length; idx++) {
           const item = list[idx] || {};
           const id = Number(item.id) || 0;
@@ -51,7 +51,7 @@
       if (from === 'sensorRoms') {
         const st = Alpine.store('deviceStatus');
         const list = Array.isArray(st?.temperatureSensorRoms) ? st.temperatureSensorRoms : [];
-        const out = [{ value: '', label: '— не выбран —' }];
+        const out = [{ value: '', label: '— нет —' }];
         for (const rom of list) {
           if (!rom) continue;
           const label = Alpine.store('uiFormat')?.sensorLabelByRom?.(rom) || String(rom);
@@ -63,13 +63,13 @@
       if (from === 'sensorIds') {
         const s = Alpine.store('settings');
         const list = Array.isArray(s?.sensors) ? s.sensors : [];
-        const out = [{ value: 0, label: '— не выбран —' }];
+        const out = [{ value: 0, label: '— нет —' }];
         for (const item of list) {
           if (!item) continue;
           const id = Number(item.id) || 0;
           if (!id) continue;
           const name = String(item.name || '').trim();
-          out.push({ value: id, label: name || ('Sensor #' + id) });
+          out.push({ value: id, label: name || ('Датчик ' + id) });
         }
         return out;
       }
@@ -83,13 +83,13 @@
 
       if (from === 'inputTriggerIds') {
         const list = Alpine.store('settings')?.input_triggers || [];
-        const out = [{ value: 0, label: '— не выбран —' }];
+        const out = [{ value: 0, label: '— нет —' }];
         for (let i = 0; i < list.length; i++) {
           const tr = list[i] || {};
           const id = Number(tr.id) || 0;
           if (!id) continue;
-          const inName = Alpine.store('uiFormat')?.inputLabelById?.(tr.input_id) || ('IN#' + (Number(tr.input_id) || 0));
-          const lvl = tr.trigger_level ? 'HIGH' : 'LOW';
+          const inName = Alpine.store('uiFormat')?.inputLabelById?.(tr.input_id) || ('IN' + (Number(tr.input_id) || 0));
+          const lvl = tr.trigger_level ? 'Высокий' : 'Низкий';
           out.push({ value: id, label: `${inName} ${lvl}` });
         }
         return out;
@@ -97,12 +97,12 @@
 
       if (from === 'tempTriggerIds') {
         const list = Alpine.store('settings')?.temperature_triggers || [];
-        const out = [{ value: 0, label: '— не выбран —' }];
+        const out = [{ value: 0, label: '— нет —' }];
         for (let i = 0; i < list.length; i++) {
           const tr = list[i] || {};
           const id = Number(tr.id) || 0;
           if (!id) continue;
-          const sName = Alpine.store('uiFormat')?.sensorLabelById?.(tr.sensor_id) || ('Sensor #' + (tr.sensor_id || 0));
+          const sName = Alpine.store('uiFormat')?.sensorLabelById?.(tr.sensor_id) || ('Датчик ' + (tr.sensor_id || 0));
           const cmp = tr.comparison === 'below' ? '<' : '>';
           out.push({ value: id, label: `${sName} ${cmp} ${(tr.threshold || 0)}°C` });
         }

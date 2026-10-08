@@ -102,6 +102,10 @@
           "type": "number",
           "minimum": 0
         },
+        "adc_calibrate_voltage": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "starter_max_time_sec": {
           "type": "integer",
           "minimum": 1,

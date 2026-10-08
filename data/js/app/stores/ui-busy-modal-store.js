@@ -7,17 +7,17 @@
     Alpine.store('uiBusy', {
       open: false,
       title: 'Сохранение',
-      message: 'Идёт запись…',
+      message: 'Запись…',
       okMode: false,
       okLabel: 'OK',
       /** 0..100 while working; null hides the bar (okMode / indeterminate skip). */
       progress: null,
       _progressTimer: null,
 
-      show({ title = 'Сохранение', message = 'Идёт запись…', progress = 0 } = {}) {
+      show({ title = 'Сохранение', message = 'Запись…', progress = 0 } = {}) {
         this._stopProgressTimer();
         this.title = String(title || 'Сохранение');
-        this.message = String(message || 'Идёт запись…');
+        this.message = String(message || 'Запись…');
         this.okMode = false;
         this.progress = (progress == null) ? 0 : Math.max(0, Math.min(100, Number(progress) || 0));
         this.open = true;

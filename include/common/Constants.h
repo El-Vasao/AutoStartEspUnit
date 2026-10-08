@@ -247,15 +247,12 @@ namespace OTA {
 // ADC (измерение напряжения)
 // ============================================================
 namespace ADC {
-    /// ESP32-C3 ADC with attenuation — calibrate later against known battery voltage.
-    constexpr float VREF = 3.3f;
+    /// ESP32-C3 ADC: voltage = raw × adc_voltage_coeff (field-calibrated).
     constexpr uint8_t RESOLUTION_BITS = 12;
     constexpr uint16_t MAX_RAW = (1u << RESOLUTION_BITS) - 1u; ///< 12-bit ADC (0..4095)
     constexpr uint8_t SAMPLES = 10;      ///< окно усреднения
-    constexpr uint8_t DIVIDER_RATIO = 15;
-    /// Approx if attenuation set so ~1 V at divider output ≈ full scale; needs field cal.
-    /// Physical divider still outputs ~0–1 V into ADC (see SensorsController::begin).
-    constexpr float DEFAULT_COEFF = (1.0f * DIVIDER_RATIO) / static_cast<float>(MAX_RAW);
+    /// Rough starter (~12 V at raw≈3000); calibrate via measured voltage on save.
+    constexpr float DEFAULT_COEFF = 0.004f;
 }
 
 /// DS18B20 / ADC fault escalation (SensorsController).

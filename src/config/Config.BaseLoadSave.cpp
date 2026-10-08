@@ -1,4 +1,5 @@
 #include "config/Config.h"
+#include "common/Constants.h"
 #include "common/ErrorCodes.h"
 #include "common/EspHal.h"
 #include "fs/FSManager.h"
@@ -7,6 +8,7 @@
 #include "config/internal/BaseConfigJsonIo.h"
 #include "config/internal/ConfigStorageInternal.h"
 
+#include <math.h>
 #include <WiFi.h>
 #include <stdlib.h>
 
@@ -99,6 +101,21 @@ ConfigLoadOutcome Config::loadWithOutcome() {
         size_t fileLen = 0;
         uint16_t fileCrc = 0;
         if (loadBaseFromFile("/config.json", tmp, fileLen, &fileCrc)) {
+            // Legacy adc_voltage_coeff (≥1) was paired with raw*(3.3/4095)*15*coeff.
+            // New formula is raw*coeff — fold old scale into RAM so live voltage is sane
+            // until the user saves (persists the folded value) or recalibrates.
+            if (tmp.vehicle.adc_voltage_coeff >= 1.0f) {
+                const float before = tmp.vehicle.adc_voltage_coeff;
+                tmp.vehicle.adc_voltage_coeff *= (3.3f / 4095.0f) * 15.0f;
+                logger.log("[Config] Folded legacy adc_voltage_coeff %.4f -> %.6f\n",
+                           before, tmp.vehicle.adc_voltage_coeff);
+            }
+            // Print(float) used to emit 2 decimals — 0.004 became 0.00 in flash.
+            if (!(tmp.vehicle.adc_voltage_coeff > 0.0f) || !isfinite(tmp.vehicle.adc_voltage_coeff)) {
+                logger.log("[Config] adc_voltage_coeff invalid (%.6f); using DEFAULT_COEFF\n",
+                           tmp.vehicle.adc_voltage_coeff);
+                tmp.vehicle.adc_voltage_coeff = ADC::DEFAULT_COEFF;
+            }
             baseCache = tmp;
             loaded = true;
             configCRC = fileCrc;

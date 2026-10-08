@@ -114,7 +114,7 @@
         try {
           var n = parseInt(sessionStorage.getItem('uiDeliveryReload') || '0', 10) || 0;
           if (n >= 4) {
-            setSplashLabel('Не удалось загрузить UI. Обновите страницу.');
+            setSplashLabel('Не удалось загрузить страницу. Обновите её');
             return;
           }
           sessionStorage.setItem('uiDeliveryReload', String(n + 1));
@@ -138,7 +138,7 @@
         }, ALPINE_WATCHDOG_MS);
       }
       function loadBundle(attempt) {
-        setSplashLabel(attempt > 1 ? ('Повтор загрузки (' + attempt + ')…') : 'Загрузка приложения…');
+        setSplashLabel(attempt > 1 ? ('Повтор (' + attempt + ')…') : 'Загрузка…');
         var s = document.createElement('script');
         s.src = '/app.js?a=' + attempt + '&t=' + Date.now();
         // Do NOT treat script.onload as success — SoftAP may return HTML/truncated JS with 200.
@@ -167,7 +167,7 @@
 
       document.addEventListener('DOMContentLoaded', function () {
         if (docIncomplete()) {
-          setSplashLabel('Неполная страница, перезагрузка…');
+          setSplashLabel('Страница загружена не полностью');
           bustReload();
           return;
         }
@@ -187,7 +187,7 @@
     <div id="boot-splash" role="status" aria-live="polite" aria-busy="true">
       <div class="boot-card">
         <div class="boot-title">Загрузка…</div>
-        <div class="boot-sub" data-boot-label>Подготовка UI…</div>
+        <div class="boot-sub" data-boot-label>Подготовка…</div>
         <div class="boot-pct" data-boot-pct>0%</div>
         <div class="boot-bar"><div class="boot-fill" data-boot-fill style="width:0%"></div></div>
       </div>
@@ -224,7 +224,7 @@
                 </div>
                 <div class="modal-actions">
                     <button class="btn" type="button" x-show="!$store.uiBusy.okMode" disabled aria-disabled="true">
-                        Подождите… <span x-html="$store.uiFormat.spinnerSvg"></span>
+                        Ждите… <span x-html="$store.uiFormat.spinnerSvg"></span>
                     </button>
                     <button class="btn primary" type="button" x-show="$store.uiBusy.okMode" @click="$store.uiBusy.ok()">
                         <span x-text="$store.uiBusy.okLabel || 'OK'"></span>
@@ -249,7 +249,7 @@
             <div class="modal-actions">
                 <button class="btn" type="button" @click="$store.uiDialog.cancel()" x-text="$store.uiDialog.cancelLabel || 'Отмена'"></button>
                 <button class="btn warning" type="button" @click="$store.uiDialog.extra()" x-show="$store.uiDialog.extraLabel" x-text="$store.uiDialog.extraLabel"></button>
-                <button class="btn danger" type="button" @click="$store.uiDialog.confirm()" x-text="$store.uiDialog.confirmLabel || 'Подтвердить'"></button>
+                <button class="btn danger" type="button" @click="$store.uiDialog.confirm()" x-text="$store.uiDialog.confirmLabel || 'Да'"></button>
             </div>
         </div>
     </div>
@@ -259,7 +259,7 @@
         <div class="init-backdrop" x-show="$store.uiState.initLock && !$store.uiBusy.open" x-cloak aria-live="polite" aria-busy="true">
             <div class="init-card">
                 <div class="init-title">Загрузка…</div>
-                <div class="init-sub" x-text="$store.uiState.initProgressLabel || ($store.uiState.initPhase === 'sse' ? 'Ждём статус устройства…' : 'Загрузка по шагам…')"></div>
+                <div class="init-sub" x-text="$store.uiState.initProgressLabel || ($store.uiState.initPhase === 'sse' ? 'Ожидание статуса…' : 'Загрузка…')"></div>
                 <div class="ui-progress">
                     <div class="progress-text" x-text="($store.uiState.initProgress || 0) + '%'"></div>
                     <div class="progress-bar"><div class="progress-fill" :style="{ width: ($store.uiState.initProgress || 0) + '%' }"></div></div>
@@ -269,11 +269,11 @@
         <div class="init-backdrop" x-show="!$store.uiState.initLock && $store.uiState.initFailed && activeTab !== 'system'" x-cloak aria-live="polite" aria-busy="false">
             <div class="init-card">
                 <div class="init-title">Аварийный режим</div>
-                <div class="init-sub" x-text="$store.uiState.initError || 'Не удалось загрузить данные для UI.'"></div>
+                <div class="init-sub" x-text="$store.uiState.initError || 'Не удалось загрузить данные'"></div>
                 <div class="modal-actions" style="margin-top:10px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-                    <button class="btn warning" type="button" @click="$store.deviceMaintenance.performReboot()">Перезагрузить устройство</button>
-                    <button class="btn" type="button" @click="switchTab('system')">Прошивка / OTA</button>
-                    <button class="btn" type="button" @click="location.replace('/?_=' + Date.now())">Обновить страницу</button>
+                    <button class="btn warning" type="button" @click="$store.deviceMaintenance.performReboot()">Перезагрузка</button>
+                    <button class="btn" type="button" @click="switchTab('system')">Прошивка</button>
+                    <button class="btn" type="button" @click="location.replace('/?_=' + Date.now())">Обновить</button>
                 </div>
             </div>
         </div>
@@ -322,7 +322,7 @@
                                 </template>
                                 <div class="tile empty" x-show="!$store.deviceStatus.hasValidTemps">Нет данных</div>
                         </div>
-                        <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка данных...</div>
+                        <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка…</div>
                     </div>
 
                     <!-- Входы -->
@@ -337,11 +337,11 @@
                                         data-gesture="input"
                                     >
                                         <div class="tile-name" x-text="$store.uiFormat.inputName(index)"></div>
-                                        <div class="tile-sub" x-show="$store.uiFormat.isCounter(index)" x-text="$store.uiFormat.getFrequency(index) + ' rpm'"></div>
+                                        <div class="tile-sub" x-show="$store.uiFormat.isCounter(index)" x-text="$store.uiFormat.getFrequency(index) + ' об/мин'"></div>
                                     </div>
                                 </template>
                         </div>
-                        <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка данных...</div>
+                        <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка…</div>
                     </div>
                 </div>
 
@@ -352,16 +352,16 @@
                             <template x-for="(state, index) in $store.deviceStatus.relays" :key="index">
                                 <div class="tile relay-tile" :class="state ? 'relay-on' : 'relay-off'">
                                     <div class="tile-name" x-text="'K' + (index+1)"></div>
-                                    <div class="tile-sub" x-text="state ? 'ON' : 'OFF'"></div>
+                                    <div class="tile-sub" x-text="state ? 'Вкл' : 'Выкл'"></div>
                                 </div>
                             </template>
                     </div>
-                    <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка данных...</div>
+                    <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка…</div>
                 </div>
 
                 <!-- Триггеры на входах -->
                 <div class="card" x-show="$store.deviceStatus.loaded && $store.settings.input_triggers?.length">
-                    <h3>Триггеры на входах</h3>
+                    <h3>Триггеры входов</h3>
                     <div class="tile-grid">
                         <template x-for="(trigger, index) in $store.settings.input_triggers" :key="index">
                             <div
@@ -370,8 +370,8 @@
                                 :data-index="index"
                                 data-gesture="inputTrigger"
                             >
-                                <div class="tile-name" x-text="($store.uiFormat.inputLabelById(trigger.input_id) || ('IN#' + (Number(trigger.input_id) || 0))) + ' → #' + trigger.program_id"></div>
-                                <div class="tile-sub" x-text="trigger.trigger_level ? 'HIGH' : 'LOW'"></div>
+                                <div class="tile-name" x-text="($store.uiFormat.inputLabelById(trigger.input_id) || ('IN' + (Number(trigger.input_id) || 0))) + ' → #' + trigger.program_id"></div>
+                                <div class="tile-sub" x-text="trigger.trigger_level ? 'Высокий' : 'Низкий'"></div>
                             </div>
                         </template>
                     </div>
@@ -379,7 +379,7 @@
 
                 <!-- Температурные триггеры -->
                 <div class="card" x-show="$store.deviceStatus.loaded && $store.settings.temperature_triggers?.length">
-                    <h3>Температурные триггеры</h3>
+                    <h3>Триггеры температуры</h3>
                     <div class="tile-grid">
                         <template x-for="(trigger, index) in $store.settings.temperature_triggers" :key="index">
                             <div
@@ -389,7 +389,7 @@
                                 data-gesture="tempTrigger"
                             >
                                 <div class="tile-name" x-text="$store.uiFormat.sensorLabelById(trigger.sensor_id) + ' → #' + trigger.program_id"></div>
-                                <div class="tile-sub" x-text="trigger.comparison + ' ' + (trigger.threshold || 0) + '°C'"></div>
+                                <div class="tile-sub" x-text="(trigger.comparison === 'below' ? 'ниже' : 'выше') + ' ' + (trigger.threshold || 0) + '°C'"></div>
                             </div>
                         </template>
                     </div>
@@ -407,10 +407,10 @@
                             >
                                 <div class="tile-name">Защита АКБ</div>
                                 <div class="tile-sub">
-                                    <span x-text="'Запуск при ' + $store.settings.battery_saver.voltage_start_threshold + ' В'"></span>
-                                    <span x-show="$store.deviceStatus.voltage" x-text="' | Текущее: ' + $store.uiFormat.formatVoltage($store.deviceStatus.voltage)"></span>
+                                    <span x-text="'Порог ' + $store.settings.battery_saver.voltage_start_threshold + ' В'"></span>
+                                    <span x-show="$store.deviceStatus.voltage" x-text="' · ' + $store.uiFormat.formatVoltage($store.deviceStatus.voltage)"></span>
                                 </div>
-                                <div class="tile-sub" x-text="'Попыток: ' + ($store.deviceRuntime.batterySaverAttemptsToday || 0) + ' / ' + $store.settings.battery_saver.max_attempts_per_day"></div>
+                                <div class="tile-sub" x-text="'Попытки ' + ($store.deviceRuntime.batterySaverAttemptsToday || 0) + '/' + $store.settings.battery_saver.max_attempts_per_day"></div>
                             </div>
                             <!-- Термостат -->
                             <div
@@ -423,15 +423,15 @@
                                     <span x-text="$store.uiFormat.sensorLabelById($store.settings.thermostat.sensor_id)"></span>
                                     <span x-text="' | ' + ($store.settings.thermostat.comparison === 'above' ? 'выше' : 'ниже') + ' ' + $store.settings.thermostat.lower_threshold + '°C'"></span>
                                 </div>
-                                <div class="tile-sub" x-text="'Низкая: ' + ($store.settings.thermostat.program_id_lower || '—') + ' · Высокая: ' + ($store.settings.thermostat.program_id_upper || '—')"></div>
+                                <div class="tile-sub" x-text="'Ниже ' + ($store.settings.thermostat.program_id_lower || '—') + ' · Выше ' + ($store.settings.thermostat.program_id_upper || '—')"></div>
                             </div>
                     </div>
-                    <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка данных...</div>
+                    <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка…</div>
                 </div>
 
                 <!-- Общая информация (объединённая карточка) -->
                 <div class="card">
-                    <h3>Общая информация</h3>
+                    <h3>Состояние</h3>
                     <div x-show="$store.deviceStatus.loaded">
                             <div class="info-row">
                                 <span class="info-label">Двигатель:</span>
@@ -442,7 +442,7 @@
                                 <span class="info-value" x-text="$store.uiFormat.formatTimer($store.deviceStatus.timerRemaining)"></span>
                             </div>
                             <div class="info-row">
-                                <span class="info-label">Текущая программа:</span>
+                                <span class="info-label">Программа:</span>
                                 <span class="info-value" x-text="$store.deviceStatus.currentProgramName || '—'"></span>
                             </div>
                             <div class="info-row">
@@ -450,19 +450,19 @@
                                 <span class="info-value" x-text="$store.uiFormat.formatVoltage($store.deviceStatus.voltage)"></span>
                             </div>
                             <div class="info-row">
-                                <span class="info-label">Аптайм:</span>
+                                <span class="info-label">В работе:</span>
                                 <span class="info-value" x-text="$store.uiFormat.formatUptime($store.deviceStatus.uptime)"></span>
                             </div>
                             <div class="info-row">
-                                <span class="info-label">Время:</span>
+                                <span class="info-label">Часы:</span>
                                 <span class="info-value" x-text="$store.uiFormat.formatWallClock($store.deviceStatus)"></span>
                             </div>
                             <div class="info-row">
-                                <span class="info-label">Последняя программа:</span>
+                                <span class="info-label">Последний запуск:</span>
                                 <span class="info-value" x-text="$store.deviceStatus.lastProgramName || '—'"></span>
                             </div>
                     </div>
-                    <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка данных...</div>
+                    <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка…</div>
                 </div>
             </div>
 
@@ -474,7 +474,7 @@
                         <template x-if="!$store.programs.current">
                             <div class="card">
                                 <div class="button-group justify-end">
-                                    <button class="btn primary" type="button" @click="$store.programs.newProgram()" :disabled="$store.deviceOta.started">➕ Новая программа</button>
+                                    <button class="btn primary" type="button" @click="$store.programs.newProgram()" :disabled="$store.deviceOta.started">Новая программа</button>
                                 </div>
                             </div>
                         </template>
@@ -482,7 +482,7 @@
                         <!-- Если список не загрузился, не блокируем UI -->
                         <template x-if="!$store.programs.loadOk && !$store.programs.current">
                             <div class="card">
-                                <div>Список программ недоступен (возможно, UI/ассеты не установлены). Создание новой программы доступно.</div>
+                                <div>Список программ недоступен. Можно создать новую.</div>
                             </div>
                         </template>
 
@@ -490,10 +490,10 @@
                         <template x-if="!$store.programs.current">
                             <div>
                                 <template x-if="$store.programs.loading">
-                                    <div class="card">Загрузка...</div>
+                                    <div class="card">Загрузка…</div>
                                 </template>
                                 <template x-if="!$store.programs.loading && $store.programs.items.length === 0">
-                                    <div class="card">Нет созданных программ</div>
+                                    <div class="card">Нет программ</div>
                                 </template>
                                 <div class="programs-grid" x-show="!$store.programs.loading && $store.programs.items.length > 0">
                                     <template x-for="p in $store.programs.items" :key="p.id">
@@ -502,8 +502,8 @@
                                                 <span x-text="'#' + p.id + ' – ' + p.name"></span>
                                             </div>
                                             <div class="program-card-actions">
-                                                <button class="btn" type="button" @click="$store.programs.run(p.id)" :disabled="$store.deviceOta.started">Выполнить</button>
-                                                <button class="btn" type="button" @click="$store.programs.edit(p.id)" :disabled="$store.deviceOta.started">Редактировать</button>
+                                                <button class="btn" type="button" @click="$store.programs.run(p.id)" :disabled="$store.deviceOta.started">Запуск</button>
+                                                <button class="btn" type="button" @click="$store.programs.edit(p.id)" :disabled="$store.deviceOta.started">Изменить</button>
                                                 <button class="btn danger" type="button" @click="$store.programs.delete(p.id)" :disabled="$store.deviceOta.started">Удалить</button>
                                             </div>
                                         </div>
@@ -515,10 +515,10 @@
                         <!-- Редактор программ (улучшенный) -->
                         <template x-if="$store.programs.current">
                             <div class="card program-editor" x-data="programEditor" x-init="initEditor()">
-                                <h3 x-text="$store.programs.editingMode === 'new' ? 'Создание программы' : 'Редактирование программы'"></h3>
+                                <h3 x-text="$store.programs.editingMode === 'new' ? 'Новая программа' : 'Программа'"></h3>
                                 <form @submit.prevent="save()" @input="markDirty()" @change="markDirty()">
                                     <div class="form-group">
-                                        <div class="form-group" x-data="APP.ui.withFieldShell($store.programForm.fieldRow(form, { type: 'number', valueType: 'int', label: 'ID программы', helpTitle: 'Идентификатор', help: 'ID программы (1..255). Должен быть уникальным.' }, 'id', { errors, errorKey: 'id', onChange: () => { markDirty(); validateDebounced(); } }))">
+                                        <div class="form-group" x-data="APP.ui.withFieldShell($store.programForm.fieldRow(form, { type: 'number', valueType: 'int', label: 'ID', helpTitle: 'ID', help: 'Номер программы, 1–255. По нему её вызывают триггеры и MQTT.' }, 'id', { errors, errorKey: 'id', onChange: () => { markDirty(); validateDebounced(); } }))">
                                             <label class="form-label" x-text="field.label"></label>
                                             <div class="control-row">
                                                 <div class="control-main">
@@ -537,7 +537,7 @@
                                         </div>
                                     </div>
                                     <div class="form-group">
-                                        <div class="form-group" x-data="APP.ui.withFieldShell($store.programForm.fieldRow(form, { type: 'text', valueType: 'string', label: 'Название', helpTitle: 'Ограничение', help: 'Название программы (1..31 символ). Длинное имя будет подсвечено как ошибка.' }, 'name', { errors, errorKey: 'name', onChange: () => { markDirty(); validateDebounced(); } }))">
+                                        <div class="form-group" x-data="APP.ui.withFieldShell($store.programForm.fieldRow(form, { type: 'text', valueType: 'string', label: 'Имя', helpTitle: 'Имя', help: 'Имя программы, до 31 символа.' }, 'name', { errors, errorKey: 'name', onChange: () => { markDirty(); validateDebounced(); } }))">
                                             <label class="form-label" x-text="field.label"></label>
                                             <div class="control-row">
                                                 <div class="control-main">
@@ -614,7 +614,7 @@
                                         <label class="form-label">Добавить шаг</label>
                                         <div class="row-flex gap-8 align-end">
                                             <select id="actionSelect" class="form-control w-100" x-model="selectedActionValue" @change="addStepFromSelect()">
-                                                <option value="">-- Выберите действие --</option>
+                                                <option value="">Действие…</option>
                                                 <template x-for="cat in $store.programStepsUiSchema.actionCategories" :key="cat.name">
                                                     <optgroup :label="cat.name">
                                                         <template x-for="act in cat.actions" :key="act.value">
@@ -629,7 +629,7 @@
                                     <div class="button-group mt-20">
                                         <button class="btn primary" type="submit" :disabled="saving">
                                             <span x-show="!saving">Сохранить</span>
-                                            <span x-show="saving">Сохранение... <span x-html="$store.uiFormat.spinnerSvg"></span></span>
+                                            <span x-show="saving">Сохранение… <span x-html="$store.uiFormat.spinnerSvg"></span></span>
                                         </button>
                                         <button class="btn" type="button" @click="$store.programs.cancelEdit()" :disabled="$store.deviceOta.started">Отмена</button>
                                         <button class="btn danger" type="button" @click="deleteProgram()" x-show="$store.programs.current.id" :disabled="$store.deviceOta.started">Удалить</button>
@@ -640,14 +640,14 @@
                     </div>
                 </template>
                 <template x-if="!$store.programs.loaded">
-                    <div class="card">Загрузка программ...</div>
+                    <div class="card">Загрузка…</div>
                 </template>
             </div>
 
             <!-- Настройки (с подтабами) -->
             <div x-show="activeTab === 'settings'" id="tab-settings" class="tab-pane">
                 <nav class="subtab-bar">
-                    <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'wifi', invalid: $store.settingsForm.subtabHasErrors('wifi'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('wifi') && !$store.settingsForm.subtabHasErrors('wifi') }" @click="$store.uiState.activeSubTab = 'wifi'" :disabled="$store.deviceOta.started">Wi-Fi</button>
+                    <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'wifi', invalid: $store.settingsForm.subtabHasErrors('wifi'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('wifi') && !$store.settingsForm.subtabHasErrors('wifi') }" @click="$store.uiState.activeSubTab = 'wifi'" :disabled="$store.deviceOta.started">Wi‑Fi</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'gsm', invalid: $store.settingsForm.subtabHasErrors('gsm'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('gsm') && !$store.settingsForm.subtabHasErrors('gsm') }" @click="$store.uiState.activeSubTab = 'gsm'" :disabled="$store.deviceOta.started">GSM</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'mqtt', invalid: $store.settingsForm.subtabHasErrors('mqtt'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('mqtt') && !$store.settingsForm.subtabHasErrors('mqtt') }" @click="$store.uiState.activeSubTab = 'mqtt'" :disabled="$store.deviceOta.started">MQTT</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'vehicle', invalid: $store.settingsForm.subtabHasErrors('vehicle'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('vehicle') && !$store.settingsForm.subtabHasErrors('vehicle') }" @click="$store.uiState.activeSubTab = 'vehicle'" :disabled="$store.deviceOta.started">Автомобиль</button>
@@ -692,6 +692,9 @@
                                                             :step="field.step || '1'"
                                                             :min="field.min"
                                                             :max="field.max"
+                                                            :placeholder="field.placeholderLive === 'voltage'
+                                                                ? APP.utils.numberToPlainString($store.deviceStatus.voltage)
+                                                                : (field.placeholder || '')"
                                                             :value="APP.utils.numberToPlainString(value)"
                                                             :class="inputClass()"
                                                             @input="onNumberInput"
@@ -746,11 +749,11 @@
                <p x-text="field.help"></p>
                                                 </div>
                                             </div>
-                                            <p class="error-text m-0" x-show="$store.settings.isSchemaInvalid()" x-text="'Валидация недоступна: ' + ($store.settingsValidator?._lastInitError || 'ошибка загрузки схемы')"></p>
+                                            <p class="error-text m-0" x-show="$store.settings.isSchemaInvalid()" x-text="'Проверка недоступна'"></p>
                                         </div>
                                     </template>
                                     <div class="info-row mt-16" x-show="tabKey === 'time'" style="border-top: 1px solid rgba(127,127,127,.25); padding-top: 12px; margin-top: 8px;">
-                                        <span class="info-label">Сейчас (по выбранной TZ):</span>
+                                        <span class="info-label">Сейчас:</span>
                                         <span class="info-value" x-text="$store.uiFormat.formatWallClockPreview($store.settings.time?.tz_offset_hours, $store.deviceStatus)"></span>
                                     </div>
                                 </div>
@@ -821,7 +824,7 @@
                                                         <div class="help-popover-title help-popover-title-error" x-show="hasError()">Ошибка</div>
                                                         <p class="help-popover-text-error" x-show="hasError()" x-text="errorText()"></p>
                                                         <div class="help-popover-title" x-text="field.helpTitle || 'Справка'"></div>
-                                                        <p x-text="field.help || ('Поле: ' + (field.label || '') + (path ? (' (' + path + ')') : ''))"></p>
+                                                        <p x-text="field.help || (field.label || '')"></p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -914,7 +917,7 @@
                                                         <div class="help-popover-title help-popover-title-error" x-show="hasError()">Ошибка</div>
                                                         <p class="help-popover-text-error" x-show="hasError()" x-text="errorText()"></p>
                                                         <div class="help-popover-title" x-text="field.helpTitle || 'Справка'"></div>
-                                                        <p x-text="field.help || ('Поле: ' + (field.label || '') + (path ? (' (' + path + ')') : ''))"></p>
+                                                        <p x-text="field.help || (field.label || '')"></p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -984,7 +987,7 @@
                                                             <div class="help-popover-title help-popover-title-error" x-show="hasError()">Ошибка</div>
                                                             <p class="help-popover-text-error" x-show="hasError()" x-text="errorText()"></p>
                                                             <div class="help-popover-title" x-text="field.helpTitle || 'Справка'"></div>
-                                                            <p x-text="field.help || ('Поле: ' + (field.label || '') + (path ? (' (' + path + ')') : ''))"></p>
+                                                            <p x-text="field.help || (field.label || '')"></p>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -992,14 +995,14 @@
                                         </div>
                                     </template>
                                 </div>
-                                <div class="button-group mt-16"><button class="btn" type="button" @click="$store.settings.addInputTrigger()">➕ Добавить триггер</button></div>
+                                <div class="button-group mt-16"><button class="btn" type="button" @click="$store.settings.addInputTrigger()">Добавить триггер</button></div>
                             </div>
                             <div class="card">
                                 <div id="settings-temp-triggers-config">
                                     <template x-for="(trigger, idx) in $store.settings.temperature_triggers" :key="idx">
                                         <div class="temp-trigger-item" :id="'settings-temp-trigger-' + idx" :class="{ 'trigger-card-new': $store.settings.triggerRowIsNew('temp', idx) }">
                                             <div class="trigger-header">
-                                                <h4 x-text="'Температурный триггер ' + (idx+1)"></h4>
+                                                <h4 x-text="'Триггер температуры ' + (idx+1)"></h4>
                                                 <button class="btn danger trigger-delete" type="button" @click="$store.settings.removeTempTrigger(idx)">✕</button>
                                             </div>
                                             <template x-for="field in ($store.settingsUiSchema.settings?.triggers?.tempFields || [])" :key="field.bind">
@@ -1060,7 +1063,7 @@
                                                             <div class="help-popover-title help-popover-title-error" x-show="hasError()">Ошибка</div>
                                                             <p class="help-popover-text-error" x-show="hasError()" x-text="errorText()"></p>
                                                             <div class="help-popover-title" x-text="field.helpTitle || 'Справка'"></div>
-                                                            <p x-text="field.help || ('Поле: ' + (field.label || '') + (path ? (' (' + path + ')') : ''))"></p>
+                                                            <p x-text="field.help || (field.label || '')"></p>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1068,7 +1071,7 @@
                                         </div>
                                     </template>
                                 </div>
-                                <div class="button-group mt-16"><button class="btn" type="button" @click="$store.settings.addTempTrigger()">➕ Добавить температурный триггер</button></div>
+                                <div class="button-group mt-16"><button class="btn" type="button" @click="$store.settings.addTempTrigger()">Добавить триггер температуры</button></div>
                             </div>
                             <div class="card">
                                 <div id="settings-schedule-triggers-config">
@@ -1119,7 +1122,7 @@
                                                             <div class="help-popover-title help-popover-title-error" x-show="hasError()">Ошибка</div>
                                                             <p class="help-popover-text-error" x-show="hasError()" x-text="errorText()"></p>
                                                             <div class="help-popover-title" x-text="field.helpTitle || 'Справка'"></div>
-                                                            <p x-text="field.help || ('Поле: ' + (field.label || ''))"></p>
+                                                            <p x-text="field.help || (field.label || '')"></p>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1127,16 +1130,16 @@
                                         </div>
                                     </template>
                                 </div>
-                                <div class="button-group mt-16"><button class="btn" type="button" @click="$store.settings.addScheduleTrigger()">➕ Добавить расписание</button></div>
+                                <div class="button-group mt-16"><button class="btn" type="button" @click="$store.settings.addScheduleTrigger()">Добавить расписание</button></div>
                             </div>
                         </div>
 
                         <!-- Откат / сохранение всех настроек -->
                         <div class="button-group mt-20">
                             <button class="btn primary" type="button" @click="$store.settings.save()" :disabled="$store.settings.loading || $store.deviceOta.started">
-                                <span x-show="!$store.settings.loading">Сохранить все настройки</span>
+                                <span x-show="!$store.settings.loading">Сохранить</span>
                                 <span x-show="$store.settings.loading">
-                                    Сохранение... <span x-html="$store.uiFormat.spinnerSvg"></span>
+                                    Сохранение… <span x-html="$store.uiFormat.spinnerSvg"></span>
                                 </span>
                             </button>
                         </div>
@@ -1147,49 +1150,48 @@
                                 @click="$store.settings.revertAll()"
                                 :disabled="$store.settings.loading || $store.deviceOta.started"
                             >
-                                Откатить изменения
+                                Отменить
                             </button>
                         </div>
                     </div>
                 </template>
                 <template x-if="!$store.settings.loaded">
-                    <div class="card">Загрузка настроек...</div>
+                    <div class="card">Загрузка…</div>
                 </template>
             </div>
 
             <!-- Система -->
             <div x-show="activeTab === 'system'" id="tab-system" class="tab-pane">
                         <div class="card">
-                            <h3>Системная информация</h3>
-                            <div class="info-row"><span class="info-label">Версия прошивки:</span> <span class="info-value" x-text="$store.deviceStatus.version || '—'"></span></div>
-                            <div class="info-row"><span class="info-label">Режим работы:</span> <span class="info-value" x-text="$store.deviceStatus.modeBadge.text"></span></div>
-                            <div class="info-row"><span class="info-label">Аптайм:</span> <span class="info-value" x-text="$store.uiFormat.formatUptime($store.deviceStatus.uptime)"></span></div>
-                            <div class="info-row"><span class="info-label">Свободная память (heap):</span> <span class="info-value" x-text="$store.deviceStatus.freeHeap ? $store.deviceStatus.freeHeap + ' Б' : '—'"></span></div>
-                            <div class="info-row"><span class="info-label">Последняя ошибка:</span> <span class="info-value error-text" x-text="$store.deviceStatus.lastError || '—'"></span></div>
+                            <h3>Сведения</h3>
+                            <div class="info-row"><span class="info-label">Версия:</span> <span class="info-value" x-text="$store.deviceStatus.version || '—'"></span></div>
+                            <div class="info-row"><span class="info-label">В работе:</span> <span class="info-value" x-text="$store.uiFormat.formatUptime($store.deviceStatus.uptime)"></span></div>
+                            <div class="info-row"><span class="info-label">Свободно:</span> <span class="info-value" x-text="$store.deviceStatus.freeHeap ? $store.deviceStatus.freeHeap + ' Б' : '—'"></span></div>
+                            <div class="info-row"><span class="info-label">Ошибки:</span> <span class="info-value error-text" x-text="$store.deviceStatus.activeErrorsText"></span></div>
                         </div>
 
                         <div class="card">
                             <h3>Управление</h3>
                             <div class="button-group button-group--stack">
                                 <button class="btn warning" type="button" @click="$store.deviceMaintenance.performReboot()" :disabled="$store.deviceOta.started">Перезагрузка</button>
-                                <button class="btn warning" type="button" @click="$store.deviceMaintenance.performModemReboot()" :disabled="$store.deviceOta.started">Перезагрузить модем</button>
-                                <button class="btn danger" type="button" @click="$store.deviceMaintenance.resetBaseConfig()" :disabled="$store.deviceOta.started">Сброс конфигурации</button>
+                                <button class="btn warning" type="button" @click="$store.deviceMaintenance.performModemReboot()" :disabled="$store.deviceOta.started">Перезагрузка модема</button>
+                                <button class="btn danger" type="button" @click="$store.deviceMaintenance.resetBaseConfig()" :disabled="$store.deviceOta.started">Сброс настроек</button>
                                 <button class="btn danger" type="button" @click="$store.deviceMaintenance.resetAllPrograms()" :disabled="$store.programs.loading || $store.deviceOta.started">
                                     <span x-show="!$store.programs.loading">Сброс программ</span>
                                     <span x-show="$store.programs.loading">
-                                        Сброс... <span x-html="$store.uiFormat.spinnerSvg"></span>
+                                        Сброс… <span x-html="$store.uiFormat.spinnerSvg"></span>
                                     </span>
                                 </button>
                             </div>
                         </div>
 
                         <div class="card">
-                            <h3>Обновление прошивки (OTA)</h3>
+                            <h3>Прошивка</h3>
                             <div class="notice notice-warning">
-                                <strong>Внимание!</strong> Не отключайте питание во время обновления.
+                                Не отключайте питание во время прошивки.
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Файл прошивки (.bin)</label>
+                                <label class="form-label">Файл (.bin)</label>
                                 <input type="file" class="form-control" id="firmwareFile" accept=".bin" @change="$store.deviceMaintenance.otaFileSelected" :disabled="$store.deviceOta.started">
                             </div>
                             <div class="ota-progress" x-show="$store.deviceOta.started">
@@ -1199,19 +1201,19 @@
                             </div>
                             <div class="button-group">
                                 <button class="btn warning" type="button" @click="$store.deviceMaintenance.startOTA()" :disabled="$store.deviceOta.started">
-                                    <span x-show="!$store.deviceOta.started">Начать обновление</span>
+                                    <span x-show="!$store.deviceOta.started">Обновить</span>
                                     <span x-show="$store.deviceOta.started">
-                                        Загрузка... <span x-html="$store.uiFormat.spinnerSvg"></span>
+                                        Загрузка… <span x-html="$store.uiFormat.spinnerSvg"></span>
                                     </span>
                                 </button>
                             </div>
                         </div>
 
                         <div class="card">
-                            <h3>Логи системы</h3>
+                            <h3>Лог системы</h3>
                             <div class="log-panel">
                               <div class="log-toolbar button-group">
-                                <button class="btn" type="button" @click="$store.uiLogs.copy()">Скопировать</button>
+                                <button class="btn" type="button" @click="$store.uiLogs.copy()">Копировать</button>
                                 <button class="btn" type="button" @click="$store.uiLogs.clear()">Очистить</button>
                               </div>
                               <pre
@@ -1227,7 +1229,7 @@
                             <h3>Лог модема</h3>
                             <div class="log-panel">
                               <div class="log-toolbar button-group">
-                                <button class="btn" type="button" @click="$store.uiAtLogs.copy()">Скопировать</button>
+                                <button class="btn" type="button" @click="$store.uiAtLogs.copy()">Копировать</button>
                                 <button class="btn" type="button" @click="$store.uiAtLogs.clear()">Очистить</button>
                               </div>
                               <pre

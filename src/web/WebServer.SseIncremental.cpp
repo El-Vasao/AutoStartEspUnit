@@ -29,7 +29,7 @@ static uint32_t gLastRuntimeHash{0};
 static uint32_t gLastProgramHash{0};
 static char gLastMode[TextBytes::Wifi::SSID]{};
 static char gLastGsm[96]{};
-static char gLastErr[Logging::MAX_MESSAGE_LENGTH]{};
+static char gLastErrFp[96]{};
 static FlashCommitOp gLastFlashOp{FlashCommitOp::NONE};
 static bool gLastFlashPending{false};
 static bool gLastFlashOk{true};
@@ -50,6 +50,23 @@ static void formatGsmFingerprint_(char* out, size_t outSz, const SseStatusPort& 
     const char* state = st.gsm ? st.gsm->getStateString() : "";
     snprintf(out, outSz, "%s|%d|%d|%u", state ? state : "", (int)st.csqRssi, (int)st.csqBer,
              st.mqttConnected ? 1u : 0u);
+}
+
+static void formatActiveErrorsFingerprint_(char* out, size_t outSz, const SseStatusPort& st) {
+    if (!out || outSz == 0) return;
+    out[0] = '\0';
+    if (!st.errors) return;
+    ErrorSnapshotEntry buf[ErrorHistory::CAPACITY]{};
+    const uint8_t n = st.errors->copyActive(buf, ErrorHistory::CAPACITY);
+    size_t used = 0;
+    for (uint8_t i = 0; i < n; i++) {
+        const int w = snprintf(out + used, outSz - used, "%s%u:%lu",
+                               (i ? "," : ""),
+                               (unsigned)buf[i].code,
+                               (unsigned long)buf[i].uptimeSec);
+        if (w <= 0 || (size_t)w >= outSz - used) break;
+        used += (size_t)w;
+    }
 }
 
 static void emitGsmPayload_(PayloadPrint& gp, const SseStatusPort& st) {
@@ -112,7 +129,7 @@ static void invalidateDedupState() {
     gLastProgramHash = 0;
     gLastMode[0] = '\0';
     gLastGsm[0] = '\0';
-    gLastErr[0] = '\0';
+    gLastErrFp[0] = '\0';
     gLastFlashOp = FlashCommitOp::NONE;
     gLastFlashPending = false;
     gLastFlashOk = true;
@@ -267,19 +284,19 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
         }
     }
 
-    const char* curErr = st.errors ? st.errors->getMessage() : "OK";
-    if (strcmp(gLastErr, curErr) != 0) {
+    char curErrFp[96]{};
+    formatActiveErrorsFingerprint_(curErrFp, sizeof(curErrFp), st);
+    if (strcmp(gLastErrFp, curErrFp) != 0) {
         if (!sseTickMoreEventsSafe(ws)) return;
         PayloadPrint ep;
         ep.print('{');
         bool ce = false;
         commaOut(ep, &ce);
-        ep.print("\"lastError\":\"");
-        escapeJsonString(ep, curErr);
-        ep.print('"');
+        ep.print("\"activeErrors\":");
+        emitActiveErrorsArray(ep, st);
         ep.print('}');
         if (sendJsonEvent(ws, "error", ep, statusQueueMax)) {
-            strlcpy(gLastErr, curErr, sizeof(gLastErr));
+            strlcpy(gLastErrFp, curErrFp, sizeof(gLastErrFp));
         }
     }
 

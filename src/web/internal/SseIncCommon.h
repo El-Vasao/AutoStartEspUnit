@@ -95,6 +95,7 @@ inline void escapeJsonString(Print& p, const char* s) {
 }
 
 void emitRelayInputTempVoltageMaps(Print& p, bool* needComma, const SseStatusPort& st);
+void emitActiveErrorsArray(Print& p, const SseStatusPort& st);
 void emitHardwarePayload(Print& p, const SseStatusPort& st);
 void emitRuntimePayload(Print& p, const SseStatusPort& st);
 void emitProgramPayload(Print& p, const SseStatusPort& st);

@@ -11,6 +11,8 @@
 #include "common/ErrorCodes.h"
 #include "program/CompiledStep.h"
 
+class SensorsController;
+
 enum class ConfigLoadOutcome : uint8_t {
     OkFromFile,
     OkAfterFactoryDefaultsWrittenRebootRecommended,
@@ -43,7 +45,10 @@ public:
     /// Сериализовать текущий `baseCache` в JSON (wire-формат как раньше; сейчас — потоковая печать, без ArduinoJson).
     void emitCurrentBaseConfigJson(Print& p) const;
 
-    bool applyPostedConfigJsonFile(const char* tmpPath);
+    /// Apply posted `/config/save` body. If body contains ephemeral
+    /// `vehicle.adc_calibrate_voltage`, asks `sensors` for coeff (raw stays inside sensors).
+    /// Calibrate field is never persisted.
+    bool applyPostedConfigJsonFile(const char* tmpPath, SensorsController& sensors);
     bool commitPostedProgramFile(const char* tmpPath, uint8_t* outId = nullptr);
 
     bool loadProgramCompiled(uint8_t id, CompiledStep* outSteps, uint8_t maxSteps,

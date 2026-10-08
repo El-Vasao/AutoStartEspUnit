@@ -173,7 +173,7 @@
           this._baselineObj = APP.utils.deepClone(cfg);
           this.dirty = false;
         } catch (e) {
-          Alpine.store('uiNotification').error('Ошибка загрузки конфигурации');
+          Alpine.store('uiNotification').error('Не удалось загрузить настройки');
         } finally {
           if (manageLoading) this.loading = false;
         }
@@ -212,6 +212,10 @@
               const n = Number(raw);
               if (Number.isFinite(n)) veh.adc_voltage_coeff = n;
             }
+            // Ephemeral FE calibrate input — never persisted by device; drop leftovers after reload.
+            if (Object.prototype.hasOwnProperty.call(veh, 'adc_calibrate_voltage')) {
+              delete veh.adc_calibrate_voltage;
+            }
           }
         } catch (e) {}
 
@@ -240,7 +244,7 @@
           const result = await APP.api.runFlashWrite({
             Alpine,
             busyTitle: 'Сохранение',
-            busyMessage: 'Сохранение настроек…',
+            busyMessage: 'Запись настроек…',
             expectedLastOp: 'save_config',
             timeoutMsCommit: 12000,
             request: async () => await APP.api.apiJson(configSaveUrl(), {
@@ -259,7 +263,7 @@
               await self.load(true);
               Alpine.store('uiBusy').showOk({
                 title: 'Сохранено',
-                message: 'Настройки записаны во flash. Требуется перезагрузка устройства.',
+                message: 'Настройки записаны. Нужна перезагрузка.',
                 okLabel: 'OK'
               });
             }
@@ -268,17 +272,17 @@
           if (result.busy409) return;
 
           if (result.timeout) {
-            Alpine.store('uiStatusBar').setHardwareError('Нет подтверждения записи во flash. Проверьте соединение и при необходимости перезагрузите устройство.');
+            Alpine.store('uiStatusBar').setHardwareError('Нет подтверждения записи. Проверьте связь.');
             return;
           }
           if (!result.ok) {
             // If validation errors already set above, do not overwrite them with generic message.
             if (!this.validationErrors?.length) {
-              Alpine.store('uiStatusBar').setHardwareError('Не удалось сохранить настройки. Перезагрузите устройство и повторите попытку.');
+              Alpine.store('uiStatusBar').setHardwareError('Не удалось сохранить. Перезагрузите и повторите.');
             }
           }
         } catch (e) {
-          Alpine.store('uiStatusBar').setHardwareError('Ошибка сети при сохранении. Проверьте соединение; при необходимости перезагрузите устройство.');
+          Alpine.store('uiStatusBar').setHardwareError('Ошибка сети при сохранении.');
         } finally {
           this.loading = false;
         }
@@ -373,6 +377,13 @@
             const v = getByPath(this, path);
             // Do not fabricate missing values into the outgoing payload (prevents false diffs/highlights).
             if (v === undefined) continue;
+            // Empty number inputs stay out of the payload (Ajv + no accidental defaults).
+            if (String(f?.type || '') === 'number' && (v === '' || v == null)) continue;
+            // Ephemeral calibrate: only send when a positive measured voltage is present.
+            if (path === 'vehicle.adc_calibrate_voltage') {
+              const n = Number(v);
+              if (!Number.isFinite(n) || !(n > 0)) continue;
+            }
             setByPath(out, path, v);
           }
         }

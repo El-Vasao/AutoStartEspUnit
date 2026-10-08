@@ -125,10 +125,15 @@ public:
         ii_ = 255;
         junkNest_ = 0;
         seenActive_ = false;
+        hasAdcCalibrate_ = false;
+        adcCalibrateVoltage_ = 0.0f;
         trig_ = TriggerConfig{};
         ttrig_ = TempTriggerConfig{};
         strig_ = ScheduleTriggerConfig{};
     }
+
+    bool hasAdcCalibrate() const { return hasAdcCalibrate_; }
+    float adcCalibrateVoltage() const { return adcCalibrateVoltage_; }
 
     void endDocument() override {}
 
@@ -329,7 +334,11 @@ public:
                 break;
             case St::Vehicle:
                 if (streq(pending_, "adc_voltage_coeff")) t_->vehicle.adc_voltage_coeff = parseF(v, 1.0f);
-                else if (streq(pending_, "starter_max_time_sec"))
+                else if (streq(pending_, "adc_calibrate_voltage")) {
+                    // Ephemeral: not stored in BaseConfig; used only on posted apply.
+                    hasAdcCalibrate_ = true;
+                    adcCalibrateVoltage_ = parseF(v, 0.0f);
+                } else if (streq(pending_, "starter_max_time_sec"))
                     t_->vehicle.starter_max_time_sec = parseU16(v, 5);
                 else if (streq(pending_, "wait_after_start_sec"))
                     t_->vehicle.wait_after_start_sec = parseU16(v, 10);
@@ -496,13 +505,20 @@ private:
     bool failed_{false};
     bool rootNotObject_{false};
     bool sawRootObject_{false};
+
+    bool hasAdcCalibrate_{false};
+    float adcCalibrateVoltage_{0.0f};
 };
 
 } // namespace
 
-bool parseBaseConfigStreamingFromFile(File& file, BaseConfig& cfg) {
+bool parseBaseConfigStreamingFromFile(File& file, BaseConfig& cfg,
+                                      bool* outHasAdcCalibrate,
+                                      float* outAdcCalibrateVoltage) {
     BaseConfigListener listener(cfg);
     jsonStreamingParseWholeFile(file, listener);
+    if (outHasAdcCalibrate) *outHasAdcCalibrate = listener.hasAdcCalibrate();
+    if (outAdcCalibrateVoltage) *outAdcCalibrateVoltage = listener.adcCalibrateVoltage();
     if (listener.rootNotObject()) return true;
     if (!listener.sawRootObject()) return false;
     return !listener.failed();

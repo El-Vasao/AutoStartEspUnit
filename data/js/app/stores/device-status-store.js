@@ -20,6 +20,15 @@
     return ids.map(id => mapFn(valueMap[id], id));
   }
 
+  function normalizeActiveErrors(raw) {
+    if (!Array.isArray(raw)) return null;
+    return raw.map((e) => ({
+      code: Number(e?.code) || 0,
+      msg: String(e?.msg || ''),
+      active: e?.active === undefined ? true : !!e.active,
+    }));
+  }
+
   APP.stores.registerDeviceStatusStore = function registerDeviceStatusStore(Alpine) {
     Alpine.store('deviceStatus', {
       mode: '—',
@@ -46,7 +55,7 @@
       timerRemaining: 0,
       version: '—',
       freeHeap: null,
-      lastError: '—',
+      activeErrors: [],
       gsmState: '—',
       flashCommit: { pending: false, lastOp: 'none', lastOk: true, lastMillis: 0 },
       loaded: false,
@@ -56,6 +65,19 @@
           return APP.uiMaps?.badges?.statusMode?.(this.mode) || { text: this.mode || '—', class: 'tone-neutral' };
         } catch (e) {
           return { text: this.mode || '—', class: 'tone-neutral' };
+        }
+      },
+
+      get activeErrorsText() {
+        try {
+          const list = Array.isArray(this.activeErrors) ? this.activeErrors : [];
+          const msgs = list
+            .filter(e => e && (e.active === undefined || !!e.active))
+            .map(e => String(e.msg || '').trim())
+            .filter(Boolean);
+          return msgs.length ? msgs.join(', ') : '—';
+        } catch (e) {
+          return '—';
         }
       },
 
@@ -173,12 +195,15 @@
                 if (APP.utils.LS.get('otaPostRebootGoPanel') === '1') {
                   APP.utils.LS.del('otaPostRebootGoPanel');
                   Alpine.store('uiState').setActiveTab('panel');
-                  Alpine.store('uiStatusBar').flash('Обновление завершено.', 'success', 5000);
+                  Alpine.store('uiStatusBar').flash('Обновление завершено', 'success', 5000);
                 }
               }
             }
             if (data.freeHeap !== undefined) this.freeHeap = data.freeHeap;
-            if (Object.prototype.hasOwnProperty.call(data, 'lastError')) this.lastError = data.lastError || '—';
+            {
+              const next = normalizeActiveErrors(data.activeErrors);
+              if (next) this.activeErrors = next;
+            }
             if (typeof data.epoch === 'number') this.epoch = data.epoch;
             if (data.synced !== undefined) this.timeSynced = !!data.synced;
             if (data.stale !== undefined) this.timeStale = !!data.stale;
@@ -220,9 +245,11 @@
           case 'gsm':
             if (Object.prototype.hasOwnProperty.call(data, 'gsmState')) this.gsmState = data.gsmState || '—';
             break;
-          case 'error':
-            if (data.lastError) this.lastError = data.lastError;
+          case 'error': {
+            const next = normalizeActiveErrors(data.activeErrors);
+            if (next) this.activeErrors = next;
             break;
+          }
           default:
             break;
         }
@@ -261,7 +288,7 @@
             if (APP.utils.LS.get('otaPostRebootGoPanel') === '1') {
               APP.utils.LS.del('otaPostRebootGoPanel');
               Alpine.store('uiState').setActiveTab('panel');
-              Alpine.store('uiStatusBar').flash('Обновление завершено.', 'success', 5000);
+              Alpine.store('uiStatusBar').flash('Обновление завершено', 'success', 5000);
             }
           }
         }
@@ -297,7 +324,10 @@
         if (data.engineRunning !== undefined) this.engineRunning = data.engineRunning;
         if (data.timerRemaining !== undefined) this.timerRemaining = data.timerRemaining;
         if (data.freeHeap !== undefined) this.freeHeap = data.freeHeap;
-        if (data.lastError) this.lastError = data.lastError;
+        {
+          const next = normalizeActiveErrors(data.activeErrors);
+          if (next) this.activeErrors = next;
+        }
         if (data && Object.prototype.hasOwnProperty.call(data, 'gsmState')) this.gsmState = data.gsmState || '—';
         if (data.flashCommit) this.flashCommit = data.flashCommit;
         this.loaded = true;

@@ -17,7 +17,7 @@ struct ErrorHistoryEntry {
 };
 
 /**
- * Wire/snapshot POD for one undelivered error (no ErrorCodes.h dependency beyond uint8).
+ * Wire/snapshot POD for one undelivered/active error (no ErrorCodes.h dependency beyond uint8).
  */
 struct ErrorSnapshotEntry {
     uint8_t code{0};
@@ -27,7 +27,7 @@ struct ErrorSnapshotEntry {
 };
 
 /**
- * RTC block: full history ring + current active code.
+ * RTC block: full history ring + current (most recent) active code.
  * Survives soft reset; not reliable across full power loss.
  */
 struct RtcErrorBlock {
@@ -44,7 +44,7 @@ struct RtcErrorBlock {
 } __attribute__((aligned(4)));
 
 /**
- * Error manager: current error + history ring + RTC persist + MQTT delivery flags.
+ * Error manager: multi-active codes + history ring + RTC persist + MQTT delivery flags.
  */
 class ErrorManager {
 public:
@@ -52,6 +52,8 @@ public:
 
     void set(ErrorCode err);
     void clear();
+    /// Deactivate only matching code; recompute current from remaining actives.
+    void clear(ErrorCode code);
 
     /// Boot-only: always append undelivered fact (does not erase prior RTC history).
     void recordBootReset(ErrorCode err);
@@ -59,6 +61,7 @@ public:
     ErrorCode get() const { return _lastError; }
     const char* getMessage() const { return errorCodeToString(_lastError); }
     uint32_t getTime() const { return _errorTime; }
+    bool isActive(ErrorCode code) const;
 
     void loadFromRtc();
     void saveToRtc();
@@ -66,6 +69,9 @@ public:
 
     /// Newest-first undelivered copy for MQTT status. Returns count written.
     uint8_t copyUndelivered(ErrorSnapshotEntry* out, uint8_t cap) const;
+
+    /// Newest-first currently active errors (for UI/SSE). Returns count written.
+    uint8_t copyActive(ErrorSnapshotEntry* out, uint8_t cap) const;
 
     /// Mark matching entries delivered after successful status PUBLISH stage.
     void markDelivered(const ErrorSnapshotEntry* sent, uint8_t n);
@@ -82,6 +88,7 @@ private:
 
     void pushFront_(ErrorHistoryEntry e);
     void deactivateActives_();
+    void recomputeCurrent_();
     void persist_();
 
     static constexpr uint32_t RTC_MAGIC = 0xE11A70CCu; ///< bumped vs single-record layout

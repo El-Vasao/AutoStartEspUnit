@@ -14,9 +14,7 @@ void GSMController::handleRegistering() {
     if (_cregStat == 1 || _cregStat == 5) {
         clearResponse();
         _retryCount = 0;
-        if (core.getErrorManager().get() == ErrorCode::GSM_REG_FAIL) {
-            core.getErrorManager().clear();
-        }
+        core.getErrorManager().clear(ErrorCode::GSM_REG_FAIL);
         changeState(GSMState::GPRS_SETUP);
         return;
     }
@@ -46,9 +44,7 @@ void GSMController::handleRegistering() {
         logRxSnippet("CREG");
         clearResponse();
         _retryCount = 0;
-        if (core.getErrorManager().get() == ErrorCode::GSM_REG_FAIL) {
-            core.getErrorManager().clear();
-        }
+        core.getErrorManager().clear(ErrorCode::GSM_REG_FAIL);
         changeState(GSMState::GPRS_SETUP);
         return;
     }

@@ -92,7 +92,7 @@
           const path = v().errorToPath?.(e) || '';
           if (!path) continue;
           if (!out[path]) out[path] = [];
-          out[path].push(v().errorToMessage?.(e) || 'Некорректное значение');
+          out[path].push(v().errorToMessage?.(e) || 'Неверное значение');
         }
         return { ok, errorsByPath: out };
       },
@@ -100,8 +100,7 @@
       validateProgramDataHard(data) {
         const validate = this._validateProgram;
         if (!validate) {
-          const reason = String(this._lastInitError || '');
-          return { ok: false, errorsByPath: { __schema__: [reason ? `Валидация недоступна: ${reason}` : 'Валидация недоступна (схема не загружена)'] } };
+          return { ok: false, errorsByPath: { __schema__: ['Проверка недоступна'] } };
         }
         return this.validateProgramData(data);
       },
@@ -116,7 +115,7 @@
           const path = v().errorToPath?.(e) || '';
           if (!path) continue;
           if (!out[path]) out[path] = [];
-          out[path].push(v().errorToMessage?.(e) || 'Некорректное значение');
+          out[path].push(v().errorToMessage?.(e) || 'Неверное значение');
         }
         return { ok, errorsByPath: out };
       }

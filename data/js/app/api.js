@@ -111,10 +111,10 @@
         }
       }
 
-      if (status === 409) return 'Устройство занято (flash операция). Повторите позже.';
+      if (status === 409) return 'Устройство занято. Повторите позже.';
       if (status === 413) return 'Слишком большой запрос.';
-      if (status >= 500) return 'Ошибка устройства.';
-      if (status) return `Ошибка HTTP ${status}`;
+      if (status >= 500) return 'Ошибка устройства';
+      if (status) return `Ошибка ${status}`;
       return 'Ошибка сети';
     } catch (e) {
       return 'Ошибка';
@@ -165,7 +165,7 @@
   api.runFlashWrite = async function runFlashWrite({
     Alpine,
     busyTitle = 'Сохранение',
-    busyMessage = 'Идёт запись…',
+    busyMessage = 'Запись…',
     request,
     expectedLastOp,
     timeoutMsCommit,
@@ -206,11 +206,11 @@
       });
 
       if (res.timeout) {
-        try { Alpine.store('uiNotification')?.warning?.('Нет подтверждения записи во flash. Проверьте соединение.'); } catch (e) {}
+        try { Alpine.store('uiNotification')?.warning?.('Нет подтверждения записи. Проверьте связь.'); } catch (e) {}
         return { ok: false, timeout: true, status, data };
       }
       if (!res.ok) {
-        try { Alpine.store('uiNotification')?.error?.('Не удалось записать во flash.'); } catch (e) {}
+        try { Alpine.store('uiNotification')?.error?.('Не удалось записать.'); } catch (e) {}
         return { ok: false, commitOk: false, status, data };
       }
 

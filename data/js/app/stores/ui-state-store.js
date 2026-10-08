@@ -118,7 +118,7 @@
         const degraded = !!(opts && opts.degraded);
         this.initLock = false;
         syncLocked(this);
-        this.setInitProgress(100, degraded ? 'Открыто без полного статуса' : 'Готово');
+        this.setInitProgress(100, degraded ? 'Статус неполный' : 'Готово');
         this.setInitPhase(degraded ? 'degraded' : 'ready');
         this.dismissBootSplash();
         forceClearUiLockedDom();
@@ -126,7 +126,7 @@
 
       failInit(message, phase) {
         this.initFailed = true;
-        this.initError = String(message || 'Ошибка инициализации UI.');
+        this.initError = String(message || 'Ошибка загрузки');
         this.initLock = false;
         syncLocked(this);
         this.setInitPhase(phase || 'degraded');

@@ -99,9 +99,9 @@ function initAlpineApp() {
           this.$store.uiState.unsavedHint = true;
           this.$store.uiDialog?.show?.({
             title: 'Несохранённые изменения',
-            message: 'Не забудьте сохранить изменения программы',
-            extraLabel: 'Отменить\nизменения',
-            cancelLabel: 'Позже',
+            message: 'Есть несохранённые изменения программы.',
+            extraLabel: 'Отменить',
+            cancelLabel: 'Остаться',
             confirmLabel: 'Сохранить',
             onCancel: () => {
               // Leave without saving (changes remain in editor)
@@ -142,9 +142,9 @@ function initAlpineApp() {
         this.$store.uiState.unsavedHint = true;
         this.$store.uiDialog?.show?.({
           title: 'Несохранённые изменения',
-          message: 'Не забудьте сохранить изменения настроек',
-          extraLabel: 'Отменить\nизменения',
-          cancelLabel: 'Позже',
+          message: 'Есть несохранённые изменения настроек.',
+          extraLabel: 'Отменить',
+          cancelLabel: 'Остаться',
           confirmLabel: 'Сохранить',
           onCancel: () => {
             go();

@@ -56,7 +56,7 @@
     version: '—',
     uptime: 0,
     freeHeap: null,
-    lastError: '—',
+    activeErrors: [],
     relays: [],
     inputs: [],
     inputFrequencies: [],

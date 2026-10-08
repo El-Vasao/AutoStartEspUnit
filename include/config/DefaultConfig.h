@@ -30,7 +30,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "publish_interval_sec": 60
   },
   "vehicle": {
-    "adc_voltage_coeff": 10,
+    "adc_voltage_coeff": 0.004,
     "starter_max_time_sec": 5,
     "wait_after_start_sec": 10,
     "engine_running_voltage_threshold": 13.2,

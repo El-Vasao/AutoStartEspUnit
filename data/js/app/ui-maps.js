@@ -24,13 +24,13 @@
     statusMode(raw) {
       const v = String(raw || '').trim();
       const map = {
-        boot: { text: 'Система: Загрузка', tone: 'info' },
-        emergency_ap: { text: 'Система: Авария', tone: 'danger' },
-        setup_ap: { text: 'Система: Настройка', tone: 'warning' },
-        normal: { text: 'Система: Норма', tone: 'success' },
-        normal_silent: { text: 'Система: Тихий', tone: 'success' },
-        ota_update: { text: 'Система: Обновление', tone: 'warning' },
-        reboot_required: { text: 'Система: Перезагрузите', tone: 'danger' },
+        boot: { text: 'Загрузка', tone: 'info' },
+        emergency_ap: { text: 'Авария', tone: 'danger' },
+        setup_ap: { text: 'Настройка', tone: 'warning' },
+        normal: { text: 'Норма', tone: 'success' },
+        normal_silent: { text: 'Тихий', tone: 'success' },
+        ota_update: { text: 'Прошивка', tone: 'warning' },
+        reboot_required: { text: 'Нужна перезагрузка', tone: 'danger' },
       };
 
       const hit = map[v];
@@ -44,14 +44,14 @@
     gsmState(raw) {
       const v = String(raw || '').trim().toUpperCase();
       const map = {
-        IDLE: { text: 'GSM: Ожидание', tone: 'neutral' },
-        INIT: { text: 'GSM: Инициализация', tone: 'info' },
-        REGISTERING: { text: 'GSM: Регистрация', tone: 'info' },
-        GPRS_SETUP: { text: 'GSM: APN', tone: 'info' },
-        GPRS_ATTACH: { text: 'GSM: GPRS attach', tone: 'info' },
-        GPRS_GETIP: { text: 'GSM: IP', tone: 'info' },
-        READY: { text: 'GSM: Готов', tone: 'success' },
-        ERROR: { text: 'GSM: Ошибка', tone: 'danger' },
+        IDLE: { text: 'GSM: ожидание', tone: 'neutral' },
+        INIT: { text: 'GSM: запуск', tone: 'info' },
+        REGISTERING: { text: 'GSM: сеть', tone: 'info' },
+        GPRS_SETUP: { text: 'GSM: интернет', tone: 'info' },
+        GPRS_ATTACH: { text: 'GSM: подключение', tone: 'info' },
+        GPRS_GETIP: { text: 'GSM: адрес', tone: 'info' },
+        READY: { text: 'GSM: готов', tone: 'success' },
+        ERROR: { text: 'GSM: ошибка', tone: 'danger' },
       };
 
       const hit = map[v];

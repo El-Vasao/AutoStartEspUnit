@@ -64,7 +64,7 @@
           const path = v().errorToPath?.(e) || '';
           if (!path) continue;
           if (!out[path]) out[path] = [];
-          out[path].push(v().errorToMessage?.(e) || 'Некорректное значение');
+          out[path].push(v().errorToMessage?.(e) || 'Неверное значение');
         }
         return { ok, errorsByPath: out };
       },
@@ -73,8 +73,7 @@
         // Write-hard validation: must not allow saving without an initialized validator.
         const validate = this._validate;
         if (!validate) {
-          const reason = String(this._lastInitError || '');
-          return { ok: false, errorsByPath: { __schema__: [reason ? `Валидация недоступна: ${reason}` : 'Валидация недоступна (схема не загружена)'] } };
+          return { ok: false, errorsByPath: { __schema__: ['Проверка недоступна'] } };
         }
         return this.validateData(data);
       },
@@ -86,7 +85,7 @@
         if (res.ok) return { ok: true, message: '' };
         const msgs = res.errorsByPath[p];
         if (!msgs || !msgs.length) return { ok: true, message: '' };
-        return { ok: false, message: String(msgs[0] || 'Некорректное значение') };
+        return { ok: false, message: String(msgs[0] || 'Неверное значение') };
       }
     });
   };

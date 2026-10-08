@@ -108,7 +108,7 @@
 
         // --- bootstrap (inventory + live snapshot) ---
         setPhase('bootstrap');
-        setProgress(8, 'Bootstrap…');
+        setProgress(8, 'Старт…');
         try {
           const apiJson = window.APP?.api?.apiJson;
           const bootstrapUrl = window.APP?.api?.endpoints?.bootstrap || window.APP?.contract?.api?.endpoints?.bootstrap || '/bootstrap';
@@ -123,7 +123,7 @@
           let ok = false;
           for (let i = 0; i < 6; i++) {
             if (finished) break;
-            setProgress(10 + i * 2, `Bootstrap (попытка ${i + 1})…`);
+            setProgress(10 + i * 2, `Загрузка (${i + 1})…`);
             const res = await runBootstrapRequest();
             if (res?.__timeout) pushReason('bootstrap_timeout', `attempt=${i + 1}`);
             if (res?.__error) pushReason('bootstrap_error', res.__error?.message || res.__error);
@@ -141,13 +141,13 @@
           }
           if (!ok || !hasValidBootstrap()) {
             pushReason('bootstrap_unavailable', 'GET /bootstrap failed');
-            failInit('Не удалось загрузить bootstrap (/bootstrap). UI заблокирован.');
+            failInit('Не удалось загрузить устройство');
           } else {
-            setProgress(28, 'Bootstrap готов');
+            setProgress(28, 'Устройство готово');
           }
         } catch (e) {
           pushReason('bootstrap_exception', e?.message || e);
-          failInit('Не удалось загрузить bootstrap. UI заблокирован.');
+          failInit('Не удалось загрузить устройство');
         }
 
         if (Alpine.store('uiState')?.initFailed || finished) {
@@ -158,7 +158,7 @@
         await phaseGap();
         if (finished) { startSseBackgroundOnly(bootstrapUiLease); return; }
         setPhase('schemas');
-        setProgress(35, 'Схема настроек…');
+        setProgress(35, 'Схема UI…');
         try {
           for (let i = 0; i < 3; i++) {
             if (finished) break;
@@ -171,7 +171,7 @@
 
         await phaseGap();
         if (finished) { startSseBackgroundOnly(bootstrapUiLease); return; }
-        setProgress(42, 'Валидатор настроек…');
+        setProgress(42, 'Проверка…');
         try {
           for (let i = 0; i < 2; i++) {
             if (finished) break;
@@ -184,7 +184,7 @@
         await phaseGap();
         if (finished) { startSseBackgroundOnly(bootstrapUiLease); return; }
         setPhase('data');
-        setProgress(52, 'Конфигурация…');
+        setProgress(52, 'Настройки…');
         try {
           for (let i = 0; i < 4; i++) {
             if (finished) break;
@@ -197,7 +197,7 @@
 
         await phaseGap();
         if (finished) { startSseBackgroundOnly(bootstrapUiLease); return; }
-        setProgress(62, 'Схема программ…');
+        setProgress(62, 'Редактор программ…');
         try {
           for (let i = 0; i < 3; i++) {
             if (finished) break;
@@ -210,7 +210,7 @@
 
         await phaseGap();
         if (finished) { startSseBackgroundOnly(bootstrapUiLease); return; }
-        setProgress(70, 'Список программ…');
+        setProgress(70, 'Программы…');
         try {
           for (let i = 0; i < 3; i++) {
             if (finished) break;
@@ -232,13 +232,13 @@
           const progSchemaOk = !!Alpine.store('programStepsUiSchema')?.loaded;
           if (!schemaOk || !settingsOk || !progSchemaOk) {
             const msg = (!schemaOk && !settingsOk && !progSchemaOk)
-              ? 'Не удалось загрузить схему, конфигурацию и схему программ.'
-              : (!schemaOk ? 'Не удалось загрузить схему настроек.'
-                    : (!settingsOk ? 'Не удалось загрузить конфигурацию.' : 'Не удалось загрузить схему редактора программ.'));
+              ? 'Не удалось загрузить интерфейс'
+              : (!schemaOk ? 'Не удалось загрузить настройки'
+                    : (!settingsOk ? 'Не удалось загрузить настройки' : 'Не удалось загрузить редактор программ'));
             failInit(msg);
           } else {
             setPhase('checklist');
-            setProgress(78, 'Чеклист готов');
+            setProgress(78, 'Данные готовы');
             initOk = true;
           }
         }
@@ -257,7 +257,7 @@
         await phaseGap();
         if (finished) { startSseBackgroundOnly(bootstrapUiLease); return; }
         setPhase('sse');
-        setProgress(82, 'Подключение SSE…');
+        setProgress(82, 'Поток статуса…');
         try { window.APP?.sse?.init?.(Alpine); } catch (e) { pushReason('sse_init_failed', e?.message || e); }
         try { if (bootstrapUiLease) window.APP?.sse?.configureHeartbeat?.(bootstrapUiLease); } catch (e) {}
 
@@ -269,7 +269,7 @@
         if (sseDelayMs > 0) await sleep(sseDelayMs);
         if (finished) return;
 
-        setProgress(86, 'Ждём статус устройства…');
+        setProgress(86, 'Ожидание статуса…');
         let panelReady = false;
         try {
           if (typeof window.APP?.sse?.startEvents !== 'function') {

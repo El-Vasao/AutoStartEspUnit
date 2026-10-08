@@ -7,14 +7,14 @@
     Alpine.store('deviceMaintenance', {
       performReboot() {
         Alpine.store('uiDialog').show({
-          title: 'Перезагрузка устройства',
-          message: 'Вы уверены, что хотите перезагрузить устройство?',
+          title: 'Перезагрузка',
+          message: 'Перезагрузить устройство?',
           onConfirm: async () => {
             try {
               // Soft UI guard: reboot/reset/OTA are assumed safe only in trusted network (device AP).
               // If user enabled debug mode, we still show confirmation above.
               await APP.api.apiJson(APP.api.endpoints?.reboot || '/reboot', { method: 'POST' });
-              Alpine.store('uiNotification').info('Перезагрузка...');
+              Alpine.store('uiNotification').info('Перезагрузка…');
             } catch (e) {
               Alpine.store('uiNotification').error('Ошибка сети');
             }
@@ -24,11 +24,11 @@
       performModemReboot() {
         Alpine.store('uiDialog').show({
           title: 'Перезагрузка модема',
-          message: 'Перезагрузить SIM800 (AT+CFUN=1,1)?',
+          message: 'Перезагрузить модем?',
           onConfirm: async () => {
             try {
               await APP.api.apiJson('/modem/reboot', { method: 'POST' });
-              Alpine.store('uiNotification').info('Перезагрузка модема запрошена...');
+              Alpine.store('uiNotification').info('Перезагрузка модема…');
             } catch (e) {
               Alpine.store('uiNotification').error('Ошибка сети');
             }
@@ -37,22 +37,22 @@
       },
       resetBaseConfig() {
         Alpine.store('uiDialog').show({
-          title: 'Сброс конфигурации',
-          message: 'Вы уверены, что хотите сбросить базовую конфигурацию к заводским настройкам? Это действие необратимо.',
+          title: 'Сброс настроек',
+          message: 'Сбросить настройки к заводским? Вернуть их нельзя.',
           onConfirm: async () => {
             try {
               const res = await APP.api.runFlashWrite({
                 Alpine,
-                busyTitle: 'Сохранение',
-                busyMessage: 'Сброс конфигурации…',
+                busyTitle: 'Сброс',
+                busyMessage: 'Сброс настроек…',
                 expectedLastOp: 'reset_config',
                 timeoutMsCommit: 8000,
                 request: async () => await APP.api.apiJson(APP.api.endpoints?.configReset || '/config/reset', { method: 'POST' }),
                 onCommitOk: async () => {
-                  Alpine.store('uiNotification').success('Конфигурация сброшена. Требуется перезагрузка.');
+                  Alpine.store('uiNotification').success('Настройки сброшены. Нужна перезагрузка.');
                   Alpine.store('uiBusy').showOk({
                     title: 'Сброс выполнен',
-                    message: 'Конфигурация сброшена. Требуется перезагрузка устройства.',
+                    message: 'Настройки сброшены. Нужна перезагрузка.',
                     okLabel: 'OK'
                   });
                 }
@@ -75,4 +75,3 @@
     });
   };
 })();
-

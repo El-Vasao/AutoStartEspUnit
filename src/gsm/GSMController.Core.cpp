@@ -275,11 +275,10 @@ bool GSMController::gsmParseStoredIprBaud(uint32_t& baudOut) const {
 }
 
 void GSMController::clearGsmBringupErrors_() {
-    const ErrorCode cur = core.getErrorManager().get();
-    if (cur == ErrorCode::GSM_NO_RESPONSE || cur == ErrorCode::GSM_REG_FAIL ||
-        cur == ErrorCode::GSM_APN_FAIL) {
-        core.getErrorManager().clear();
-    }
+    auto& err = core.getErrorManager();
+    err.clear(ErrorCode::GSM_NO_RESPONSE);
+    err.clear(ErrorCode::GSM_REG_FAIL);
+    err.clear(ErrorCode::GSM_APN_FAIL);
 }
 
 ErrorCode GSMController::classifyBearerFail_() const {
