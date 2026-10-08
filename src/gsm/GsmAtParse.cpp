@@ -66,11 +66,23 @@ bool isIpv4Line(const char* s) {
     return (parts == 3 && acc >= 0);
 }
 
-bool sapbrLineHasQuotedIpv4(const char* line) {
+bool sapbrLineHasUsableBearer(const char* line) {
     if (!line) return false;
     const char* p = strstr(line, "+SAPBR:");
     if (!p) return false;
-    const char* q1 = strchr(p, '\"');
+    p += 7;
+    while (*p == ' ' || *p == ':') p++;
+
+    // +SAPBR: <cid>,<status>,"<ip>"
+    char* end = nullptr;
+    (void)strtol(p, &end, 10); // cid
+    if (!end || end == p || *end != ',') return false;
+    end++;
+    while (*end == ' ') end++;
+    const long status = strtol(end, &end, 10);
+    if (status != 1) return false;
+
+    const char* q1 = strchr(end, '\"');
     if (!q1) return false;
     q1++;
     const char* q2 = strchr(q1, '\"');
@@ -80,23 +92,8 @@ bool sapbrLineHasQuotedIpv4(const char* line) {
     if (n == 0 || n >= sizeof(ip)) return false;
     memcpy(ip, q1, n);
     ip[n] = '\0';
-    int parts = 0;
-    int acc = -1;
-    for (const char* s = ip; *s; s++) {
-        const char c = *s;
-        if (c >= '0' && c <= '9') {
-            const int d = c - '0';
-            acc = (acc < 0) ? d : (acc * 10 + d);
-            if (acc > 255) return false;
-        } else if (c == '.') {
-            if (acc < 0) return false;
-            parts++;
-            acc = -1;
-        } else {
-            return false;
-        }
-    }
-    return (parts == 3 && acc >= 0);
+    if (strcmp(ip, "0.0.0.0") == 0) return false;
+    return isIpv4Line(ip);
 }
 
 size_t extractPhoneDigits(const char* in, char* out, size_t outCap) {

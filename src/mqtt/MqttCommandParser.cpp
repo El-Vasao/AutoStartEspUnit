@@ -1,10 +1,24 @@
 #include "mqtt/MqttCommandParser.h"
 
-#include <Arduino.h>
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 
 namespace {
+
+void copyTo(char* dst, size_t dstCap, const char* src) {
+    if (!dst || dstCap == 0) return;
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+    size_t i = 0;
+    while (src[i] && i + 1 < dstCap) {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+}
 
 uint8_t parseU8(const char* v) {
     if (!v || !*v) return 0;
@@ -150,14 +164,14 @@ bool parseMqttCommandJson(const char* json, MqttCommand& out) {
             switch (key) {
                 case Key::Id:
                     if (vbuf[0] == '\0' || strlen(vbuf) > MqttCmd::ID_MAX_LEN) return false;
-                    strlcpy(out.id, vbuf, sizeof(out.id));
+                    copyTo(out.id, sizeof(out.id), vbuf);
                     break;
                 case Key::Cmd:
-                    strlcpy(cmdStr, vbuf, sizeof(cmdStr));
+                    copyTo(cmdStr, sizeof(cmdStr), vbuf);
                     gotCmd = true;
                     break;
                 case Key::Name:
-                    strlcpy(nameStr, vbuf, sizeof(nameStr));
+                    copyTo(nameStr, sizeof(nameStr), vbuf);
                     break;
                 case Key::Program:
                     out.programId = parseU8(vbuf);

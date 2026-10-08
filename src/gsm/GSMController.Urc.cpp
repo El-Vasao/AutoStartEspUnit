@@ -199,7 +199,7 @@ void GSMController::handleAwaitLine(const char* line) {
     }
 
     if (_await == AwaitKind::IP) {
-        if (gsm_at::isIpv4Line(line) || gsm_at::sapbrLineHasQuotedIpv4(line)) {
+        if (gsm_at::isIpv4Line(line) || gsm_at::sapbrLineHasUsableBearer(line)) {
             _awaitGotIp = true;
             return;
         }

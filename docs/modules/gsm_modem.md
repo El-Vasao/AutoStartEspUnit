@@ -27,7 +27,7 @@
 
 - `INIT` может перейти сразу в `REGISTERING`, `GPRS_SETUP` или `READY` после resume-опроса (сеть и bearer уже в рабочем состоянии), иначе — цепочка `REGISTERING` → `GPRS_SETUP` → … → `READY` как ниже.
 - Типичный cold path после INIT: `REGISTERING` → `GPRS_SETUP` → `GPRS_ATTACH` → `GPRS_GETIP` → `READY`
-- **Warm modem (ребут только ESP):** contact (`AT`/`AT+CGMI`) + status probe (`CREG`/`CGATT`/`SAPBR=2,1`) — без `CFUN`, без повторного open bearer если IP уже есть **и** `gsm.apn*` совпадает с последним GPRS_SETUP. Иначе — `GPRS_SETUP` (Contype/APN/USER/PWD). `GPRS_ATTACH` тоже status-first: сначала `SAPBR=2,1`, open `SAPBR=1,1` только если IP нет; при ERROR open — повторный probe (часто bearer уже открыт). Смена `apn*` на READY → reattach через `GPRS_SETUP`.
+- **Warm modem (ребут только ESP):** contact (`AT`/`AT+CGMI`) + status probe (`CREG`/`CGATT`/`SAPBR=2,1`) — без `CFUN`, без повторного open bearer если SAPBR **status=1** и IP ≠ `0.0.0.0` **и** `gsm.apn*` совпадает с последним GPRS_SETUP. Иначе — `GPRS_SETUP` (Contype/APN/USER/PWD). `GPRS_ATTACH` тоже status-first: сначала `SAPBR=2,1`, open `SAPBR=1,1` только если usable bearer нет (`1,3,"0.0.0.0"` не считается up); при ERROR open — повторный probe (часто bearer уже открыт). Смена `apn*` на READY → reattach через `GPRS_SETUP`.
 - `ERROR` — восстановление с эскалацией (см. ниже)
 
 ### 2а) UART: гипотеза скорости и поиск baud
