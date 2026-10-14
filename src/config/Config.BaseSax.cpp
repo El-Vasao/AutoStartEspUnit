@@ -7,8 +7,10 @@
 
 #include "common/Constants.h"
 #include "config/ConfigTypes.h"
+#include "config/VehicleRules.h"
 
 #include <Arduino.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -47,7 +49,10 @@ uint8_t parseU8(const char* v, uint8_t def) {
 
 float parseF(const char* v, float def) {
     if (!v || !*v) return def;
-    return strtof(v, nullptr);
+    char* end = nullptr;
+    float f = strtof(v, &end);
+    if (!end || end == v || *end != '\0' || !isfinite(f)) return def;
+    return f;
 }
 
 int16_t parseI16(const char* v, int16_t def) {
@@ -339,15 +344,29 @@ public:
                     hasAdcCalibrate_ = true;
                     adcCalibrateVoltage_ = parseF(v, 0.0f);
                 } else if (streq(pending_, "starter_max_time_sec"))
-                    t_->vehicle.starter_max_time_sec = parseU16(v, 5);
+                    t_->vehicle.starter_max_time_sec = parseU16(v, StarterLimits::MAX_TIME_DEFAULT_SEC);
                 else if (streq(pending_, "wait_after_start_sec"))
-                    t_->vehicle.wait_after_start_sec = parseU16(v, 10);
+                    t_->vehicle.wait_after_start_sec = parseU16(v, StarterLimits::WAIT_AFTER_START_DEFAULT_SEC);
                 else if (streq(pending_, "engine_running_voltage_threshold"))
-                    t_->vehicle.engine_running_voltage_threshold = parseF(v, 13.2f);
+                    t_->vehicle.engine_running_voltage_threshold =
+                        parseF(v, StarterLimits::RUNNING_VOLTAGE_DEFAULT);
                 else if (streq(pending_, "engine_stopped_voltage_threshold"))
-                    t_->vehicle.engine_stopped_voltage_threshold = parseF(v, 12.8f);
+                    t_->vehicle.engine_stopped_voltage_threshold =
+                        parseF(v, StarterLimits::STOPPED_VOLTAGE_DEFAULT);
                 else if (streq(pending_, "starter_relay_id"))
                     t_->vehicle.starter_relay_id = parseU16(v, 2002);
+                else if (streq(pending_, "start_method"))
+                    t_->vehicle.start_method = vehicle_rules::startMethodFromString(v, StartMethod::Timed);
+                else if (streq(pending_, "start_input_id"))
+                    t_->vehicle.start_input_id = parseU16(v, 0);
+                else if (streq(pending_, "starter_crank_time_sec"))
+                    t_->vehicle.starter_crank_time_sec = parseF(v, StarterLimits::CRANK_TIME_DEFAULT_SEC);
+                else if (streq(pending_, "starter_retry_pause_sec"))
+                    t_->vehicle.starter_retry_pause_sec = parseU16(v, StarterLimits::RETRY_PAUSE_DEFAULT_SEC);
+                else if (streq(pending_, "starter_attempts"))
+                    t_->vehicle.starter_attempts = parseU8(v, StarterLimits::ATTEMPTS_DEFAULT);
+                else if (streq(pending_, "start_block_input_id"))
+                    t_->vehicle.start_block_input_id = parseU16(v, 0);
                 else if (streq(pending_, "engine_detection_source"))
                     strlcpy(t_->vehicle.engine_detection_source, v ? v : "voltage",
                             sizeof t_->vehicle.engine_detection_source);
@@ -491,8 +510,8 @@ private:
     BaseConfig* t_;
     St stk_[24]{};
     int sp_{-1};
-    // Longest config key is "engine_detection_source" (23 chars) + '\0'.
-    char pending_[24]{};
+    // Longest config keys are "engine_running_voltage_threshold" / "..._stopped_..." (32 chars).
+    char pending_[40]{};
     uint8_t si_{255};
     uint8_t ii_{255};
     bool seenActive_{false};

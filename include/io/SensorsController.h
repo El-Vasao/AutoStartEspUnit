@@ -97,6 +97,12 @@ public:
     /// True once the sliding ADC window is full (safe to calibrate).
     bool isAdcFilterReady() const { return _adcFillCount >= ADC::SAMPLES; }
 
+    /// Drop collected samples (e.g. the cranking dip); the average restarts from the next reading.
+    void resetVoltageWindow();
+
+    /// True once the window holds ADC::SAMPLES readings taken after the last reset.
+    bool isVoltageWindowFull() const { return _adcFillCount >= ADC::SAMPLES; }
+
     /// Derive `adc_voltage_coeff` from a multimeter reading. Uses private raw only;
     /// returns false if filter not ready, raw too low, or measuredVolts ≤ 0.
     bool computeAdcVoltageCoeff(float measuredVolts, float& outCoeff) const;

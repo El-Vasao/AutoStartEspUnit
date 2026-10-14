@@ -85,7 +85,7 @@
       validateProgramData(data) {
         const validate = this._validateProgram;
         if (!validate) return { ok: true, errorsByPath: {} };
-        const ok = !!validate(data);
+        let ok = !!validate(data);
         const errs = ok ? [] : (validate.errors || []);
         const out = {};
         for (const e of errs) {
@@ -94,6 +94,22 @@
           if (!out[path]) out[path] = [];
           out[path].push(v().errorToMessage?.(e) || 'Неверное значение');
         }
+
+        // Firmware rejects RELAY_* steps on the starter relay; only ENGINE_START drives it.
+        try {
+          const starterId = Number(Alpine.store('settings')?.vehicle?.starter_relay_id) || 0;
+          const steps = Array.isArray(data?.steps) ? data.steps : [];
+          if (starterId) {
+            steps.forEach((s, i) => {
+              if (!String(s?.action || '').startsWith('RELAY_')) return;
+              if ((Number(s?.relay_id) || 0) !== starterId) return;
+              const path = `steps.${i}.relay_id`;
+              if (!out[path]) out[path] = [];
+              out[path].push('Реле стартера управляется только шагом «Запуск двигателя»');
+              ok = false;
+            });
+          }
+        } catch (e) {}
         return { ok, errorsByPath: out };
       },
 

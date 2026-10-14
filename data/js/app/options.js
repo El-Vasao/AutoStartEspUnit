@@ -26,7 +26,8 @@
         return [];
       }
 
-      if (from === 'inputIds') {
+      // Input ids from settings, optionally filtered by type (0 = digital, 1 = pulse).
+      const inputIdsOfType = (type) => {
         const s = Alpine.store('settings');
         const list = Array.isArray(s?.inputs) ? s.inputs : [];
         const out = [{ value: 0, label: '— нет —' }];
@@ -34,10 +35,34 @@
           const item = list[idx] || {};
           const id = Number(item.id) || 0;
           if (!id) continue;
+          if (type !== undefined && (Number(item.type) || 0) !== type) continue;
           const label = Alpine.store('uiFormat')?.inputLabelById?.(id) || (Alpine.store('uiFormat')?.inputName?.(idx) || ('IN' + (idx + 1)));
           out.push({ value: id, label });
         }
         return out;
+      };
+
+      if (from === 'inputIds') return inputIdsOfType(undefined);
+      if (from === 'digitalInputIds') return inputIdsOfType(0);
+      if (from === 'pulseInputIds') return inputIdsOfType(1);
+
+      // ENGINE_START input follows vehicle.start_method: rpm → pulse inputs, input → digital inputs.
+      if (from === 'startInputIds') {
+        const method = String(Alpine.store('settings')?.vehicle?.start_method || 'timed');
+        return inputIdsOfType(method === 'rpm' ? 1 : 0);
+      }
+
+      // Relays for RELAY_* program steps: the starter relay is driven only by ENGINE_START.
+      if (from === 'programRelays') {
+        const st = Alpine.store('deviceStatus');
+        const hw = st?.hwMap;
+        const starterId = Number(Alpine.store('settings')?.vehicle?.starter_relay_id) || 0;
+        if (hw && Array.isArray(hw.relays) && hw.relays.length) {
+          return hw.relays
+            .map((r, idx) => ({ value: Number(r?.id) || 0, label: String(r?.label || ('K' + (idx + 1))) }))
+            .filter((o) => !starterId || o.value !== starterId);
+        }
+        return [];
       }
 
       if (from === 'sensors') {

@@ -6,6 +6,71 @@
   // Client-side validation (Ajv) is the primary UX; server still validates on save.
   const FRONTEND_VALIDATION_ENABLED = true;
 
+  // Mirrors firmware vehicle_rules::validate (Ajv covers ranges, this covers relations between fields).
+  function vehicleCrossErrors(cfg) {
+    const out = [];
+    const v = cfg?.vehicle || {};
+    const inputs = Array.isArray(cfg?.inputs) ? cfg.inputs : [];
+    const findInput = (id) => {
+      const n = Number(id) || 0;
+      if (!n) return null;
+      return inputs.find((x) => Number(x?.id) === n) || null;
+    };
+    const num = (x) => (x === '' || x == null ? NaN : Number(x));
+    const method = String(v.start_method || 'timed');
+
+    const maxT = num(v.starter_max_time_sec);
+    const crank = num(v.starter_crank_time_sec);
+    if (method === 'timed' && Number.isFinite(maxT) && Number.isFinite(crank) && crank > maxT) {
+      out.push({ field: 'vehicle.starter_crank_time_sec', message: 'Не больше максимального времени стартера' });
+    }
+
+    const run = num(v.engine_running_voltage_threshold);
+    const stop = num(v.engine_stopped_voltage_threshold);
+    if (Number.isFinite(run) && Number.isFinite(stop) && run <= stop) {
+      out.push({ field: 'vehicle.engine_running_voltage_threshold', message: 'Должен быть выше порога «заглушен»' });
+    }
+
+    if (method === 'rpm' || method === 'input') {
+      const f = 'vehicle.start_input_id';
+      const inp = findInput(v.start_input_id);
+      if (!inp) out.push({ field: f, message: 'Выберите вход' });
+      else if (inp.enabled === false) out.push({ field: f, message: 'Вход выключен' });
+      else if (method === 'rpm' && Number(inp.type) !== 1) out.push({ field: f, message: 'Нужен импульсный вход' });
+      else if (method === 'rpm' && !(Number(inp?.pulse?.threshold_rpm) > 0)) {
+        out.push({ field: f, message: 'У входа не задан порог оборотов' });
+      } else if (method === 'input' && Number(inp.type) !== 0) out.push({ field: f, message: 'Нужен дискретный вход' });
+    }
+
+    const blockId = Number(v.start_block_input_id) || 0;
+    if (blockId) {
+      const f = 'vehicle.start_block_input_id';
+      const inp = findInput(blockId);
+      if (!inp) out.push({ field: f, message: 'Вход не найден' });
+      else if (Number(inp.type) !== 0) out.push({ field: f, message: 'Нужен дискретный вход' });
+      else if ((method === 'rpm' || method === 'input') && blockId === (Number(v.start_input_id) || 0)) {
+        out.push({ field: f, message: 'Совпадает со входом запуска' });
+      }
+    }
+
+    if (String(v.engine_detection_source || '') === 'input') {
+      const f = 'vehicle.engine_input_id';
+      const inp = findInput(v.engine_input_id);
+      if (!inp) out.push({ field: f, message: 'Выберите вход' });
+      else if (Number(inp.type) === 1 && !(Number(inp?.pulse?.threshold_rpm) > 0)) {
+        out.push({ field: f, message: 'У входа не задан порог оборотов' });
+      }
+    }
+
+    const bs = cfg?.battery_saver || {};
+    const bsStart = num(bs.voltage_start_threshold);
+    const bsAbort = num(bs.voltage_abort_threshold);
+    if (Number.isFinite(bsStart) && Number.isFinite(bsAbort) && bsStart <= bsAbort) {
+      out.push({ field: 'battery_saver.voltage_start_threshold', message: 'Должен быть выше порога прерывания' });
+    }
+    return out;
+  }
+
   APP.stores.registerSettingsFormStore = function registerSettingsFormStore(Alpine) {
     Alpine.store('settingsForm', {
       _clientErrors: {},
@@ -433,6 +498,12 @@
             const msg = errorsByPath[p]?.[0];
             this._setClientError(p, msg ? String(msg) : '');
             if (msg) out.push({ field: p, message: String(msg) });
+          }
+
+          for (const e of vehicleCrossErrors(data)) {
+            if (!keep.has(e.field) || errorsByPath[e.field]?.[0]) continue;
+            this._setClientError(e.field, e.message);
+            out.push(e);
           }
         } catch (e) {}
         return out;

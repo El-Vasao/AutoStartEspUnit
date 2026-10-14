@@ -10,8 +10,8 @@ enum class ActionId : uint8_t {
     WAIT,
     RELAY_PULSE_ON_OFF_ON,
     RELAY_PULSE_OFF_ON_OFF,
-    STARTER_TIMED,
-    STARTER_WAIT_INPUT,
+    /// Engine start: algorithm, input, timings and attempts come from config.vehicle.
+    ENGINE_START,
 
     // Instant
     RELAY_ON,
@@ -44,4 +44,10 @@ enum class ComparisonOp : uint8_t {
 ActionId actionIdFromString(const char* action);
 /// Returns canonical action name, or "" for UNKNOWN / invalid.
 const char* actionIdToString(ActionId id);
+
+/// Step drives the starter relay (guards, battery saver, preemption rules).
+bool isStarterAction(ActionId id);
+
+/// Step addresses a relay through `relay_id` (RELAY_ON/OFF/TOGGLE/PULSE_*).
+bool isRelayAction(ActionId id);
 

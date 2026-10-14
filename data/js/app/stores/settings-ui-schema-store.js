@@ -38,6 +38,22 @@
             }
           };
         }
+        if (showIf.in && typeof showIf.in === 'object') {
+          const cond = showIf.in;
+          const values = Array.isArray(cond.values) ? cond.values : [];
+          const path = cond.path ? String(cond.path) : '';
+          const pathTmpl = cond.pathTmpl ? String(cond.pathTmpl) : '';
+          return function (store, i) {
+            try {
+              const p = pathTmpl ? pathTmpl.replaceAll('{i}', String(i ?? '0')) : path;
+              const cur = getByPath(store?.settings, p);
+              // eslint-disable-next-line eqeqeq
+              return values.some((v) => cur == v);
+            } catch (e) {
+              return false;
+            }
+          };
+        }
       } catch (e) {}
       return null;
     }

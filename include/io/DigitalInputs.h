@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "common/Constants.h"
+#include "io/RpmEstimator.h"
 
 // Структура для хранения состояния входа с антидребезгом
 struct DebouncedInput {
@@ -21,9 +22,10 @@ struct DebouncedInput {
  *
  * Инварианты/заметки:
  * - `getState()` возвращает “логическое активное состояние” с учётом `active_state` из конфига.
- * - для `PULSE_COUNTER` физического “уровня” нет: `getState()` становится true только если задан `threshold_rpm`.
- * - ISR увеличивает счётчик на каждом CHANGE, поэтому `pulses_per_rev` в конфиге должен соответствовать этому факту
- *   (если нужно считать только фронт — ISR/attachInterrupt надо менять на RISING/FALLING).
+ * - для `PULSE_COUNTER` физического “уровня” нет: `getState()` = подтверждённое превышение `threshold_rpm`
+ *   (держится непрерывно `Rpm::CONFIRM_MS`); без порога всегда false.
+ * - ISR ловит каждый CHANGE и пишет время перепада в `RpmEstimator`, поэтому `pulses_per_rev`
+ *   в конфиге — число перепадов (оба фронта) на оборот.
  *
  * Ограничение реализации:
  * - для счётчика импульсов есть обработчики только под 3 входа (handleInterrupt0..2).
@@ -84,8 +86,8 @@ public:
     // Частота в об/мин (для счётчика)
     float getFrequency(uint8_t index) const;
 
-    // Сырой счёт импульсов (с момента последнего сброса)
-    uint32_t getRawPulseCount(uint8_t index) const;
+    // Обороты держатся на пороге `threshold_rpm` не меньше `Rpm::CONFIRM_MS` (вход включён, счётчик)
+    bool isRpmConfirmed(uint8_t index) const;
 
     // ---- Runtime управление ----
 
@@ -103,9 +105,12 @@ private:
     bool prevStates[HardwareLimits::INPUTS];         ///< предыдущие состояния для детекции фронтов
     bool _runtimeEnabled[HardwareLimits::INPUTS];    ///< включён ли вход в рантайме
 
-    static volatile uint32_t _pulseCounts[HardwareLimits::INPUTS]; ///< счётчики импульсов (ISR)
-    float _frequencies[HardwareLimits::INPUTS];      ///< рассчитанные частоты (об/мин)
-    uint32_t _lastCalcTime[HardwareLimits::INPUTS];  ///< время последнего расчёта частоты
+    static RpmEstimator _rpm[HardwareLimits::INPUTS]; ///< времена перепадов (пишет ISR)
+    RpmConfirm _rpmConfirm[HardwareLimits::INPUTS];   ///< подтверждение порога оборотов
+    float _frequencies[HardwareLimits::INPUTS];      ///< рассчитанные обороты (об/мин)
+    uint32_t _lastCalcTime[HardwareLimits::INPUTS];  ///< время последнего расчёта оборотов
+
+    void resetRpm(uint8_t index);
 
     // Обработчики прерываний (по одному на вход)
     static void IRAM_ATTR handleInterrupt0();

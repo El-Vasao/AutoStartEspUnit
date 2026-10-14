@@ -18,7 +18,7 @@ void ProgramExecutor::update() {
     if (!_running) return;
 
     if (!_localSteps || !_localActions || _currentStep >= _localStepCount) {
-        abortWithError();
+        abortWithError("step table lost");
         return;
     }
 
@@ -36,9 +36,7 @@ void ProgramExecutor::update() {
             if (_rt.phase == 1) {
                 if (now - _rt.startedAtMs < step.ms) return;
                 if (relayIdx < 0) {
-                    logger.log("[ProgramExecutor] Invalid relay_id %u, aborting program\n", (unsigned)step.relay_id);
-                    abortWithError();
-                    core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                    abortInvalidRef("relay_id", step.relay_id);
                     return;
                 }
                 core.getRelay().off((uint8_t)relayIdx);
@@ -49,9 +47,7 @@ void ProgramExecutor::update() {
             if (_rt.phase == 2) {
                 if (now - _rt.startedAtMs < step.ms) return;
                 if (relayIdx < 0) {
-                    logger.log("[ProgramExecutor] Invalid relay_id %u, aborting program\n", (unsigned)step.relay_id);
-                    abortWithError();
-                    core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                    abortInvalidRef("relay_id", step.relay_id);
                     return;
                 }
                 core.getRelay().on((uint8_t)relayIdx);
@@ -65,9 +61,7 @@ void ProgramExecutor::update() {
             if (_rt.phase == 1) {
                 if (now - _rt.startedAtMs < step.ms) return;
                 if (relayIdx < 0) {
-                    logger.log("[ProgramExecutor] Invalid relay_id %u, aborting program\n", (unsigned)step.relay_id);
-                    abortWithError();
-                    core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                    abortInvalidRef("relay_id", step.relay_id);
                     return;
                 }
                 core.getRelay().on((uint8_t)relayIdx);
@@ -78,9 +72,7 @@ void ProgramExecutor::update() {
             if (_rt.phase == 2) {
                 if (now - _rt.startedAtMs < step.ms) return;
                 if (relayIdx < 0) {
-                    logger.log("[ProgramExecutor] Invalid relay_id %u, aborting program\n", (unsigned)step.relay_id);
-                    abortWithError();
-                    core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                    abortInvalidRef("relay_id", step.relay_id);
                     return;
                 }
                 core.getRelay().off((uint8_t)relayIdx);
@@ -90,87 +82,9 @@ void ProgramExecutor::update() {
             }
             return;
 
-        case ActionId::STARTER_TIMED:
-        case ActionId::STARTER_WAIT_INPUT: {
-            const auto& vcfg = config.getBase().vehicle;
-            const uint16_t starterRelayId = vcfg.starter_relay_id;
-            const int8_t starterRelay = HwMap::relayIndexById(starterRelayId);
-            if (starterRelay < 0) {
-                logger.log("[ProgramExecutor] Invalid starter_relay_id %u, aborting program\n",
-                           (unsigned)starterRelayId);
-                abortWithError();
-                core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
-                return;
-            }
-
-            if (_starter.attemptsLeft == 0) _starter.attemptsLeft = (step.retries ? step.retries : 1);
-
-            const uint32_t maxStarterMs = secToMs((uint32_t)vcfg.starter_max_time_sec);
-            const uint32_t attemptMs =
-                (actionId == ActionId::STARTER_TIMED) ? ((step.ms > 0 && step.ms < maxStarterMs) ? step.ms : maxStarterMs)
-                                                     : maxStarterMs;
-
-            if (_starter.phase == 1) {
-                bool stop = false;
-                if (actionId == ActionId::STARTER_WAIT_INPUT) {
-                    const int8_t inIdx = HwMap::inputIndexById(step.input_id);
-                    if (inIdx < 0) {
-                        logger.log("[ProgramExecutor] Invalid input_id %u, aborting program\n", (unsigned)step.input_id);
-                        core.getRelay().off((uint8_t)starterRelay);
-                        abortWithError();
-                        core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
-                        return;
-                    }
-                    if (core.getInputs().getState((uint8_t)inIdx)) stop = true;
-                }
-                if (!stop && (now - _starter.startedAtMs >= attemptMs)) stop = true;
-
-                if (stop) {
-                    core.getRelay().off((uint8_t)starterRelay);
-                    _starter.phase = 2;
-                    _starter.startedAtMs = now;
-                }
-                return;
-            }
-
-            if (_starter.phase == 2) {
-                const uint32_t waitAfterMs = secToMs((uint32_t)vcfg.wait_after_start_sec);
-                if (now - _starter.startedAtMs < waitAfterMs) return;
-
-                if (core.isEngineRunning()) {
-                    _starter.phase = 0;
-                    _starter.attemptsLeft = 0;
-                    nextStep();
-                    return;
-                }
-
-                if (_starter.attemptsLeft > 1) {
-                    _starter.attemptsLeft--;
-                    _starter.phase = 3;
-                    _starter.startedAtMs = now;
-                    return;
-                }
-
-                logger.log("[ProgramExecutor] Starter failed after retries, finishing program\n");
-                _starter.phase = 0;
-                _starter.attemptsLeft = 0;
-                finish(false);
-                return;
-            }
-
-            if (_starter.phase == 3) {
-                if (now - _starter.startedAtMs < ProgramTiming::STARTER_RETRY_GAP_MS) return;
-                core.getRelay().on((uint8_t)starterRelay);
-                _starter.phase = 1;
-                _starter.startedAtMs = now;
-                return;
-            }
-
-            core.getRelay().on((uint8_t)starterRelay);
-            _starter.phase = 1;
-            _starter.startedAtMs = now;
+        case ActionId::ENGINE_START:
+            updateStarter(now);
             return;
-        }
 
         case ActionId::CALL_OWNER:
         case ActionId::SMS_OWNER: {
@@ -202,16 +116,12 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
                (unsigned)step.timeout_ms);
 
     _rt.phase = 0;
-    _starter.phase = 0;
-    _starter.attemptsLeft = 0;
 
     switch (actionId) {
         case ActionId::RELAY_ON: {
             const int8_t idx = HwMap::relayIndexById(step.relay_id);
             if (idx < 0) {
-                logger.log("[ProgramExecutor] Invalid relay_id %u, aborting program\n", (unsigned)step.relay_id);
-                abortWithError();
-                core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                abortInvalidRef("relay_id", step.relay_id);
                 return;
             }
             core.getRelay().on((uint8_t)idx);
@@ -222,9 +132,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::RELAY_OFF: {
             const int8_t idx = HwMap::relayIndexById(step.relay_id);
             if (idx < 0) {
-                logger.log("[ProgramExecutor] Invalid relay_id %u, aborting program\n", (unsigned)step.relay_id);
-                abortWithError();
-                core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                abortInvalidRef("relay_id", step.relay_id);
                 return;
             }
             core.getRelay().off((uint8_t)idx);
@@ -235,9 +143,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::RELAY_TOGGLE: {
             const int8_t idx = HwMap::relayIndexById(step.relay_id);
             if (idx < 0) {
-                logger.log("[ProgramExecutor] Invalid relay_id %u, aborting program\n", (unsigned)step.relay_id);
-                abortWithError();
-                core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                abortInvalidRef("relay_id", step.relay_id);
                 return;
             }
             core.getRelay().toggle((uint8_t)idx);
@@ -248,9 +154,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::RELAY_PULSE_ON_OFF_ON: {
             const int8_t idx = HwMap::relayIndexById(step.relay_id);
             if (idx < 0) {
-                logger.log("[ProgramExecutor] Invalid relay_id %u, aborting program\n", (unsigned)step.relay_id);
-                abortWithError();
-                core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                abortInvalidRef("relay_id", step.relay_id);
                 return;
             }
             core.getRelay().on((uint8_t)idx);
@@ -262,9 +166,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::RELAY_PULSE_OFF_ON_OFF: {
             const int8_t idx = HwMap::relayIndexById(step.relay_id);
             if (idx < 0) {
-                logger.log("[ProgramExecutor] Invalid relay_id %u, aborting program\n", (unsigned)step.relay_id);
-                abortWithError();
-                core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                abortInvalidRef("relay_id", step.relay_id);
                 return;
             }
             core.getRelay().off((uint8_t)idx);
@@ -280,9 +182,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::INPUT_ENABLE: {
             const int8_t idx = HwMap::inputIndexById(step.input_id);
             if (idx < 0) {
-                logger.log("[ProgramExecutor] Invalid input_id %u, aborting program\n", (unsigned)step.input_id);
-                abortWithError();
-                core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                abortInvalidRef("input_id", step.input_id);
                 return;
             }
             core.getInputs().setRuntimeEnabled((uint8_t)idx, true);
@@ -293,9 +193,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::INPUT_DISABLE: {
             const int8_t idx = HwMap::inputIndexById(step.input_id);
             if (idx < 0) {
-                logger.log("[ProgramExecutor] Invalid input_id %u, aborting program\n", (unsigned)step.input_id);
-                abortWithError();
-                core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+                abortInvalidRef("input_id", step.input_id);
                 return;
             }
             core.getInputs().setRuntimeEnabled((uint8_t)idx, false);
@@ -349,12 +247,8 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
             nextStep();
             return;
 
-        case ActionId::STARTER_TIMED:
-        case ActionId::STARTER_WAIT_INPUT:
-            _starter.phase = 0;
-            _starter.startedAtMs = 0;
-            _starter.attemptsLeft = 0;
-            // Actual starter work happens in update().
+        case ActionId::ENGINE_START:
+            beginStarter();
             return;
 
         case ActionId::CALL_OWNER: {
@@ -390,4 +284,3 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
             return;
     }
 }
-

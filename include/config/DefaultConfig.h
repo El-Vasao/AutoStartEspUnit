@@ -36,6 +36,12 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "engine_running_voltage_threshold": 13.2,
     "engine_stopped_voltage_threshold": 12.8,
     "starter_relay_id": 2002,
+    "start_method": "timed",
+    "start_input_id": 0,
+    "starter_crank_time_sec": 2,
+    "starter_retry_pause_sec": 5,
+    "starter_attempts": 3,
+    "start_block_input_id": 0,
     "engine_detection_source": "voltage",
     "engine_input_id": 1001
   },
@@ -82,9 +88,10 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
   "battery_saver": {
     "enabled": false,
     "voltage_start_threshold": 11.8,
-    "hysteresis": 0.2,
-    "min_low_voltage_duration_sec": 30,
-    "min_time_between_attempts_sec": 60,
+    "voltage_abort_threshold": 10.5,
+    "hysteresis": 0.5,
+    "min_low_voltage_duration_sec": 180,
+    "min_time_between_attempts_sec": 1800,
     "max_attempts_per_day": 3,
     "program_id": 0
   },

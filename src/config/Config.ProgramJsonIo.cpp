@@ -536,7 +536,6 @@ public:
         else if (streq(pending_, "input_trigger_id")) cur_.input_trigger_id = parseU16(v, 0);
         else if (streq(pending_, "temp_trigger_id")) cur_.temp_trigger_id = parseU16(v, 0);
         else if (streq(pending_, "program_id")) cur_.program_id = parseU8(v, 0);
-        else if (streq(pending_, "retries")) cur_.retries = parseU8(v, 1);
         else if (streq(pending_, "expected_state")) cur_.expected_state = parseU8(v, 1);
         else if (streq(pending_, "comparison")) strlcpy(cur_.comparison, v ? v : "above", sizeof cur_.comparison);
         else if (streq(pending_, "threshold")) cur_.threshold = parseF(v, 0.0f);
@@ -604,7 +603,6 @@ public:
         else if (streq(pending_, "input_trigger_id")) cur_.input_trigger_id = parseU16(v, 0);
         else if (streq(pending_, "temp_trigger_id")) cur_.temp_trigger_id = parseU16(v, 0);
         else if (streq(pending_, "program_id")) cur_.program_id = parseU8(v, 0);
-        else if (streq(pending_, "retries")) cur_.retries = parseU8(v, 1);
         else if (streq(pending_, "expected_state")) cur_.expected_state = parseU8(v, 1);
         else if (streq(pending_, "comparison")) cur_.comparison = parseComparisonLocal(v);
         else if (streq(pending_, "threshold")) cur_.threshold = parseF(v, 0.0f);
@@ -657,7 +655,6 @@ void emitProgramBody(const Program& p, Print& pout) {
         if (s.input_trigger_id != 0) comma(pout, &sc), pout.print("\"input_trigger_id\":"), pout.print(s.input_trigger_id);
         if (s.temp_trigger_id != 0) comma(pout, &sc), pout.print("\"temp_trigger_id\":"), pout.print(s.temp_trigger_id);
         if (s.program_id) comma(pout, &sc), pout.print("\"program_id\":"), pout.print(s.program_id);
-        if (s.retries != 1) comma(pout, &sc), pout.print("\"retries\":"), pout.print(s.retries);
         if (s.expected_state == 0) comma(pout, &sc), pout.print("\"expected_state\":"), pout.print(0);
         if (s.comparison[0] && strcmp(s.comparison, "above") != 0)
             comma(pout, &sc), pout.print("\"comparison\":"), writeEscaped(pout, s.comparison);

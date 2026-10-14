@@ -72,12 +72,19 @@ void BatterySaverManager::update() {
 
     if (voltage < abortThreshold) {
         _lowStartTime = 0;
+        // Cranking itself sags the battery below the abort threshold — never abort the start step.
         if (bs.program_id != 0 && _executor.isRunning() &&
-            _executor.getCurrentProgramId() == bs.program_id) {
+            _executor.getCurrentProgramId() == bs.program_id && !_executor.isInStarterStep()) {
             logger.log("[BatterySaverManager] Abort program %u: voltage %.2f < abort %.2f\n",
                        bs.program_id, voltage, abortThreshold);
             _executor.stop();
         }
+        return;
+    }
+
+    // Low-voltage countdown only while idle: a running program (cranking, loads) skews the reading.
+    if (_executor.isRunning()) {
+        _lowStartTime = 0;
         return;
     }
 
@@ -95,8 +102,7 @@ void BatterySaverManager::update() {
 
             if (bs.program_id != 0) {
                 logger.log("[BatterySaverManager] Starting program %u due to low voltage\n", bs.program_id);
-                _executor.start(bs.program_id);
-                _attemptsToday++;
+                if (_executor.start(bs.program_id)) _attemptsToday++;
                 _lastAttempt = now;
             }
 

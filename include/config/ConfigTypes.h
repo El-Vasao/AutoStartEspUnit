@@ -81,6 +81,9 @@ struct MQTTConfig {
 // ------------------------------------------------------------------
 // Автомобиль (ADC, стартер и т.д.)
 // ------------------------------------------------------------------
+/// Как шаг ENGINE_START определяет успешный запуск (JSON: "timed" / "rpm" / "input").
+enum class StartMethod : uint8_t { Timed = 0, Rpm, Input };
+
 struct VehicleConfig {
     float adc_voltage_coeff;
     uint16_t starter_max_time_sec;
@@ -89,16 +92,29 @@ struct VehicleConfig {
     float engine_stopped_voltage_threshold;
     uint16_t starter_relay_id;
 
+    StartMethod start_method;
+    uint16_t start_input_id;          ///< вход оборотов (rpm) или дискретный вход (input)
+    float starter_crank_time_sec;     ///< длительность прокрутки для timed
+    uint16_t starter_retry_pause_sec;
+    uint8_t starter_attempts;
+    uint16_t start_block_input_id;    ///< 0 = нет; активное состояние запрещает запуск
+
     char engine_detection_source[TextBytes::Vehicle::ENGINE_DETECTION_SOURCE];
     uint16_t engine_input_id;
 
     VehicleConfig()
         : adc_voltage_coeff(ADC::DEFAULT_COEFF),
-          starter_max_time_sec(5),
-          wait_after_start_sec(10),
-          engine_running_voltage_threshold(13.2f),
-          engine_stopped_voltage_threshold(12.8f),
+          starter_max_time_sec(StarterLimits::MAX_TIME_DEFAULT_SEC),
+          wait_after_start_sec(StarterLimits::WAIT_AFTER_START_DEFAULT_SEC),
+          engine_running_voltage_threshold(StarterLimits::RUNNING_VOLTAGE_DEFAULT),
+          engine_stopped_voltage_threshold(StarterLimits::STOPPED_VOLTAGE_DEFAULT),
           starter_relay_id(2002),
+          start_method(StartMethod::Timed),
+          start_input_id(0),
+          starter_crank_time_sec(StarterLimits::CRANK_TIME_DEFAULT_SEC),
+          starter_retry_pause_sec(StarterLimits::RETRY_PAUSE_DEFAULT_SEC),
+          starter_attempts(StarterLimits::ATTEMPTS_DEFAULT),
+          start_block_input_id(0),
           engine_input_id(1001) {
         strcpy(engine_detection_source, "voltage");
     }
@@ -275,7 +291,6 @@ struct Step {
     uint16_t input_trigger_id;
     uint16_t temp_trigger_id;
     uint8_t program_id;
-    uint8_t retries;
     uint8_t expected_state;
     char comparison[TextBytes::Triggers::COMPARISON];
     float threshold;
@@ -294,7 +309,6 @@ struct Step {
           input_trigger_id(0),
           temp_trigger_id(0),
           program_id(0),
-          retries(1),
           expected_state(1),
           threshold(0.0f),
           engine_state(1),

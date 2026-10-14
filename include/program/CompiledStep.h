@@ -23,7 +23,6 @@ struct CompiledStep {
     uint16_t temp_trigger_id{0};
     uint8_t program_id{0};
 
-    uint8_t retries{1};
     uint8_t expected_state{1};
     ComparisonOp comparison{ComparisonOp::Above};
     float threshold{0.0f};

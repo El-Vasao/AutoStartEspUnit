@@ -35,6 +35,7 @@ enum class ErrorCode : uint8_t {
 
     PROGRAM_ABORTED = 80,   ///< Программа прервана из-за изменения конфигурации
     PROGRAM_INVALID_REF,    ///< Программа прервана из-за неверного id канала в шаге
+    START_BLOCKED,          ///< Запуск двигателя запрещён входом блокировки
 
     TIME_CCLK_FAIL = 88,    ///< Каскад времени: CCLK/NITZ не дал валидный clock
     TIME_CIPGSMLOC_FAIL,    ///< Каскад времени: CIPGSMLOC не дал валидный clock
@@ -70,6 +71,7 @@ inline const char* errorCodeToString(ErrorCode err) {
         case ErrorCode::HW_MAP_INVALID:    return "Hardware map invalid";
         case ErrorCode::PROGRAM_ABORTED:   return "Program aborted due to config change";
         case ErrorCode::PROGRAM_INVALID_REF:return "Program aborted due to invalid channel id";
+        case ErrorCode::START_BLOCKED:     return "Engine start blocked by interlock input";
         case ErrorCode::TIME_CCLK_FAIL:     return "Time CCLK failed";
         case ErrorCode::TIME_CIPGSMLOC_FAIL:return "Time CIPGSMLOC failed";
         case ErrorCode::TIME_CNTP_FAIL:     return "Time CNTP failed";

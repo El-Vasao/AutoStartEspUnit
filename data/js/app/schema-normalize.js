@@ -3,6 +3,12 @@
   const APP = (window.APP = window.APP || {});
   APP.schemaNormalize = APP.schemaNormalize || {};
 
+  // optionsFrom sources whose option values are numeric ids.
+  const INT_SOURCES = new Set([
+    'relays', 'programRelays', 'inputs', 'inputIds', 'digitalInputIds', 'pulseInputIds', 'startInputIds',
+    'sensors', 'programs'
+  ]);
+
   APP.schemaNormalize.inferValueTypeFromField = function inferValueTypeFromField(field) {
     try {
       if (!field || typeof field !== 'object') return 'string';
@@ -24,7 +30,7 @@
           }
         }
         const from = String(field.optionsFrom || '');
-        if (from === 'relays' || from === 'inputs' || from === 'sensors' || from === 'programs') return 'int';
+        if (INT_SOURCES.has(from)) return 'int';
         if (typeof field.default === 'boolean') return 'bool';
         if (typeof field.default === 'number') return 'int';
         if (typeof field.default === 'string') return 'string';
@@ -56,7 +62,7 @@
           }
         }
         const from = String(param.optionsFrom || '');
-        if (from === 'relays' || from === 'inputs' || from === 'sensors' || from === 'programs') return 'int';
+        if (INT_SOURCES.has(from)) return 'int';
         if (typeof param.default === 'boolean') return 'bool';
         if (typeof param.default === 'number') return 'int';
         if (typeof param.default === 'string') return 'string';

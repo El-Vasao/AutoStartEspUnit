@@ -4,10 +4,10 @@
       "relay_id": {
         "label": "Реле",
         "type": "select",
-        "optionsFrom": "relays",
+        "optionsFrom": "programRelays",
         "valueType": "int",
         "helpTitle": "Реле",
-        "help": "Реле, которым управляет шаг.",
+        "help": "Реле, которым управляет шаг. Реле стартера здесь нет — им управляет шаг «Запуск двигателя».",
         "default": 2001
       },
       "ms": {
@@ -46,16 +46,6 @@
         "helpTitle": "Триггер температуры",
         "help": "Какой температурный триггер включить или выключить.",
         "default": 0
-      },
-      "retries": {
-        "label": "Попытки",
-        "type": "number",
-        "valueType": "int",
-        "step": 1,
-        "min": 1,
-        "helpTitle": "Попытки",
-        "help": "Сколько раз повторить шаг. 1 — без повторов.",
-        "default": 1
       },
       "sensor_id": {
         "label": "Датчик",
@@ -249,23 +239,12 @@
         ]
       },
       {
-        "name": "Стартер",
+        "name": "Двигатель",
         "actions": [
           {
-            "value": "STARTER_TIMED",
-            "label": "По времени",
-            "params": [
-              "ms",
-              "retries"
-            ]
-          },
-          {
-            "value": "STARTER_WAIT_INPUT",
-            "label": "До сигнала на входе",
-            "params": [
-              "input_id",
-              "retries"
-            ]
+            "value": "ENGINE_START",
+            "label": "Запуск двигателя",
+            "params": []
           }
         ]
       },

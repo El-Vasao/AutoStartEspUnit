@@ -4,7 +4,7 @@
  *
  * Инварианты:
  * - `update()` не должен аллоцировать heap (никаких `String`, никаких контейнеров).
- * - Пульс-счётчики используют ISR (`attachInterrupt`) и атомарное чтение счётчиков.
+ * - Пульс-счётчики используют ISR (`attachInterrupt`) и атомарную копию `RpmEstimator`.
  *
  * Память/устойчивость:
  * - Все структуры фиксированного размера (по `HardwareLimits::INPUTS`).
@@ -23,7 +23,7 @@
 #include "common/Logger.h"
 #include "common/Constants.h"
 
-volatile uint32_t DigitalInputs::_pulseCounts[HardwareLimits::INPUTS] = {0};
+RpmEstimator DigitalInputs::_rpm[HardwareLimits::INPUTS];
 
 DigitalInputs::DigitalInputs() {
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
@@ -59,8 +59,9 @@ void DigitalInputs::begin() {
         _runtimeEnabled[i] = cfg.enabled;
 
         if (cfg.type == InputType::PULSE_COUNTER) {
-            attachCounterInterrupt(i);
-            _lastCalcTime[i] = millis();
+            _rpm[i].configure(cfg.pulse.pulses_per_rev);
+            resetRpm(i);
+            if (_runtimeEnabled[i]) attachCounterInterrupt(i);
         } else {
             bool raw = digitalRead(pin);
             inputs[i].currentState = raw;
@@ -86,8 +87,7 @@ void DigitalInputs::begin() {
 void DigitalInputs::attachCounterInterrupt(uint8_t index) {
     uint8_t pin = inputs[index].pin;
     switch (index) {
-        // Примечание: используем CHANGE, поэтому импульсы считаются на каждом изменении уровня.
-        // Если нужен подсчёт только по фронту — заменить на RISING/FALLING и пересчитать pulses_per_rev.
+        // CHANGE: каждый перепад уровня — отдельное событие; pulses_per_rev = перепадов на оборот.
         case 0: attachInterrupt(digitalPinToInterrupt(pin), handleInterrupt0, CHANGE); break;
         case 1: attachInterrupt(digitalPinToInterrupt(pin), handleInterrupt1, CHANGE); break;
         case 2: attachInterrupt(digitalPinToInterrupt(pin), handleInterrupt2, CHANGE); break;
@@ -101,13 +101,22 @@ void DigitalInputs::detachCounterInterrupt(uint8_t index) {
 }
 
 void IRAM_ATTR DigitalInputs::handleInterrupt0() {
-    _pulseCounts[0]++;
+    _rpm[0].onEdge(micros());
 }
 void IRAM_ATTR DigitalInputs::handleInterrupt1() {
-    _pulseCounts[1]++;
+    _rpm[1].onEdge(micros());
 }
 void IRAM_ATTR DigitalInputs::handleInterrupt2() {
-    _pulseCounts[2]++;
+    _rpm[2].onEdge(micros());
+}
+
+void DigitalInputs::resetRpm(uint8_t index) {
+    ATOMIC_START();
+    _rpm[index].reset();
+    ATOMIC_END();
+    _rpmConfirm[index].reset();
+    _frequencies[index] = 0;
+    _lastCalcTime[index] = millis();
 }
 
 void DigitalInputs::update() {
@@ -120,15 +129,14 @@ void DigitalInputs::update() {
 
         const auto& cfg = config.getBase().inputs[i];
         if (cfg.type == InputType::PULSE_COUNTER) {
-            if (now - _lastCalcTime[i] >= Timing::PULSE_COUNTER_INTERVAL_MS) {
-                uint32_t interval = now - _lastCalcTime[i];
-                uint32_t cnt;
+            if (now - _lastCalcTime[i] >= Rpm::UPDATE_MS) {
+                RpmEstimator snap;
                 ATOMIC_START();
-                cnt = _pulseCounts[i];
-                _pulseCounts[i] = 0;
+                snap = _rpm[i];
+                const uint32_t nowUs = micros();
                 ATOMIC_END();
-                float freqHz = (cnt * Time::MS_PER_SEC_F) / interval;
-                _frequencies[i] = freqHz * Time::SEC_PER_MIN_F / cfg.pulse.pulses_per_rev;
+                _frequencies[i] = snap.rpm(nowUs);
+                _rpmConfirm[i].update(now, _frequencies[i], cfg.pulse.threshold_rpm);
                 _lastCalcTime[i] = now;
             }
         } else {
@@ -152,11 +160,8 @@ bool DigitalInputs::getState(uint8_t index) const {
     if (!_runtimeEnabled[index]) return false; // если отключён, считаем неактивным
     const auto& cfg = config.getBase().inputs[index];
     if (cfg.type == InputType::PULSE_COUNTER) {
-        // Для счётчика состояние = превышение порога (если threshold_rpm > 0)
-        if (cfg.pulse.threshold_rpm > 0) {
-            return _frequencies[index] >= cfg.pulse.threshold_rpm;
-        }
-        return false; // без порога состояние не определено
+        // Для счётчика состояние = подтверждённое превышение порога (без порога всегда false)
+        return _rpmConfirm[index].confirmed();
     }
     bool raw = inputs[index].currentState;
     return (raw == cfg.active_state);
@@ -177,9 +182,11 @@ float DigitalInputs::getFrequency(uint8_t index) const {
     return _frequencies[index];
 }
 
-uint32_t DigitalInputs::getRawPulseCount(uint8_t index) const {
-    if (index >= HardwareLimits::INPUTS) return 0;
-    return _pulseCounts[index];
+bool DigitalInputs::isRpmConfirmed(uint8_t index) const {
+    if (index >= HardwareLimits::INPUTS) return false;
+    if (!_runtimeEnabled[index]) return false;
+    if (config.getBase().inputs[index].type != InputType::PULSE_COUNTER) return false;
+    return _rpmConfirm[index].confirmed();
 }
 
 bool DigitalInputs::isStable(uint8_t index) const {
@@ -257,12 +264,11 @@ void DigitalInputs::setRuntimeEnabled(uint8_t index, bool en) {
     const auto& cfg = config.getBase().inputs[index];
     if (cfg.type == InputType::PULSE_COUNTER) {
         if (en) {
+            resetRpm(index);
             attachCounterInterrupt(index);
-            _lastCalcTime[index] = millis(); // сброс времени для корректного расчёта частоты
         } else {
             detachCounterInterrupt(index);
-            _frequencies[index] = 0; // сброс частоты
-            // счётчик импульсов не сбрасываем – можно оставить для истории
+            resetRpm(index);
         }
     } else {
         // Для цифрового входа можно ничего не делать, просто перестаём обновлять состояние

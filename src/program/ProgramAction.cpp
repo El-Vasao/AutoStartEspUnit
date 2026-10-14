@@ -8,8 +8,7 @@ ActionId actionIdFromString(const char* action) {
     if (strcmp(action, "WAIT") == 0) return ActionId::WAIT;
     if (strcmp(action, "RELAY_PULSE_ON_OFF_ON") == 0) return ActionId::RELAY_PULSE_ON_OFF_ON;
     if (strcmp(action, "RELAY_PULSE_OFF_ON_OFF") == 0) return ActionId::RELAY_PULSE_OFF_ON_OFF;
-    if (strcmp(action, "STARTER_TIMED") == 0) return ActionId::STARTER_TIMED;
-    if (strcmp(action, "STARTER_WAIT_INPUT") == 0) return ActionId::STARTER_WAIT_INPUT;
+    if (strcmp(action, "ENGINE_START") == 0) return ActionId::ENGINE_START;
 
     if (strcmp(action, "RELAY_ON") == 0) return ActionId::RELAY_ON;
     if (strcmp(action, "RELAY_OFF") == 0) return ActionId::RELAY_OFF;
@@ -38,8 +37,7 @@ const char* actionIdToString(ActionId id) {
         case ActionId::WAIT: return "WAIT";
         case ActionId::RELAY_PULSE_ON_OFF_ON: return "RELAY_PULSE_ON_OFF_ON";
         case ActionId::RELAY_PULSE_OFF_ON_OFF: return "RELAY_PULSE_OFF_ON_OFF";
-        case ActionId::STARTER_TIMED: return "STARTER_TIMED";
-        case ActionId::STARTER_WAIT_INPUT: return "STARTER_WAIT_INPUT";
+        case ActionId::ENGINE_START: return "ENGINE_START";
         case ActionId::RELAY_ON: return "RELAY_ON";
         case ActionId::RELAY_OFF: return "RELAY_OFF";
         case ActionId::RELAY_TOGGLE: return "RELAY_TOGGLE";
@@ -58,5 +56,22 @@ const char* actionIdToString(ActionId id) {
         case ActionId::UNKNOWN:
         default:
             return "";
+    }
+}
+
+bool isStarterAction(ActionId id) {
+    return id == ActionId::ENGINE_START;
+}
+
+bool isRelayAction(ActionId id) {
+    switch (id) {
+        case ActionId::RELAY_ON:
+        case ActionId::RELAY_OFF:
+        case ActionId::RELAY_TOGGLE:
+        case ActionId::RELAY_PULSE_ON_OFF_ON:
+        case ActionId::RELAY_PULSE_OFF_ON_OFF:
+            return true;
+        default:
+            return false;
     }
 }

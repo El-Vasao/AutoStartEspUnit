@@ -109,22 +109,57 @@
         "starter_max_time_sec": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 9999
+          "maximum": 30
         },
         "wait_after_start_sec": {
           "type": "integer",
-          "minimum": 0,
-          "maximum": 99999
+          "minimum": 2,
+          "maximum": 120
         },
         "engine_running_voltage_threshold": {
           "type": "number",
-          "minimum": 0
+          "minimum": 5,
+          "maximum": 30
         },
         "engine_stopped_voltage_threshold": {
           "type": "number",
-          "minimum": 0
+          "minimum": 5,
+          "maximum": 30
         },
         "starter_relay_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "start_method": {
+          "type": "string",
+          "enum": [
+            "timed",
+            "rpm",
+            "input"
+          ]
+        },
+        "start_input_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "starter_crank_time_sec": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 30
+        },
+        "starter_retry_pause_sec": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600
+        },
+        "starter_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "start_block_input_id": {
           "type": "integer",
           "minimum": 0,
           "maximum": 65535
@@ -208,12 +243,12 @@
               "pulses_per_rev": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 9999999
+                "maximum": 65535
               },
               "threshold_rpm": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 9999999
+                "maximum": 65535
               }
             }
           }

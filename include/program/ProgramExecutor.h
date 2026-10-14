@@ -3,8 +3,10 @@
 
 #include <Arduino.h>
 #include "common/Constants.h"
+#include "common/ErrorCodes.h"
 #include "program/CompiledStep.h"
 #include "program/ProgramAction.h"
+#include "program/StarterMachine.h"
 
 /**
  * @brief Исполнитель программ.
@@ -16,7 +18,9 @@
  * - выполнение происходит “с таймингом” в `update()`, поэтому `update()` должен вызываться часто.
  *
  * Инварианты:
- * - аварийные завершения выключают все реле (`RelayController::allOff()`), чтобы не оставить активные цепи.
+ * - аварийные завершения выключают все реле (`RelayController::allOff()`), чтобы не оставить активные цепи;
+ *   это же относится к неудачному, прерванному или заблокированному шагу ENGINE_START;
+ * - пока идёт шаг ENGINE_START, `start()` другой программы отклоняется.
  */
 class ProgramExecutor {
 public:
@@ -38,7 +42,7 @@ public:
     // Оставшееся время для “таймерного” шага (RELAY_PULSE_*), иначе 0.
     uint32_t getTimerRemainingMs() const;
 
-    // Возвращает true только во время выполнения шага STARTER_*.
+    // Возвращает true только во время выполнения шага ENGINE_START.
     bool isInStarterStep() const;
 
     /// MQTT / UI: finished=true штатно; false = stop/abort.
@@ -54,17 +58,13 @@ private:
         uint32_t startedAtMs; ///< отметка времени для текущей фазы
     };
 
-    struct StarterRuntime {
-        uint8_t phase;         ///< 0..3 (см. реализацию)
-        uint32_t startedAtMs;  ///< отметка времени для текущей фазы
-        uint8_t attemptsLeft;  ///< оставшиеся попытки, 0 = не используется
-    };
-
     uint8_t _programId;                 ///< ID текущей программы (0, если не запущена)
     bool _running;                       ///< Флаг выполнения программы
     uint8_t _currentStep;                 ///< Номер текущего шага (0..step_count-1)
     StepRuntime _rt;                      ///< runtime-состояние для RELAY_PULSE_*
-    StarterRuntime _starter;              ///< runtime-состояние для STARTER_*
+    starter::Machine _starter;            ///< автомат шага ENGINE_START
+    int8_t _starterRelayIdx{-1};          ///< реле стартера на время шага
+    int8_t _startInputIdx{-1};            ///< вход алгоритма rpm/input на время шага
     char _currentProgramName[TextBytes::Programs::NAME]; ///< Имя текущей программы (для отладки/вывода)
     uint8_t _lastProgramId;                ///< ID последней запущенной программы
     char _lastProgramName[TextBytes::Programs::NAME]; ///< Имя последней запущенной программы (для UI/статуса)
@@ -85,7 +85,19 @@ private:
     void executeStep(const CompiledStep& step, ActionId actionId);
     void nextStep();
     void finish(bool ok);
-    void abort();
-    void abortWithError();
+    /// Все реле выкл, программа завершается с ошибкой `code`; `reason` — в журнал.
+    void abortWithError(const char* reason, ErrorCode code = ErrorCode::PROGRAM_ABORTED);
+    void abortInvalidRef(const char* what, unsigned id);
+
+    // ENGINE_START (ProgramExecutor.Starter.cpp)
+    void beginStarter();
+    void updateStarter(uint32_t now);
+    bool isStartBlocked() const;
+    /// Все реле выкл, программа завершается неудачей; `code` != NONE — фиксируется ошибка.
+    void failStart(const char* reason, ErrorCode code = ErrorCode::NONE);
+    void logStarterAttempt() const;
+
+    /// RELAY_* шаг, адресующий реле стартера (повторная проверка при запуске программы).
+    bool stepDrivesStarter(const CompiledStep& step, ActionId actionId) const;
 };
 

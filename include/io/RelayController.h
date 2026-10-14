@@ -7,6 +7,8 @@
 
 // Пины реле больше не объявляем отдельно — они в Pins.h
 
+struct esp_timer;
+
 /**
  * @brief Контроллер управления реле.
  * Обеспечивает включение/выключение реле, контроль максимального времени работы.
@@ -15,9 +17,12 @@
  * - индексация во всём проекте: публичные методы принимают индекс 0..MAX_RELAYS-1.
  *   В конфиге и UI чаще используется 1..N — при конвертации не перепутайте.
  *
- * Безопасность:
- * - при аварийном завершении программ `ProgramExecutor` может выключать реле;
- * - `checkSafety()` принудительно выключает реле, если превышен таймаут (например, для стартера).
+ * Безопасность стартера:
+ * - `checkSafety()` выключает стартер после `starter_max_time_sec` всегда, кто бы его ни включил;
+ *   отсчёт идёт от перехода выкл→вкл (повторный `on()` его не продлевает);
+ * - страховка на esp_timer выключает пин стартера через max + `HW_BACKSTOP_MARGIN_MS`,
+ *   даже если основной цикл завис; `update()` затем приводит состояние в порядок;
+ * - после любого аварийного выключения стартер заблокирован на max(пауза между попытками, 5 с).
  */
 class RelayController {
 public:
@@ -29,8 +34,14 @@ public:
     // Проверка таймаутов (вызывается в loop)
     void update();
 
-    // Включить реле (индекс с 0)
-    void on(uint8_t relay);
+    // Включить реле (индекс с 0). false — включение запрещено (блокировка стартера)
+    bool on(uint8_t relay);
+
+    // Индекс реле стартера или -1
+    int8_t starterIndex() const { return _starterIdx; }
+
+    // Стартер заблокирован после аварийного выключения
+    bool isStarterLockedOut() const;
 
     // Выключить реле
     void off(uint8_t relay);
@@ -58,6 +69,12 @@ private:
     uint32_t _maxOnTime[HardwareLimits::RELAYS];    ///< максимальное время работы (0 = без ограничения)
     uint32_t _turnOnTime[HardwareLimits::RELAYS];   ///< момент включения (0 = выключено)
 
+    int8_t _starterIdx{-1};
+    bool _lockout{false};
+    uint32_t _lockoutUntilMs{0};
+    esp_timer* _backstop{nullptr};
+    volatile bool _backstopTripped{false};
+
     // Получить номер пина для реле (использует Pin::RELAY_PINS)
     uint8_t pinForRelay(uint8_t relay) const;
 
@@ -66,5 +83,10 @@ private:
 
     // Проверить превышение времени работы
     void checkSafety();
+
+    void startLockout();
+    void armBackstop();
+    void disarmBackstop();
+    static void backstopCallback(void* arg);
 };
 

@@ -98,6 +98,8 @@ namespace TextBytes {
     namespace Vehicle {
         /// Строка-режим: "voltage" или "input"
         constexpr size_t ENGINE_DETECTION_SOURCE = 8;
+        /// Строка-алгоритм запуска: "timed", "rpm" или "input"
+        constexpr size_t START_METHOD = 8;
     }
 
     namespace Sensors {
@@ -261,10 +263,56 @@ namespace Sensors {
     constexpr uint8_t ADC_SAT_FAIL_STREAK = 8;
 }
 
+/// Starter / engine start limits and defaults (vehicle section of config).
+namespace StarterLimits {
+    constexpr float CRANK_TIME_MIN_SEC = 0.5f;
+    constexpr float CRANK_TIME_MAX_SEC = 30.0f;
+    constexpr float CRANK_TIME_DEFAULT_SEC = 2.0f;
+
+    constexpr uint16_t MAX_TIME_MIN_SEC = 1;
+    constexpr uint16_t MAX_TIME_MAX_SEC = 30;
+    constexpr uint16_t MAX_TIME_DEFAULT_SEC = 5;
+
+    constexpr uint16_t WAIT_AFTER_START_MIN_SEC = 2;
+    constexpr uint16_t WAIT_AFTER_START_MAX_SEC = 120;
+    constexpr uint16_t WAIT_AFTER_START_DEFAULT_SEC = 10;
+
+    constexpr uint16_t RETRY_PAUSE_MAX_SEC = 600;
+    constexpr uint16_t RETRY_PAUSE_DEFAULT_SEC = 5;
+
+    constexpr uint8_t ATTEMPTS_MIN = 1;
+    constexpr uint8_t ATTEMPTS_MAX = 5;
+    constexpr uint8_t ATTEMPTS_DEFAULT = 3;
+
+    constexpr float RUNNING_VOLTAGE_DEFAULT = 13.2f;
+    constexpr float STOPPED_VOLTAGE_DEFAULT = 12.8f;
+
+    /// Extra wait for a full ADC window after `wait_after_start_sec`.
+    constexpr uint32_t VOLTAGE_WINDOW_EXTRA_MS = 2000UL;
+    /// Minimum starter lockout after a safety trip.
+    constexpr uint32_t LOCKOUT_MIN_MS = 5000UL;
+    /// esp_timer backstop fires this much later than `starter_max_time_sec`.
+    constexpr uint32_t HW_BACKSTOP_MARGIN_MS = 300UL;
+}
+
+/// Engine RPM measurement (pulse inputs).
+namespace Rpm {
+    /// Edges closer than this RPM limit are rejected as noise.
+    constexpr uint32_t MAX_RPM = 12000;
+    /// No accepted edge for this long → 0 RPM.
+    constexpr uint32_t ZERO_TIMEOUT_MS = 250;
+    /// Threshold must hold continuously this long to be confirmed.
+    constexpr uint32_t CONFIRM_MS = 100;
+    /// Edge timestamp ring (power of two); one estimate spans at most RING-1 intervals.
+    constexpr uint8_t RING = 16;
+    /// Consecutive rejected edges before the chain restarts (avoids locking out a real fast signal).
+    constexpr uint8_t MAX_SUSPECT_STREAK = 3;
+    /// How often DigitalInputs::update() recomputes RPM.
+    constexpr uint32_t UPDATE_MS = 10;
+}
+
 /// ProgramExecutor action timings (not from config).
 namespace ProgramTiming {
-    /// Pause between starter retry attempts (phase 3).
-    constexpr uint32_t STARTER_RETRY_GAP_MS = 1000UL;
     /// CALL_OWNER: ring duration below this uses modem default (`GSM::VOICE_DEFAULT_RING_MS`).
     constexpr uint32_t CALL_OWNER_MIN_RING_MS = 3000UL;
 }

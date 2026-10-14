@@ -3,6 +3,7 @@
 
 #include "common/Constants.h"
 #include "common/Utils.h"
+#include "config/VehicleRules.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -145,6 +146,13 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
     comma(o, &c), o.print("\"engine_stopped_voltage_threshold\":"),
         printJsonFloat(o, cfg.vehicle.engine_stopped_voltage_threshold);
     comma(o, &c), o.print("\"starter_relay_id\":"), o.print(cfg.vehicle.starter_relay_id);
+    comma(o, &c), o.print("\"start_method\":"),
+        writeEscaped(o, vehicle_rules::startMethodToString(cfg.vehicle.start_method));
+    comma(o, &c), o.print("\"start_input_id\":"), o.print(cfg.vehicle.start_input_id);
+    comma(o, &c), o.print("\"starter_crank_time_sec\":"), printJsonFloat(o, cfg.vehicle.starter_crank_time_sec);
+    comma(o, &c), o.print("\"starter_retry_pause_sec\":"), o.print(cfg.vehicle.starter_retry_pause_sec);
+    comma(o, &c), o.print("\"starter_attempts\":"), o.print(cfg.vehicle.starter_attempts);
+    comma(o, &c), o.print("\"start_block_input_id\":"), o.print(cfg.vehicle.start_block_input_id);
     comma(o, &c), o.print("\"engine_detection_source\":"), writeEscaped(o, cfg.vehicle.engine_detection_source);
     comma(o, &c), o.print("\"engine_input_id\":"), o.print(cfg.vehicle.engine_input_id);
     o.print('}');

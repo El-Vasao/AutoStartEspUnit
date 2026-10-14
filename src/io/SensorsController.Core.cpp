@@ -282,6 +282,13 @@ void SensorsController::updateVoltage() {
     }
 }
 
+void SensorsController::resetVoltageWindow() {
+    _voltageIndex = 0;
+    _adcFillCount = 0;
+    // Force a sample on the next update() so the fresh window starts filling immediately.
+    _lastVoltageRead = millis() - Timing::VOLTAGE_READ_INTERVAL_IDLE_MS;
+}
+
 float SensorsController::calculateVoltage(uint16_t raw) const {
     return raw * config.getBase().vehicle.adc_voltage_coeff;
 }

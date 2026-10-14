@@ -7,6 +7,7 @@
 #include "config/internal/BaseConfigJsonIo.h"
 #include "config/internal/ProgramJsonIo.h"
 #include "config/internal/ConfigStorageInternal.h"
+#include "program/ProgramAction.h"
 
 #include <math.h>
 
@@ -101,6 +102,14 @@ bool Config::commitPostedProgramFile(const char* tmpPath, uint8_t* outId) {
     fileSystem.deleteFile(tmpPath);
     if (!ok || prog.id == 0) {
         return false;
+    }
+    const uint16_t starterRelayId = baseCache.vehicle.starter_relay_id;
+    for (uint8_t i = 0; i < prog.step_count; i++) {
+        const Step& s = prog.steps[i];
+        if (starterRelayId != 0 && isRelayAction(actionIdFromString(s.action)) && s.relay_id == starterRelayId) {
+            logger.log("[Config] Program %u rejected: step %u drives the starter relay\n", prog.id, (unsigned)(i + 1));
+            return false;
+        }
     }
     if (outId) *outId = prog.id;
 

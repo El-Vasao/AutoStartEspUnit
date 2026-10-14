@@ -16,7 +16,6 @@ ProgramExecutor::ProgramExecutor()
       _running(false),
       _currentStep(0),
       _rt{0, 0},
-      _starter{0, 0, 0},
       _lastProgramId(0),
       _localSteps(nullptr),
       _localActions(nullptr),
@@ -61,6 +60,11 @@ uint32_t ProgramExecutor::getTimerRemainingMs() const {
 }
 
 bool ProgramExecutor::start(uint8_t programId) {
+    if (isInStarterStep()) {
+        logger.log("[ProgramExecutor] Start of program %u rejected: engine start in progress (program %u)\n",
+                   (unsigned)programId, (unsigned)_programId);
+        return false;
+    }
     stop();
 
     _localSteps = _localStepsArr;
@@ -83,6 +87,15 @@ bool ProgramExecutor::start(uint8_t programId) {
     }
     for (uint8_t i = 0; i < _localStepCount; i++) {
         _localActions[i] = _localSteps[i].action;
+        if (stepDrivesStarter(_localSteps[i], _localActions[i])) {
+            logger.log("[ProgramExecutor] Program %u rejected: step %u drives the starter relay\n",
+                       (unsigned)programId, (unsigned)(i + 1));
+            _localActions = nullptr;
+            _localSteps = nullptr;
+            _localStepCount = 0;
+            core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+            return false;
+        }
     }
 
     _programId = programId;
@@ -90,9 +103,6 @@ bool ProgramExecutor::start(uint8_t programId) {
     _currentStep = 0;
     _rt.phase = 0;
     _rt.startedAtMs = 0;
-    _starter.phase = 0;
-    _starter.startedAtMs = 0;
-    _starter.attemptsLeft = 0;
 
     logger.log("[ProgramExecutor] Starting program %u: %s (steps=%u)\n",
                programId, _currentProgramName, (unsigned)_localStepCount);
@@ -110,13 +120,9 @@ void ProgramExecutor::stop() {
     if (_running) {
         logger.log("[ProgramExecutor] Stopping program id=%u name=%s at step=%u/%u\n",
                    (unsigned)_programId, _currentProgramName, (unsigned)_currentStep, (unsigned)_localStepCount);
-        if (_currentStep < _localStepCount) {
-            const ActionId id = _localActions[_currentStep];
-            if (id == ActionId::STARTER_TIMED || id == ActionId::STARTER_WAIT_INPUT) {
-                const uint16_t starterRelayId = config.getBase().vehicle.starter_relay_id;
-                const int8_t starterRelay = HwMap::relayIndexById(starterRelayId);
-                if (starterRelay >= 0) core.getRelay().off((uint8_t)starterRelay);
-            }
+        if (isInStarterStep()) {
+            logger.log("[ProgramExecutor] Engine start interrupted, all relays OFF\n");
+            core.getRelay().allOff();
         }
         finish(false);
     }
@@ -155,10 +161,21 @@ void ProgramExecutor::finish(bool ok) {
     }
 }
 
-void ProgramExecutor::abortWithError() {
-    logger.log("[ProgramExecutor] ⚠️ Program aborted due to configuration change\n");
+void ProgramExecutor::abortWithError(const char* reason, ErrorCode code) {
+    logger.log("[ProgramExecutor] ⚠️ Program aborted: %s\n", reason ? reason : "-");
     core.getRelay().allOff();
     finish(false);
-    core.getErrorManager().set(ErrorCode::PROGRAM_ABORTED);
+    core.getErrorManager().set(code);
+}
+
+void ProgramExecutor::abortInvalidRef(const char* what, unsigned id) {
+    logger.log("[ProgramExecutor] Invalid %s %u\n", what, id);
+    abortWithError("invalid channel reference", ErrorCode::PROGRAM_INVALID_REF);
+}
+
+bool ProgramExecutor::stepDrivesStarter(const CompiledStep& step, ActionId actionId) const {
+    if (!isRelayAction(actionId)) return false;
+    const uint16_t starterRelayId = config.getBase().vehicle.starter_relay_id;
+    return starterRelayId != 0 && step.relay_id == starterRelayId;
 }
 

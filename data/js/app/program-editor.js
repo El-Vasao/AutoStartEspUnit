@@ -95,7 +95,6 @@
             if (p === 'relay_id') base.relay_id = (s.relay_id !== undefined) ? (Number(s.relay_id) || 0) : 0;
             else if (p === 'ms') base.ms = s.ms ? (s.ms / 1000) : 0;
             else if (p === 'timeout_ms') base.timeout = s.timeout_ms ? (s.timeout_ms / 1000) : 0;
-            else if (p === 'retries') base.retries = (s.retries || 1);
             else if (p === 'input_id') base.input_id = (s.input_id !== undefined) ? (Number(s.input_id) || 0) : 0;
             else if (p === 'sensor_id') base.sensor_id = (s.sensor_id !== undefined) ? (Number(s.sensor_id) || 0) : 0;
             else if (p === 'sensor_name') base.sensor_name = (s.sensor_name !== undefined) ? String(s.sensor_name || '') : '';
@@ -146,7 +145,6 @@
             if (p === 'relay_id') add('relay_id', toInt(step.relay_id, 0));
             else if (p === 'ms') add('ms', step.ms ? Math.round(step.ms * 1000) : 0);
             else if (p === 'timeout_ms') add('timeout_ms', step.timeout ? Math.round(step.timeout * 1000) : 0);
-            else if (p === 'retries') add('retries', toInt(step.retries, 1) || 1);
             else if (p === 'input_id') add('input_id', toInt(step.input_id, 0));
             else if (p === 'sensor_id') add('sensor_id', (step.sensor_id !== undefined) ? (Number(step.sensor_id) || 0) : 0);
             else if (p === 'sensor_name') add('sensor_name', (step.sensor_name !== undefined) ? String(step.sensor_name || '') : '');

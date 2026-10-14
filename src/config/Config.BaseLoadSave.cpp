@@ -7,6 +7,7 @@
 #include "common/Utils.h"
 #include "config/internal/BaseConfigJsonIo.h"
 #include "config/internal/ConfigStorageInternal.h"
+#include "config/VehicleRules.h"
 
 #include <math.h>
 #include <WiFi.h>
@@ -21,6 +22,10 @@ namespace {
 size_t encodeBaseConfigForSave(Print& p, void* ctx) {
     const auto* cfg = reinterpret_cast<const BaseConfig*>(ctx);
     return config_internal::serializeBaseConfigToPrint(*cfg, p);
+}
+
+void logVehicleFix(const char* msg, void*) {
+    logger.log("[Config] fix: %s\n", msg);
 }
 
 } // namespace
@@ -59,11 +64,8 @@ bool Config::loadBaseFromFile(const char* path, BaseConfig& target, size_t& outL
     }
     f.close();
 
-    if (!validateCross(target)) {
-        logger.log("[Config] Cross validation failed (unexpected)\n");
-        lastLoadError_ = ErrorCode::CONFIG_PARSE_FAIL;
-        return false;
-    }
+    // Never fail the load on rule violations: a failed load wipes the user config via reset().
+    vehicle_rules::normalize(target, logVehicleFix, nullptr);
 
     lastLoadError_ = ErrorCode::NONE;
     return true;
