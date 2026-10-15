@@ -3,11 +3,13 @@
 #include "core/Core.h"
 #include "program/ProgramExecutor.h"
 #include "config/Config.h"
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 #include "web/WebServer.h"
 #include "common/Constants.h"
+#include "common/ErrorCodes.h"
 #include "common/EspHal.h"
 #include "common/Logger.h"
+#include "core/ErrorManager.h"
 
 FlashCommitCoordinator flashCommit;
 
@@ -31,24 +33,32 @@ void FlashCommitCoordinator::recordFlashCommitSnapshot(FlashCommitOp op, bool ok
 }
 
 void FlashCommitCoordinator::queueResetConfig() {
-    if (pendingFsOp_ != PendingFsOp::NONE && pendingFsOp_ != PendingFsOp::RESET_CONFIG) {
-        logger.log("[FlashCommit] queue overwrite: %u -> reset_config\n", (unsigned)pendingFsOp_);
+    if ((deferredPostedConfigApply_ || deferredPostedProgramApply_) ||
+        (pendingFsOp_ != PendingFsOp::NONE && pendingFsOp_ != PendingFsOp::RESET_CONFIG)) {
+        logger.log(LogModule::FlashCommitCoordinator, "queue refused: reset_config (busy %u)\n",
+                   (unsigned)pendingFsOp_);
+        return;
     }
     pendingFsOp_ = PendingFsOp::RESET_CONFIG;
 }
 
 void FlashCommitCoordinator::queueResetPrograms() {
-    if (pendingFsOp_ != PendingFsOp::NONE && pendingFsOp_ != PendingFsOp::RESET_PROGRAMS) {
-        logger.log("[FlashCommit] queue overwrite: %u -> reset_programs\n", (unsigned)pendingFsOp_);
+    if ((deferredPostedConfigApply_ || deferredPostedProgramApply_) ||
+        (pendingFsOp_ != PendingFsOp::NONE && pendingFsOp_ != PendingFsOp::RESET_PROGRAMS)) {
+        logger.log(LogModule::FlashCommitCoordinator, "queue refused: reset_programs (busy %u)\n",
+                   (unsigned)pendingFsOp_);
+        return;
     }
     pendingFsOp_ = PendingFsOp::RESET_PROGRAMS;
 }
 
 void FlashCommitCoordinator::queueDeleteProgram(uint8_t id) {
-    if (pendingFsOp_ != PendingFsOp::NONE &&
-        !(pendingFsOp_ == PendingFsOp::DELETE_PROGRAM && pendingProgramId_ == id)) {
-        logger.log("[FlashCommit] queue overwrite: %u -> delete_program %u\n",
-                   (unsigned)pendingFsOp_, (unsigned)id);
+    if ((deferredPostedConfigApply_ || deferredPostedProgramApply_) ||
+        (pendingFsOp_ != PendingFsOp::NONE &&
+         !(pendingFsOp_ == PendingFsOp::DELETE_PROGRAM && pendingProgramId_ == id))) {
+        logger.log(LogModule::FlashCommitCoordinator, "queue refused: delete_program %u (busy %u)\n",
+                   (unsigned)id, (unsigned)pendingFsOp_);
+        return;
     }
     pendingProgramId_ = id;
     pendingFsOp_ = PendingFsOp::DELETE_PROGRAM;
@@ -63,7 +73,7 @@ void FlashCommitCoordinator::tick(Core& core) {
     if (deferredPostedConfigApply_) {
         core.feedWatchdog();
         espHalFeedWdt();
-        logger.log("[FlashCommit] Config: deferred apply start %s (heap=%u)\n",
+        logger.log(LogModule::FlashCommitCoordinator, "Config: deferred apply start %s (heap=%u)\n",
                    HttpPostJson::TMP_CONFIG, espHalFreeHeap());
         const uint16_t beforeCrc = config.getCRC();
         const bool cfgOk =
@@ -73,14 +83,14 @@ void FlashCommitCoordinator::tick(Core& core) {
 
         if (!cfgOk) {
             recordFlashCommitSnapshot(FlashCommitOp::SAVE_CONFIG, false, false, config.getCRC());
-            logger.log("[FlashCommit] Config: apply failed\n");
+            logger.log(LogModule::FlashCommitCoordinator, "Config: apply failed\n");
             webServer.broadcastStatusForce();
         } else {
             const uint16_t afterCrc = config.getCRC();
             const bool changed = (beforeCrc != afterCrc);
             recordFlashCommitSnapshot(FlashCommitOp::SAVE_CONFIG, true, changed, afterCrc);
             core.setRebootRequired(true);
-            logger.log("[FlashCommit] Config: /config.json written (changed=%d crc:%u->%u heap=%u)\n",
+            logger.log(LogModule::FlashCommitCoordinator, "Config: /config.json written (changed=%d crc:%u->%u heap=%u)\n",
                        (int)changed,
                        (unsigned)beforeCrc,
                        (unsigned)afterCrc,
@@ -88,6 +98,7 @@ void FlashCommitCoordinator::tick(Core& core) {
             webServer.broadcastStatusForce();
         }
         deferredPostedConfigApply_ = false;
+        return;
     }
 
     if (deferredPostedProgramApply_) {
@@ -95,17 +106,20 @@ void FlashCommitCoordinator::tick(Core& core) {
         espHalFeedWdt();
 
         if (!deferredPostedProgramIndexPhase_) {
-            logger.log("[FlashCommit] program: deferred apply start %s (heap=%u)\n",
+            logger.log(LogModule::FlashCommitCoordinator, "program: deferred apply start %s (heap=%u)\n",
                        HttpPostJson::TMP_PROGRAM, espHalFreeHeap());
             uint8_t postedId = 0;
-            const bool parsedOk = config.commitPostedProgramFile(HttpPostJson::TMP_PROGRAM, &postedId);
+            ErrorCode commitErr = ErrorCode::NONE;
+            const bool parsedOk = config.commitPostedProgramFile(HttpPostJson::TMP_PROGRAM, &postedId, &commitErr);
             if (!parsedOk) {
-                logger.log("[FlashCommit] program: parse JSON from tmp failed\n");
+                if (commitErr != ErrorCode::NONE) core.getErrorManager().set(commitErr);
+                logger.log(LogModule::FlashCommitCoordinator, "program: tmp apply failed (%s)\n",
+                           errorCodeToString(commitErr));
                 recordFlashCommitSnapshot(FlashCommitOp::SAVE_PROGRAM, false, false, config.getCRC());
                 webServer.broadcastStatusForce();
                 deferredPostedProgramApply_ = false;
             } else {
-                logger.log("[FlashCommit] program: JSON OK id=%u, file written, scheduling rebuildProgramIndex\n",
+                logger.log(LogModule::FlashCommitCoordinator, "program: JSON OK id=%u, file written, scheduling rebuildProgramIndex\n",
                            (unsigned)postedId);
                 deferredPostedProgramIndexPhase_ = true;
                 webServer.broadcastStatusForce();
@@ -114,14 +128,15 @@ void FlashCommitCoordinator::tick(Core& core) {
                 return; // next tick will rebuild index
             }
         } else {
-            logger.log("[FlashCommit] program: deferred rebuildProgramIndex (heap=%u)\n", espHalFreeHeap());
+            logger.log(LogModule::FlashCommitCoordinator, "program: deferred rebuildProgramIndex (heap=%u)\n", espHalFreeHeap());
             const bool ok = config.rebuildProgramIndex();
             recordFlashCommitSnapshot(FlashCommitOp::SAVE_PROGRAM, ok, ok, config.getCRC());
-            logger.log("[FlashCommit] program: flash save %s (heap=%u)\n", ok ? "OK" : "FAILED", espHalFreeHeap());
+            logger.log(LogModule::FlashCommitCoordinator, "program: flash save %s (heap=%u)\n", ok ? "OK" : "FAILED", espHalFreeHeap());
             webServer.broadcastStatusForce();
             deferredPostedProgramApply_ = false;
             deferredPostedProgramIndexPhase_ = false;
         }
+        return;
     }
 
     if (pendingFsOp_ == PendingFsOp::NONE) return;
@@ -129,27 +144,27 @@ void FlashCommitCoordinator::tick(Core& core) {
     const PendingFsOp op = pendingFsOp_;
     pendingFsOp_ = PendingFsOp::NONE;
 
-    logger.log("[FlashCommit] deferred FS op: %u start (heap=%u)\n", (unsigned)op, espHalFreeHeap());
+    logger.log(LogModule::FlashCommitCoordinator, "deferred FS op: %u start (heap=%u)\n", (unsigned)op, espHalFreeHeap());
     core.feedWatchdog();
     espHalFeedWdt();
     bool ok = false;
     FlashCommitOp flashOp = FlashCommitOp::NONE;
     if (op == PendingFsOp::DELETE_PROGRAM) {
-        logger.log("[FlashCommit] deferred delete_program: id=%u\n", (unsigned)pendingProgramId_);
+        logger.log(LogModule::FlashCommitCoordinator, "deferred delete_program: id=%u\n", (unsigned)pendingProgramId_);
         ok = config.deleteProgram(pendingProgramId_);
         flashOp = FlashCommitOp::DELETE_PROGRAM;
     } else if (op == PendingFsOp::RESET_CONFIG) {
-        logger.log("[FlashCommit] deferred reset_config\n");
+        logger.log(LogModule::FlashCommitCoordinator, "deferred reset_config\n");
         ok = config.reset();
         flashOp = FlashCommitOp::RESET_CONFIG;
         if (ok) core.setRebootRequired(true);
     } else if (op == PendingFsOp::RESET_PROGRAMS) {
-        logger.log("[FlashCommit] deferred reset_programs\n");
+        logger.log(LogModule::FlashCommitCoordinator, "deferred reset_programs\n");
         ok = config.resetPrograms();
         flashOp = FlashCommitOp::RESET_PROGRAMS;
     }
     recordFlashCommitSnapshot(flashOp, ok, ok, config.getCRC());
-    logger.log("[FlashCommit] deferred FS op: %u done ok=%d crc=%u heap=%u\n",
+    logger.log(LogModule::FlashCommitCoordinator, "deferred FS op: %u done ok=%d crc=%u heap=%u\n",
                (unsigned)op, (int)ok, (unsigned)lastFlashCrc_, espHalFreeHeap());
 }
 

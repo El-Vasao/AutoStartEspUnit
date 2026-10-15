@@ -4,55 +4,9 @@
   APP.stores = APP.stores || {};
 
   APP.stores.registerProgramFormStore = function registerProgramFormStore(Alpine) {
-    function isIndex(s) { return /^\d+$/.test(String(s)); }
-
-    function getByPath(obj, path) {
-      try {
-        if (!obj) return undefined;
-        const parts = String(path || '').split('.').filter(Boolean);
-        let cur = obj;
-        for (const p of parts) {
-          if (cur == null) return undefined;
-          cur = isIndex(p) ? cur[Number(p)] : cur[p];
-        }
-        return cur;
-      } catch (e) { return undefined; }
-    }
-
-    function setByPath(obj, path, value) {
-      try {
-        if (!obj) return false;
-        const parts = String(path || '').split('.').filter(Boolean);
-        if (!parts.length) return false;
-        let cur = obj;
-        for (let i = 0; i < parts.length - 1; i++) {
-          const p = parts[i];
-          const next = parts[i + 1];
-          const idx = isIndex(p) ? Number(p) : null;
-          if (idx !== null) {
-            if (!Array.isArray(cur)) return false;
-            if (cur[idx] == null || typeof cur[idx] !== 'object') cur[idx] = (isIndex(next) ? [] : {});
-            cur = cur[idx];
-          } else {
-            if (cur[p] == null || typeof cur[p] !== 'object') cur[p] = (isIndex(next) ? [] : {});
-            cur = cur[p];
-          }
-        }
-        const last = parts[parts.length - 1];
-        if (isIndex(last)) {
-          const idx = Number(last);
-          if (!Array.isArray(cur)) return false;
-          cur[idx] = value;
-        } else {
-          cur[last] = value;
-        }
-        return true;
-      } catch (e) { return false; }
-    }
-
     Alpine.store('programForm', {
-      getByPath,
-      setByPath,
+      getByPath: (obj, path) => APP.path.get(obj, path),
+      setByPath: (obj, path, value) => APP.path.set(obj, path, value),
       optionsForField(field, opts = {}) {
         try {
           if (!field || typeof field !== 'object') return [];

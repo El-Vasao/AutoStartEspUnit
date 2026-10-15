@@ -7,7 +7,7 @@
 #include "config/DefaultConfig.h"
 #include "common/Logger.h"
 #include "common/Constants.h"
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 #include "web/WebServer.h"
 #include "core/FlashCommitCoordinator.h"
 #include "core/CoreHardRestart.h"
@@ -121,7 +121,7 @@ static bool otaIsModeThunk(void* ctx) {
 }
 
 static void logHeapTag_(const char* tag) {
-    logger.log("[Core] heap %s: free=%u maxBlk=%u frag=%u%%\n", tag, (unsigned)espHalFreeHeap(),
+    logger.log(LogModule::Core, "heap %s: free=%u maxBlk=%u frag=%u%%\n", tag, (unsigned)espHalFreeHeap(),
                (unsigned)espHalMaxBlock(), (unsigned)0 /* heap frag N/A on ESP32 */);
 }
 
@@ -158,13 +158,13 @@ bool Core::begin() {
     impl.bootConfigLoaded = false;
     impl.bootHwMapBad = false;
 
-    logger.log("[Core] begin\n");
-    logger.log("[Core] Reset reason: %s\n", getResetReason());
+    logger.log(LogModule::Core, "begin\n");
+    logger.log(LogModule::Core, "Reset reason: %s\n", getResetReason());
 
     // Never use BLE on this product: release controller+host so RF cannot start this boot.
     {
         const esp_err_t btErr = esp_bt_mem_release(ESP_BT_MODE_BLE);
-        logger.log("[Core] BT mem_release: %s\n", esp_err_to_name(btErr));
+        logger.log(LogModule::Core, "BT mem_release: %s\n", esp_err_to_name(btErr));
     }
 
     if (!espHalChipIdValid()) return false;
@@ -201,7 +201,7 @@ bool Core::begin() {
     };
     impl.mqtt.setAppPorts(&impl.ports);
     webServer.setAppPorts(&impl.ports);
-    logger.log("[Core] begin() done\n");
+    logger.log(LogModule::Core, "begin() done\n");
     impl.modeManager.init(webServer, impl.gsm, impl.mqtt, config, impl.otaHandler);
     impl.modeManager.switchMode(CoreMode::BOOT);
     return true;
@@ -252,8 +252,9 @@ void Core::otaStreamAbort() {
 void Core::update() {
     CorePrivate& impl = *_impl;
     feedWatchdog();
+    logger.flushDeferred();
     if (impl.pendingHardRestart) {
-        core_hard_restart_now();
+        coreHardRestartNow();
     }
     updateUptime();
 
@@ -267,7 +268,7 @@ void Core::update() {
                 static uint32_t lastDeferredBusyLog = 0;
                 if (now - lastDeferredBusyLog >= Timing::DEFERRED_FLASH_BUSY_LOG_MS) {
                     lastDeferredBusyLog = now;
-                    logger.log("[Core] Deferred flash commit paused: program is running\n");
+                    logger.log(LogModule::Core, "Deferred flash commit paused: program is running\n");
                 }
             }
         }
@@ -304,7 +305,7 @@ void Core::update() {
             static uint32_t lastDeferredBusyLog = 0;
             if (now - lastDeferredBusyLog >= Timing::DEFERRED_FLASH_BUSY_LOG_MS) {
                 lastDeferredBusyLog = now;
-                logger.log("[Core] Deferred flash commit paused: program is running\n");
+                logger.log(LogModule::Core, "Deferred flash commit paused: program is running\n");
             }
         }
     } else {
@@ -318,16 +319,10 @@ void Core::update() {
         return;
     }
 
-    uint32_t start = micros();
-
     size_t modeIndex = static_cast<size_t>(impl.modeManager.getCurrentMode());
     if (modeIndex < sizeof(_modeHandlers) / sizeof(_modeHandlers[0]) && _modeHandlers[modeIndex]) {
         (this->*_modeHandlers[modeIndex])();
     }
-
-    uint32_t elapsed = micros() - start;
-    if (elapsed > impl.maxLoopTime) impl.maxLoopTime = elapsed;
-    impl.loopCounter++;
 
     static uint32_t lastStatusBroadcast = 0;
     if (now - lastStatusBroadcast >= Timing::SSE_STATUS_INTERVAL_MS) {
@@ -337,9 +332,9 @@ void Core::update() {
 }
 
 void Core::reboot() {
-    logger.log("[Core] Rebooting...\n");
+    logger.log(LogModule::Core, "Rebooting...\n");
     // Не yield()/delay() здесь: ранний reboot после укороченного begin() ломает __yield().
-    core_hard_restart_now();
+    coreHardRestartNow();
 }
 
 void Core::requestReboot(uint32_t delayMs) {
@@ -352,7 +347,7 @@ RelayController& Core::getRelay() { return _impl->relay; }
 SensorsController& Core::getSensors() { return _impl->sensors; }
 DigitalInputs& Core::getInputs() { return _impl->inputs; }
 ProgramExecutor& Core::getProgramExecutor() { return _impl->programExecutor; }
-GSMController& Core::getGSM() { return _impl->gsm; }
-MQTTClient& Core::getMQTT() { return _impl->mqtt; }
+GsmController& Core::getGSM() { return _impl->gsm; }
+MqttClient& Core::getMQTT() { return _impl->mqtt; }
 ErrorManager& Core::getErrorManager() { return _impl->errorManager; }
 

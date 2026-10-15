@@ -4,7 +4,8 @@
 #include <Arduino.h>
 
 // Дефолтный конфиг в формате JSON (сохранён в PROGMEM).
-// Примечание: должен соответствовать `Config.h` и `settings.schema.json`, иначе устройство уйдёт в EMERGENCY_AP.
+// Должен проходить `data/validation/settings.schema.json` (проверяет test/js/contract.test.mjs),
+// иначе устройство уйдёт в EMERGENCY_AP.
 static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
   "setup_required": true,
   "wifi": {
@@ -102,10 +103,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "sync_interval_hours": 6
   },
   "input_triggers": [],
-  "input_triggers_count": 0,
   "temperature_triggers": [],
-  "temperature_triggers_count": 0,
-  "schedule_triggers": [],
-  "schedule_triggers_count": 0
+  "schedule_triggers": []
 })";
 

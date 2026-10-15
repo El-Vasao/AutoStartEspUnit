@@ -1,10 +1,12 @@
 // src/config/Config.ProgramJsonIo.cpp
 #include "config/internal/ProgramJsonIo.h"
+#include "config/internal/JsonScalar.h"
 
-#include "json/Json.ParseFile.h"
+#include "json/JsonParseFile.h"
 #include "JsonListener.h"
 #include "program/ProgramAction.h"
 #include "common/Constants.h"
+#include "common/JsonEscape.h"
 
 #include <Arduino.h>
 #include <stdlib.h>
@@ -16,79 +18,9 @@ namespace {
 
 bool streq(const char* a, const char* b) { return a && b && strcmp(a, b) == 0; }
 
-float parseF(const char* v, float def) {
-    if (!v || !*v) return def;
-    return strtof(v, nullptr);
-}
 
-uint32_t parseU32(const char* v, uint32_t def) {
-    if (!v || !*v) return def;
-    char* end = nullptr;
-    unsigned long n = strtoul(v, &end, 10);
-    if (!end || *end != '\0') return def;
-    return static_cast<uint32_t>(n);
-}
 
-uint16_t parseU16(const char* v, uint16_t def) {
-    uint32_t n = parseU32(v, def);
-    if (n > 65535u) return 65535;
-    return static_cast<uint16_t>(n);
-}
 
-uint8_t parseU8(const char* v, uint8_t def) {
-    uint32_t n = parseU32(v, def);
-    if (n > 255u) return 255;
-    return static_cast<uint8_t>(n);
-}
-
-static ComparisonOp parseComparisonLocal(const char* s) {
-    if (!s || !*s) return ComparisonOp::Above;
-    if (strcmp(s, "below") == 0) return ComparisonOp::Below;
-    return ComparisonOp::Above;
-}
-
-void writeEscaped(Print& p, const char* s) {
-    p.print('"');
-    if (!s) {
-        p.print('"');
-        return;
-    }
-    for (const unsigned char* u = reinterpret_cast<const unsigned char*>(s); *u; u++) {
-        const char c = static_cast<char>(*u);
-        switch (c) {
-            case '\"':
-                p.print("\\\"");
-                break;
-            case '\\':
-                p.print("\\\\");
-                break;
-            case '\b':
-                p.print("\\b");
-                break;
-            case '\f':
-                p.print("\\f");
-                break;
-            case '\n':
-                p.print("\\n");
-                break;
-            case '\r':
-                p.print("\\r");
-                break;
-            case '\t':
-                p.print("\\t");
-                break;
-            default:
-                if (static_cast<unsigned char>(c) < 0x20u) {
-                    char buf[7];
-                    snprintf(buf, sizeof buf, "\\u%04x", static_cast<unsigned>(c));
-                    p.print(buf);
-                } else {
-                    p.write(static_cast<unsigned char>(c));
-                }
-        }
-    }
-    p.print('"');
-}
 
 inline void comma(Print& p, bool* needComma) {
     if (*needComma) p.print(',');
@@ -195,7 +127,7 @@ public:
         if (cur() != Idx::Row) return;
         const char* v = val;
         if (v && strcmp(v, "null") == 0) return;
-        if (streq(pending_, "id")) row_.id = parseU8(v, 0);
+        if (streq(pending_, "id")) row_.id = json_scalar::parseU8(v, 0);
         else if (streq(pending_, "name")) strlcpy(row_.name, v ? v : "", sizeof row_.name);
     }
 
@@ -237,8 +169,8 @@ private:
 bool parseProgramIndexDispatch(File& f, IndexRow* rows, size_t rowCap, size_t* outCount) {
     if (outCount) *outCount = 0;
     IndexListener listener(rows, rowCap);
-    jsonStreamingParseWholeFile(f, listener);
-    if (!listener.ok()) return false;
+    const bool parsed = jsonStreamingParseWholeFile(f, listener);
+    if (!parsed || !listener.ok()) return false;
     if (outCount) *outCount = listener.count();
     return true;
 }
@@ -382,7 +314,7 @@ public:
         const char* v = val;
         if (v && strcmp(v, "null") == 0) return;
         if (streq(pending_, "id")) {
-            const uint8_t id = parseU8(v, 0);
+            const uint8_t id = json_scalar::parseU8(v, 0);
             if (oid_) *oid_ = id;
             if (id != pid_) failed_ = true;
         } else if (streq(pending_, "name") && name_ && nameCap_) {
@@ -521,27 +453,17 @@ public:
     }
     void onRootValue(const char* v) {
         if (!prog_) return;
-        if (streq(pending_, "id")) prog_->id = parseU8(v, 0);
+        if (streq(pending_, "id")) prog_->id = json_scalar::parseU8(v, 0);
         else if (streq(pending_, "name")) strlcpy(prog_->name, v ? v : "", sizeof prog_->name);
     }
     void onStepValue(const char* v) {
-        if (streq(pending_, "step")) cur_.step = parseU8(v, 0);
+        if (streq(pending_, "step")) cur_.step = json_scalar::parseU8(v, 0);
         else if (streq(pending_, "action")) strlcpy(cur_.action, v ? v : "", sizeof cur_.action);
-        else if (streq(pending_, "relay_id")) cur_.relay_id = parseU16(v, 0);
-        else if (streq(pending_, "ms")) cur_.ms = parseU32(v, 0);
-        else if (streq(pending_, "timeout_ms")) cur_.timeout_ms = parseU32(v, 0);
-        else if (streq(pending_, "input_id")) cur_.input_id = parseU16(v, 0);
-        else if (streq(pending_, "sensor_id")) cur_.sensor_id = parseU16(v, 0);
-        else if (streq(pending_, "sensor_name")) strlcpy(cur_.sensor_name, v ? v : "", sizeof cur_.sensor_name);
-        else if (streq(pending_, "input_trigger_id")) cur_.input_trigger_id = parseU16(v, 0);
-        else if (streq(pending_, "temp_trigger_id")) cur_.temp_trigger_id = parseU16(v, 0);
-        else if (streq(pending_, "program_id")) cur_.program_id = parseU8(v, 0);
-        else if (streq(pending_, "expected_state")) cur_.expected_state = parseU8(v, 1);
-        else if (streq(pending_, "comparison")) strlcpy(cur_.comparison, v ? v : "above", sizeof cur_.comparison);
-        else if (streq(pending_, "threshold")) cur_.threshold = parseF(v, 0.0f);
-        else if (streq(pending_, "engine_state")) cur_.engine_state = parseU8(v, 1);
-        else if (streq(pending_, "timeout_action")) cur_.timeout_action = parseU8(v, 0);
-        else if (streq(pending_, "skip_count")) cur_.skip_count = parseU8(v, 0);
+        else if (streq(pending_, "relay_id")) cur_.relay_id = json_scalar::parseU16(v, 0);
+        else if (streq(pending_, "ms")) cur_.ms = json_scalar::parseU32(v, 0);
+        else if (streq(pending_, "input_id")) cur_.input_id = json_scalar::parseU16(v, 0);
+        else if (streq(pending_, "input_trigger_id")) cur_.input_trigger_id = json_scalar::parseU16(v, 0);
+        else if (streq(pending_, "temp_trigger_id")) cur_.temp_trigger_id = json_scalar::parseU16(v, 0);
         else if (streq(pending_, "message")) strlcpy(cur_.message, v ? v : "", sizeof cur_.message);
     }
 
@@ -588,27 +510,18 @@ public:
     }
     void onRootValue(const char* v) {
         if (streq(pending_, "id")) {
-            if (parseU8(v, 0) != expectId_) failed_ = true;
+            if (json_scalar::parseU8(v, 0) != expectId_) failed_ = true;
         } else if (streq(pending_, "name")) {
             if (name_ && nameCap_) strlcpy(name_, v ? v : "", nameCap_);
         }
     }
     void onStepValue(const char* v) {
         if (streq(pending_, "action")) cur_.action = actionIdFromString(v);
-        else if (streq(pending_, "relay_id")) cur_.relay_id = parseU16(v, 0);
-        else if (streq(pending_, "ms")) cur_.ms = parseU32(v, 0);
-        else if (streq(pending_, "timeout_ms")) cur_.timeout_ms = parseU32(v, 0);
-        else if (streq(pending_, "input_id")) cur_.input_id = parseU16(v, 0);
-        else if (streq(pending_, "sensor_id")) cur_.sensor_id = parseU16(v, 0);
-        else if (streq(pending_, "input_trigger_id")) cur_.input_trigger_id = parseU16(v, 0);
-        else if (streq(pending_, "temp_trigger_id")) cur_.temp_trigger_id = parseU16(v, 0);
-        else if (streq(pending_, "program_id")) cur_.program_id = parseU8(v, 0);
-        else if (streq(pending_, "expected_state")) cur_.expected_state = parseU8(v, 1);
-        else if (streq(pending_, "comparison")) cur_.comparison = parseComparisonLocal(v);
-        else if (streq(pending_, "threshold")) cur_.threshold = parseF(v, 0.0f);
-        else if (streq(pending_, "engine_state")) cur_.engine_state = parseU8(v, 1);
-        else if (streq(pending_, "timeout_action")) cur_.timeout_action = parseU8(v, 0);
-        else if (streq(pending_, "skip_count")) cur_.skip_count = parseU8(v, 0);
+        else if (streq(pending_, "relay_id")) cur_.relay_id = json_scalar::parseU16(v, 0);
+        else if (streq(pending_, "ms")) cur_.ms = json_scalar::parseU32(v, 0);
+        else if (streq(pending_, "input_id")) cur_.input_id = json_scalar::parseU16(v, 0);
+        else if (streq(pending_, "input_trigger_id")) cur_.input_trigger_id = json_scalar::parseU16(v, 0);
+        else if (streq(pending_, "temp_trigger_id")) cur_.temp_trigger_id = json_scalar::parseU16(v, 0);
         else if (streq(pending_, "message")) strlcpy(cur_.message, v ? v : "", sizeof cur_.message);
     }
 
@@ -635,7 +548,7 @@ void emitProgramBody(const Program& p, Print& pout) {
     bool c = false;
     pout.print('{');
     comma(pout, &c), pout.print("\"id\":"), pout.print(p.id);
-    comma(pout, &c), pout.print("\"name\":"), writeEscaped(pout, p.name);
+    comma(pout, &c), pout.print("\"name\":"), json_escape::writeQuoted(pout, p.name);
     comma(pout, &c), pout.print("\"steps\":[");
     for (uint8_t i = 0; i < p.step_count; i++) {
         if (i != 0) pout.print(',');
@@ -643,26 +556,15 @@ void emitProgramBody(const Program& p, Print& pout) {
         pout.print('{');
         bool sc = false;
         comma(pout, &sc), pout.print("\"step\":"), pout.print(s.step);
-        comma(pout, &sc), pout.print("\"action\":"), writeEscaped(pout, s.action);
+        comma(pout, &sc), pout.print("\"action\":"), json_escape::writeQuoted(pout, s.action);
         if (strncmp(s.action, "RELAY_", 6) == 0) {
             if (s.relay_id) comma(pout, &sc), pout.print("\"relay_id\":"), pout.print(s.relay_id);
         }
         if (s.ms) comma(pout, &sc), pout.print("\"ms\":"), pout.print(s.ms);
-        if (s.timeout_ms) comma(pout, &sc), pout.print("\"timeout_ms\":"), pout.print(s.timeout_ms);
         if (s.input_id != 0) comma(pout, &sc), pout.print("\"input_id\":"), pout.print(s.input_id);
-        if (s.sensor_id != 0) comma(pout, &sc), pout.print("\"sensor_id\":"), pout.print(s.sensor_id);
-        if (s.sensor_name[0] != '\0') comma(pout, &sc), pout.print("\"sensor_name\":"), writeEscaped(pout, s.sensor_name);
         if (s.input_trigger_id != 0) comma(pout, &sc), pout.print("\"input_trigger_id\":"), pout.print(s.input_trigger_id);
         if (s.temp_trigger_id != 0) comma(pout, &sc), pout.print("\"temp_trigger_id\":"), pout.print(s.temp_trigger_id);
-        if (s.program_id) comma(pout, &sc), pout.print("\"program_id\":"), pout.print(s.program_id);
-        if (s.expected_state == 0) comma(pout, &sc), pout.print("\"expected_state\":"), pout.print(0);
-        if (s.comparison[0] && strcmp(s.comparison, "above") != 0)
-            comma(pout, &sc), pout.print("\"comparison\":"), writeEscaped(pout, s.comparison);
-        if (s.threshold != 0.0f) comma(pout, &sc), pout.print("\"threshold\":"), pout.print(s.threshold);
-        if (s.engine_state == 0) comma(pout, &sc), pout.print("\"engine_state\":"), pout.print(0);
-        if (s.timeout_action) comma(pout, &sc), pout.print("\"timeout_action\":"), pout.print(s.timeout_action);
-        if (s.skip_count) comma(pout, &sc), pout.print("\"skip_count\":"), pout.print(s.skip_count);
-        if (s.message[0] != '\0') comma(pout, &sc), pout.print("\"message\":"), writeEscaped(pout, s.message);
+        if (s.message[0] != '\0') comma(pout, &sc), pout.print("\"message\":"), json_escape::writeQuoted(pout, s.message);
         pout.print('}');
     }
     pout.print(']');
@@ -677,7 +579,7 @@ void emitIndexArrayBody(const IndexRow* rows, size_t n, Print& p) {
         p.print("\"id\":");
         p.print(rows[i].id);
         p.print(",\"name\":");
-        writeEscaped(p, rows[i].name);
+        json_escape::writeQuoted(p, rows[i].name);
         p.print('}');
     }
     p.print(']');
@@ -685,24 +587,25 @@ void emitIndexArrayBody(const IndexRow* rows, size_t n, Print& p) {
 
 } // namespace
 
+// Program files are parsed strictly: a partially read program could lose e.g. its ignition-off step.
 bool parseProgramObjectFile(File& f, Program& out) {
     FullProgramListener listener(&out);
-    jsonStreamingParseWholeFile(f, listener);
-    return listener.good();
+    const bool parsed = jsonStreamingParseWholeFile(f, listener);
+    return parsed && listener.good();
 }
 
 bool parseProgramCompiledFile(File& f, uint8_t expectedId, CompiledStep* outSteps, uint8_t maxSteps,
                               uint8_t* outCount, char* outName, size_t outNameSize) {
     if (!outSteps || maxSteps == 0 || !outCount || !outName || outNameSize == 0) return false;
     CompiledProgramListener listener(expectedId, outSteps, maxSteps, outCount, outName, outNameSize);
-    jsonStreamingParseWholeFile(f, listener);
-    return listener.good();
+    const bool parsed = jsonStreamingParseWholeFile(f, listener);
+    return parsed && listener.good();
 }
 
 bool parseProgramHeaderFile(File& f, uint8_t pathId, uint8_t* outId, char* outName, size_t outNameSize) {
     HeaderListener listener(pathId, outId, outName, outNameSize);
-    jsonStreamingParseWholeFile(f, listener);
-    return listener.okResult();
+    const bool parsed = jsonStreamingParseWholeFile(f, listener);
+    return parsed && listener.okResult();
 }
 
 bool parseProgramIndexFile(File& f, IndexRow* rows, size_t rowCap, size_t* outCount) {

@@ -1,6 +1,6 @@
 /**
- * @file GSMController.Urc.cpp
- * @brief URC/await слой GSMController: парсинг строк модема, ожидание OK/ERROR/+CREG/IP.
+ * @file GsmController.Urc.cpp
+ * @brief URC/await слой GsmController: парсинг строк модема, ожидание OK/ERROR/+CREG/IP.
  *
  * Назначение:
  * - Разделить URC-first обработку входящих строк (URC) и “ожидания” (await) от FSM.
@@ -12,7 +12,7 @@
  * Запрещено:
  * - Добавлять сюда зависимость от web/mqtt и т.п. Это чисто GSM слой.
  */
-#include "gsm/GSMController.h"
+#include "gsm/GsmController.h"
 
 #include "gsm/GsmAtParse.h"
 #include "core/Core.h"
@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-void GSMController::resetAwait() {
+void GsmController::resetAwait() {
     _await = AwaitKind::NONE;
     _awaitDeadlineMs = 0;
     _awaitOk = false;
@@ -29,18 +29,16 @@ void GSMController::resetAwait() {
     _awaitGotCreg = false;
     _awaitGotIp = false;
     _awaitCmdId = 0;
-    _awaitLinesLeft = 0;
 }
 
-void GSMController::beginAwait(AwaitKind kind, uint32_t timeoutMs) {
+void GsmController::beginAwait(AwaitKind kind, uint32_t timeoutMs) {
     resetAwait();
     _await = kind;
     _awaitDeadlineMs = millis() + timeoutMs;
     _awaitCmdId = _cmdId;
-    _awaitLinesLeft = 8;
 }
 
-bool GSMController::awaitTimedOut(uint32_t now) const {
+bool GsmController::awaitTimedOut(uint32_t now) const {
     if (_await == AwaitKind::NONE) return false;
     return (int32_t)(now - _awaitDeadlineMs) >= 0;
 }
@@ -61,13 +59,13 @@ static bool parseCopsQuotedOperator_(const char* line, char* out, size_t outCap)
     return out[0] != '\0';
 }
 
-void GSMController::onRxLine(const char* line) {
+void GsmController::onRxLine(const char* line) {
     if (!line || !line[0]) return;
     handleUrc(line);
     handleAwaitLine(line);
 }
 
-void GSMController::handleUrc(const char* line) {
+void GsmController::handleUrc(const char* line) {
     if (!line || !line[0]) return;
     if (strncmp(line, "+CSQ:", 5) == 0) {
         int rssi = -1;
@@ -79,10 +77,10 @@ void GSMController::handleUrc(const char* line) {
                 const int16_t delta =
                     (prev >= 0 && prev <= 31)
                         ? (int16_t)((rssi > prev) ? (rssi - prev) : (prev - rssi))
-                        : GSM::URC_RSSI_LOG_DELTA;
-                if (delta >= GSM::URC_RSSI_LOG_DELTA) {
+                        : Gsm::URC_RSSI_LOG_DELTA;
+                if (delta >= Gsm::URC_RSSI_LOG_DELTA) {
                     const int dbm = -113 + 2 * rssi;
-                    logger.log("[GSMController] CSQ: rssi=%d (%d dBm) ber=%d\n", rssi, dbm, ber);
+                    logger.log(LogModule::GsmController, "CSQ: rssi=%d (%d dBm) ber=%d\n", rssi, dbm, ber);
                 }
                 _signal = (int16_t)rssi;
             } else if (rssi >= 0) {
@@ -95,7 +93,7 @@ void GSMController::handleUrc(const char* line) {
         char tmp[TextBytes::Gsm::OPERATOR];
         if (parseCopsQuotedOperator_(line, tmp, sizeof(tmp)) && strcmp(tmp, _operator) != 0) {
             strlcpy(_operator, tmp, sizeof(_operator));
-            logger.log("[GSMController] operator: %s\n", _operator);
+            logger.log(LogModule::GsmController, "operator: %s\n", _operator);
         }
         return;
     }
@@ -118,7 +116,7 @@ void GSMController::handleUrc(const char* line) {
                 case 65: why = "timeout"; break;
                 default: break;
             }
-            logger.log("[GSMController] CNTP URC code=%d (%s)\n", code, why);
+            logger.log(LogModule::GsmController, "CNTP URC code=%d (%s)\n", code, why);
         }
         return;
     }
@@ -126,9 +124,9 @@ void GSMController::handleUrc(const char* line) {
         strlcpy(_cipgsmlocSnap, line, sizeof(_cipgsmlocSnap));
         int code = -1;
         if (sscanf(line, "+CIPGSMLOC: %d", &code) == 1) {
-            logger.log("[GSMController] CIPGSMLOC code=%d\n", code);
+            logger.log(LogModule::GsmController, "CIPGSMLOC code=%d\n", code);
         } else {
-            logger.log("[GSMController] CIPGSMLOC %s\n", line);
+            logger.log(LogModule::GsmController, "CIPGSMLOC %s\n", line);
         }
         return;
     }
@@ -137,7 +135,6 @@ void GSMController::handleUrc(const char* line) {
         return;
     }
     if (strcmp(line, "RDY") == 0 || strcmp(line, "Call Ready") == 0 || strcmp(line, "SMS Ready") == 0) {
-        _modemRestartedSeen = true;
         ev(10);
         return;
     }
@@ -172,12 +169,10 @@ static bool isWordError_(const char* line) {
            (strcmp(line, "BUSY") == 0);
 }
 
-void GSMController::handleAwaitLine(const char* line) {
+void GsmController::handleAwaitLine(const char* line) {
     if (_await == AwaitKind::NONE) return;
     if (_awaitCmdId != _cmdId) return;
     if (!line || !line[0]) return;
-
-    if (_awaitLinesLeft > 0) _awaitLinesLeft--;
 
     if (strcmp(line, "OK") == 0) {
         _awaitOk = true;

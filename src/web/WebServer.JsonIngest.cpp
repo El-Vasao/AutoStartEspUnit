@@ -1,7 +1,7 @@
 // src/web/WebServer.JsonIngest.cpp
 #include "web/WebServer.h"
 #include "common/EspHal.h"
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 #include "core/FlashCommitCoordinator.h"
 #include "common/Logger.h"
 #include <WiFi.h>
@@ -28,6 +28,7 @@ struct RawJsonPostCtx {
     bool busyRejected{false};
     bool oversize{false};
     bool ioError{false};
+    bool heldPending{false};
 };
 
 static constexpr uintptr_t kTempAllocFailedTag = 0x1u;
@@ -85,7 +86,7 @@ void WebServer::jsonPostStreamOnBody(JsonPostStreamKind k, AsyncWebServerRequest
                                      size_t len, size_t index, size_t total) {
     if (index == 0) {
         if (jsonPostOtherSidePending(k)) {
-            logger.log("[WebServer] %s: rejected, other JSON stream active\n",
+            logger.log(LogModule::WebServer, "%s: rejected, other JSON stream active\n",
                        k == JsonPostStreamKind::Config ? "config" : "program");
             auto* c = acquireRawJsonCtx();
             if (!c) {
@@ -97,7 +98,7 @@ void WebServer::jsonPostStreamOnBody(JsonPostStreamKind k, AsyncWebServerRequest
             return;
         }
         if (webServer.isFlashBusy()) {
-            logger.log("[WebServer] %s: rejected, isFlashBusy\n",
+            logger.log(LogModule::WebServer, "%s: rejected, isFlashBusy\n",
                        k == JsonPostStreamKind::Config ? "config" : "program");
             auto* c = acquireRawJsonCtx();
             if (!c) {
@@ -109,7 +110,7 @@ void WebServer::jsonPostStreamOnBody(JsonPostStreamKind k, AsyncWebServerRequest
             return;
         }
         if (total > HttpPostJson::MAX_BYTES) {
-            logger.log("[WebServer] %s: body too large (%u > max %u)\n",
+            logger.log(LogModule::WebServer, "%s: body too large (%u > max %u)\n",
                        k == JsonPostStreamKind::Config ? "config" : "program",
                        (unsigned)total, (unsigned)HttpPostJson::MAX_BYTES);
             auto* c = acquireRawJsonCtx();
@@ -123,7 +124,7 @@ void WebServer::jsonPostStreamOnBody(JsonPostStreamKind k, AsyncWebServerRequest
             return;
         }
         if (!ensureHttpTmpDir()) {
-            logger.log("[WebServer] %s: ensurePath for http tmp dir failed\n",
+            logger.log(LogModule::WebServer, "%s: ensurePath for http tmp dir failed\n",
                        k == JsonPostStreamKind::Config ? "config" : "program");
             auto* c = acquireRawJsonCtx();
             if (!c) {
@@ -142,17 +143,18 @@ void WebServer::jsonPostStreamOnBody(JsonPostStreamKind k, AsyncWebServerRequest
         }
         c->f = fileSystem.openDirectWrite(jsonPostTmpPath(k), total);
         if (!c->f) {
-            logger.log("[WebServer] %s: openDirectWrite(%s) failed\n",
+            logger.log(LogModule::WebServer, "%s: openDirectWrite(%s) failed\n",
                        k == JsonPostStreamKind::Config ? "config" : "program", jsonPostTmpPath(k));
             c->failed = true;
             c->ioError = true;
             request->_tempObject = c;
             return;
         }
-        logger.log("[WebServer] %s: streaming body to %s (~%u bytes, heap=%u)\n",
+        logger.log(LogModule::WebServer, "%s: streaming body to %s (~%u bytes, heap=%u)\n",
                    k == JsonPostStreamKind::Config ? "config" : "program",
                    jsonPostTmpPath(k), (unsigned)total, espHalFreeHeap());
         jsonPostSetThisPending(k, true);
+        c->heldPending = true;
         request->_tempObject = c;
     }
 
@@ -166,8 +168,17 @@ void WebServer::jsonPostStreamOnBody(JsonPostStreamKind k, AsyncWebServerRequest
     if (len == 0) {
         return;
     }
+    if (index > (size_t)-1 - len || (total > 0 && index + len > total) ||
+        index + len > HttpPostJson::MAX_BYTES) {
+        logger.log(LogModule::WebServer, "%s: body length overflow index=%u len=%u total=%u\n",
+                   k == JsonPostStreamKind::Config ? "config" : "program",
+                   (unsigned)index, (unsigned)len, (unsigned)total);
+        ctx->failed = true;
+        ctx->oversize = true;
+        return;
+    }
     if (ctx->f && ctx->f.write(data, len) != len) {
-        logger.log("[WebServer] %s: chunk write failed to %s\n",
+        logger.log(LogModule::WebServer, "%s: chunk write failed to %s\n",
                    k == JsonPostStreamKind::Config ? "config" : "program", jsonPostTmpPath(k));
         ctx->failed = true;
         ctx->ioError = true;
@@ -181,10 +192,10 @@ void WebServer::jsonPostStreamOnRequest(JsonPostStreamKind k, AsyncWebServerRequ
         return;
     }
     auto* ctx = static_cast<RawJsonPostCtx*>(request->_tempObject);
-    jsonPostSetThisPending(k, false);
+    if (ctx && ctx->heldPending) jsonPostSetThisPending(k, false);
     const char* tmp = jsonPostTmpPath(k);
     if (!ctx) {
-        logger.log("[WebServer] %s: empty POST body\n",
+        logger.log(LogModule::WebServer, "%s: empty POST body\n",
                    k == JsonPostStreamKind::Config ? "config" : "program");
         if (k == JsonPostStreamKind::Config) {
             request->send(400, "application/json",
@@ -198,7 +209,7 @@ void WebServer::jsonPostStreamOnRequest(JsonPostStreamKind k, AsyncWebServerRequ
         ctx->f.close();
     }
     if (ctx->busyRejected) {
-        logger.log("[WebServer] %s: sending BUSY to client\n",
+        logger.log(LogModule::WebServer, "%s: sending BUSY to client\n",
                    k == JsonPostStreamKind::Config ? "config" : "program");
         releaseRawJsonCtx(ctx);
         request->_tempObject = nullptr;
@@ -206,7 +217,7 @@ void WebServer::jsonPostStreamOnRequest(JsonPostStreamKind k, AsyncWebServerRequ
         return;
     }
     if (ctx->oversize) {
-        logger.log("[WebServer] %s: removed tmp after 413 oversize\n",
+        logger.log(LogModule::WebServer, "%s: removed tmp after 413 oversize\n",
                    k == JsonPostStreamKind::Config ? "config" : "program");
         fileSystem.deleteFile(tmp);
         releaseRawJsonCtx(ctx);
@@ -220,7 +231,7 @@ void WebServer::jsonPostStreamOnRequest(JsonPostStreamKind k, AsyncWebServerRequ
         return;
     }
     if (ctx->ioError || ctx->failed) {
-        logger.log("[WebServer] %s: write error, removed tmp %s\n",
+        logger.log(LogModule::WebServer, "%s: write error, removed tmp %s\n",
                    k == JsonPostStreamKind::Config ? "config" : "program", tmp);
         fileSystem.deleteFile(tmp);
         releaseRawJsonCtx(ctx);
@@ -234,7 +245,7 @@ void WebServer::jsonPostStreamOnRequest(JsonPostStreamKind k, AsyncWebServerRequ
         return;
     }
 
-    logger.log("[WebServer] %s: tmp %s closed, deferred apply queued for loop\n",
+    logger.log(LogModule::WebServer, "%s: tmp %s closed, deferred apply queued for loop\n",
                k == JsonPostStreamKind::Config ? "config" : "program", tmp);
     releaseRawJsonCtx(ctx);
     request->_tempObject = nullptr;

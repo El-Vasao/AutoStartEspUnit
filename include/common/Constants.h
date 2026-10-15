@@ -26,6 +26,8 @@ namespace DS18B20 {
     constexpr uint8_t RESOLUTION = 9;                     ///< 9..12 бит; 9 = быстрее и стабильнее по времени
     constexpr uint16_t CONVERSION_TIMEOUT_MS = 1000;      ///< таймаут конвертации (мс)
     constexpr uint32_t READ_INTERVAL_MS = 5000;           ///< период опроса (мс)
+    /// Release hysteresis for thermostat / temperature triggers (°C).
+    constexpr float RELEASE_HYSTERESIS_C = 0.5f;
 }
 
 // ============================================================
@@ -98,8 +100,6 @@ namespace TextBytes {
     namespace Vehicle {
         /// Строка-режим: "voltage" или "input"
         constexpr size_t ENGINE_DETECTION_SOURCE = 8;
-        /// Строка-алгоритм запуска: "timed", "rpm" или "input"
-        constexpr size_t START_METHOD = 8;
     }
 
     namespace Sensors {
@@ -162,9 +162,6 @@ namespace BufferBytes {
         constexpr size_t WEB_ASSET_GZIP_PATH = 52;
     }
 
-    namespace Config {
-        constexpr size_t KEY = 16;
-    }
 }
 
 // ============================================================
@@ -178,7 +175,6 @@ namespace Timing {
     constexpr uint32_t TEMPERATURE_READ_INTERVAL_MS = DS18B20::READ_INTERVAL_MS;
     constexpr uint32_t TEMPERATURE_READ_INTERVAL_IDLE_MS = 15000;
     constexpr uint32_t DEBOUNCE_DELAY_MS = 50;
-    constexpr uint32_t PULSE_COUNTER_INTERVAL_MS = 100;
 
     constexpr uint32_t WATCHDOG_FEED_INTERVAL_MS = 1000;
     constexpr uint32_t FS_MAINTENANCE_INTERVAL_MS = 3600000; // 1 час
@@ -222,7 +218,7 @@ namespace Timing {
 // ============================================================
 // LittleFS: запасы/лимиты записи (важно для atomic write/rename)
 // ============================================================
-namespace FSystem {
+namespace FsSpace {
     /// Минимальный запас свободного места перед GC/записью (байт).
     constexpr size_t MIN_FREE_SPACE = 4096;
     /// Запас под atomic write/rename (байт).
@@ -234,7 +230,7 @@ namespace FSystem {
 // ============================================================
 // OTA (прошивка и сопутствующие файлы)
 // ============================================================
-namespace OTA {
+namespace Ota {
     constexpr uint32_t BUFFER_SIZE = 256;
     constexpr uint32_t HEADER_SIZE = 4;      ///< little-endian fwSize (4 байта)
     /// Max app image size = dual-OTA slot (`partitions.csv` app0/app1 = 0x140000).
@@ -248,7 +244,7 @@ namespace OTA {
 // ============================================================
 // ADC (измерение напряжения)
 // ============================================================
-namespace ADC {
+namespace Adc {
     /// ESP32-C3 ADC: voltage = raw × adc_voltage_coeff (field-calibrated).
     constexpr uint8_t RESOLUTION_BITS = 12;
     constexpr uint16_t MAX_RAW = (1u << RESOLUTION_BITS) - 1u; ///< 12-bit ADC (0..4095)
@@ -313,7 +309,7 @@ namespace Rpm {
 
 /// ProgramExecutor action timings (not from config).
 namespace ProgramTiming {
-    /// CALL_OWNER: ring duration below this uses modem default (`GSM::VOICE_DEFAULT_RING_MS`).
+    /// CALL_OWNER: ring duration below this uses modem default (`Gsm::VOICE_DEFAULT_RING_MS`).
     constexpr uint32_t CALL_OWNER_MIN_RING_MS = 3000UL;
 }
 
@@ -332,7 +328,7 @@ namespace Defaults {
 // ============================================================
 // SoftAP: параметры по умолчанию
 // ============================================================
-namespace APConfig {
+namespace ApConfig {
     constexpr char SSID_PREFIX[] = "AutoStart-";
     constexpr char DEFAULT_PASSWORD[] = "12345678";
     constexpr uint8_t CHANNEL = 1;
@@ -343,8 +339,6 @@ namespace APConfig {
     constexpr uint8_t SETUP_MAX_CONNECTIONS = 4;
     /// В NORMAL допускаем несколько станций (ESP32-C3 имеет больше RAM).
     constexpr uint8_t NORMAL_MAX_CONNECTIONS = 4;
-    /// Legacy alias для мест, где нужна compile-time константа.
-    constexpr uint8_t MAX_CONNECTIONS = NORMAL_MAX_CONNECTIONS;
 }
 
 namespace WebCache {
@@ -382,6 +376,8 @@ namespace StateStrings {
 // ============================================================
 namespace Logging {
     constexpr size_t MAX_MESSAGE_LENGTH = 256;   ///< включая '\0'
+    /// Строки из задач вне основного цикла (async_tcp, esp_timer), ждущие отправки в SSE.
+    constexpr size_t DEFERRED_SLOTS = 4;
 }
 
 // ============================================================
@@ -467,9 +463,6 @@ namespace NetTiming {
     /// RX assemble buffer (incomplete frame).
     constexpr uint16_t MQTT_RX_ASSEMBLE_MAX = 320;
     constexpr uint32_t MQTT_RX_ASSEMBLE_TIMEOUT_MS = 3000;
-    /// Stack CONNECT / SUBSCRIBE payload scratch.
-    constexpr uint16_t MQTT_CONNECT_PAYLOAD_MAX = 200;
-    constexpr uint16_t MQTT_SUBSCRIBE_PAYLOAD_MAX = 128;
 
     /// Per-tick FSM budgets passed to MqttFsmClient::tick.
     constexpr uint16_t MQTT_TICK_MAX_READ_BYTES = 256;
@@ -500,7 +493,7 @@ namespace WebConfig {
 
 namespace WebUi {
     /// Фиксированный пул UI-сессий (без динамических аллокаций).
-    constexpr uint8_t MAX_UI_SESSIONS = APConfig::MAX_CONNECTIONS * 2;
+    constexpr uint8_t MAX_UI_SESSIONS = ApConfig::NORMAL_MAX_CONNECTIONS * 2;
     constexpr uint32_t HEARTBEAT_INTERVAL_MS = 5000;
     /// Таймаут должен быть > heartbeat (мобильные браузеры могут “подвисать” на фоне).
     constexpr uint32_t SESSION_TIMEOUT_MS = 60000;
@@ -560,7 +553,7 @@ namespace Delays {
 // ============================================================
 // GSM (SIM800): тайминги/лимиты автомата
 // ============================================================
-namespace GSM {
+namespace Gsm {
     constexpr uint32_t BOOT_DELAY_MS = 1000;
     constexpr uint8_t MAX_RETRIES = 3;
 
@@ -612,7 +605,6 @@ namespace GSM {
     /// Cadence for AT+CREG? while modem is still searching (stat ≠ 1/5).
     constexpr uint32_t REG_POLL_INTERVAL_MS = 5000;
     constexpr uint32_t APN_TIMEOUT_MS = 10000;
-    constexpr uint32_t GPRS_ATTACH_TIMEOUT_MS = 15000;
     constexpr uint32_t PDP_ACTIVATE_TIMEOUT_MS = 20000;
     constexpr uint32_t GET_IP_TIMEOUT_MS = 10000;
 
@@ -655,7 +647,7 @@ namespace GSM {
     constexpr uint32_t BRINGUP_ESCALATE_MS = ERROR_RECOVERY_EXHAUSTED_MS;
     /// Max baud accepted when parsing AT+IPR? / IPR write.
     constexpr uint32_t UART_BAUD_PARSE_MAX = 4000000UL;
-    /// Diagnostic event ring depth (GSMController).
+    /// Diagnostic event ring depth (GsmController).
     constexpr uint8_t EVENT_RING_SIZE = 8;
     /// AtSession normal / high-priority queue depths.
     constexpr uint8_t AT_QSIZE = 6;
@@ -673,6 +665,7 @@ namespace GSM {
     constexpr uint32_t VOICE_PROGID_TIMEOUT_MS = 15000;
     constexpr uint32_t VOICE_CALL_CEILING_MS = 60000;
     constexpr uint32_t VOICE_CLIP_WAIT_MS = 8000;
+    constexpr uint32_t VOICE_HANGUP_TIMEOUT_MS = 8000;
     constexpr uint32_t SMS_CMGS_TIMEOUT_MS = 30000;
     /// Min digit suffix length used when matching CLIP vs owner_phone.
     constexpr uint8_t PHONE_MATCH_MIN_DIGITS = 10;
@@ -721,7 +714,7 @@ namespace Sim800Tcp {
 }
 
 /// Boot/yield time cascade budget (defined after Sim800Tcp so CIPSHUT timeout is shared).
-namespace GSM {
+namespace Gsm {
     constexpr uint32_t BOOT_BUDGET_SLACK_MS = 15000UL;
     constexpr uint32_t BOOT_TIME_BUDGET_MS =
         CCLK_TIMEOUT_MS + Sim800Tcp::CIPSHUT_TIMEOUT_MS + CIPGSMLOC_TIMEOUT_MS +
@@ -732,6 +725,7 @@ namespace GSM {
 namespace Cellular {
     /// MQTT disconnect drain loop budget (gsm.update + mqtt.loop iterations).
     constexpr uint8_t MQTT_DRAIN_MAX_TICKS = 50;
+    constexpr uint32_t MQTT_DRAIN_MAX_MS = 200;
     /// Cadence for "settle remaining" progress log during post-boot quiet.
     constexpr uint32_t SETTLE_LOG_INTERVAL_MS = 5000UL;
     /// Consecutive MQTT connect fails before requesting GSM bearer reattach.
@@ -757,8 +751,6 @@ namespace FileMax {
 // ============================================================
 namespace Time {
     constexpr uint32_t MS_PER_SEC = 1000UL;
-    constexpr float MS_PER_SEC_F = 1000.0f;
-    constexpr float SEC_PER_MIN_F = 60.0f;
     constexpr uint32_t SEC_PER_HOUR = 3600UL;
     constexpr uint32_t MS_PER_HOUR = SEC_PER_HOUR * MS_PER_SEC;
 }

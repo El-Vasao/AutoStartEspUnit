@@ -1,5 +1,5 @@
-// src/json/Json.ParseFile.cpp
-#include "json/Json.ParseFile.h"
+// src/json/JsonParseFile.cpp
+#include "json/JsonParseFile.h"
 
 #include "common/Constants.h"
 #include "common/EspHal.h"
@@ -32,8 +32,9 @@ bool jsonStreamingParseWholeFile(File& file, JsonListener& listener) {
         if ((fed & 0xFFu) == 0) {
             espHalFeedWdt();
         }
+        if (parser.failed()) break;
     }
-    return true;
+    return parser.done();
 }
 
 bool jsonStreamingParseProgmem(JsonListener& listener, const char* pgmPtr) {
@@ -49,6 +50,7 @@ bool jsonStreamingParseProgmem(JsonListener& listener, const char* pgmPtr) {
         if ((((uintptr_t)pgmPtr) & 0xFFu) == 0) {
             espHalFeedWdt();
         }
+        if (parser.failed()) break;
     }
-    return true;
+    return parser.done();
 }

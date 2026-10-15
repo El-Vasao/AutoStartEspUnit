@@ -63,7 +63,7 @@
             programSchema = patchProgramSchemaWithHwLimits(programSchema, hwCounts);
           } catch (e3) {}
 
-          const ajv = new Ajv2020({ allErrors: true, strict: true, allowUnionTypes: true });
+          const ajv = APP.validation.createAjv();
           const validateProgram = ajv.compile(programSchema);
           const validateIndex = ajv.compile(indexSchema);
 

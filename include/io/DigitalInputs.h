@@ -73,7 +73,7 @@ public:
 
     // ---- Кнопка на плате (всегда индекс 2) ----
 
-    bool isButtonPressed() const { return getState(2) == LOW; }
+    bool isButtonPressed() const { return getState(2); }
     bool wasButtonPressed();
     bool wasButtonReleased();
     bool isButtonHeld(uint32_t ms);

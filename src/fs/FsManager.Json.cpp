@@ -1,4 +1,4 @@
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 #include "core/Core.h"
 #include "core/ErrorManager.h"
 #include "common/Constants.h"
@@ -64,7 +64,7 @@ static bool commitTmpToPath_atomic_(const char* path, char* tmpPath, bool hadBac
         hadBackup = LittleFS.rename(path, bakPath);
         if (!hadBackup) {
             if (!LittleFS.remove(path)) {
-                logger.log("[FSManager] atomic stream: cannot remove target %s (errno=%d)\n", path, errno);
+                logger.log(LogModule::FsManager, "atomic stream: cannot remove target %s (errno=%d)\n", path, errno);
                 LittleFS.remove(tmpPath);
                 return false;
             }
@@ -73,7 +73,7 @@ static bool commitTmpToPath_atomic_(const char* path, char* tmpPath, bool hadBac
 
     espHalFeedWdt();
     if (!LittleFS.rename(tmpPath, path)) {
-        logger.log("[FSManager] atomic stream: rename failed (errno=%d)\n", errno);
+        logger.log(LogModule::FsManager, "atomic stream: rename failed (errno=%d)\n", errno);
         LittleFS.remove(tmpPath);
         if (hadBackup) {
             (void)LittleFS.rename(bakPath, path);
@@ -92,14 +92,14 @@ static bool commitTmpToPath_atomic_(const char* path, char* tmpPath, bool hadBac
 
 } // namespace
 
-bool FSManager::writeJsonAtomicStream(const char* path, JsonStreamEncodeFn encoder, void* ctx,
+bool FsManager::writeJsonAtomicStream(const char* path, JsonStreamEncodeFn encoder, void* ctx,
                                      size_t maxBytes) {
     if (!initialized || !path || path[0] != '/' || !encoder || maxBytes == 0) {
         return false;
     }
 
     if (!ensurePath(path)) {
-        logger.log("[FSManager] writeJsonAtomicStream: cannot ensure path %s\n", path);
+        logger.log(LogModule::FsManager, "writeJsonAtomicStream: cannot ensure path %s\n", path);
         errorCount++;
         return false;
     }
@@ -114,7 +114,7 @@ bool FSManager::writeJsonAtomicStream(const char* path, JsonStreamEncodeFn encod
 
     File f = LittleFS.open(tmpPath, "w");
     if (!f) {
-        logger.log("[FSManager] writeJsonAtomicStream: cannot create temp %s\n", tmpPath);
+        logger.log(LogModule::FsManager, "writeJsonAtomicStream: cannot create temp %s\n", tmpPath);
         errorCount++;
         return false;
     }
@@ -125,7 +125,7 @@ bool FSManager::writeJsonAtomicStream(const char* path, JsonStreamEncodeFn encod
     f.close();
 
     if (written == 0 || written >= maxBytes) {
-        logger.log("[FSManager] writeJsonAtomicStream: bad byte count (%u)\n", (unsigned)written);
+        logger.log(LogModule::FsManager, "writeJsonAtomicStream: bad byte count (%u)\n", (unsigned)written);
         LittleFS.remove(tmpPath);
         errorCount++;
         return false;

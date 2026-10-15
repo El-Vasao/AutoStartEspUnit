@@ -2,6 +2,7 @@
 #include "config/internal/BaseConfigJsonIo.h"
 
 #include "common/Constants.h"
+#include "common/JsonEscape.h"
 #include "common/Utils.h"
 #include "config/VehicleRules.h"
 #include <math.h>
@@ -24,48 +25,6 @@ void printJsonFloat(Print& p, float v) {
     p.print(buf);
 }
 
-void writeEscaped(Print& p, const char* s) {
-    p.print('"');
-    if (!s) {
-        p.print('"');
-        return;
-    }
-    for (const unsigned char* u = reinterpret_cast<const unsigned char*>(s); *u; u++) {
-        const char c = static_cast<char>(*u);
-        switch (c) {
-            case '\"':
-                p.print("\\\"");
-                break;
-            case '\\':
-                p.print("\\\\");
-                break;
-            case '\b':
-                p.print("\\b");
-                break;
-            case '\f':
-                p.print("\\f");
-                break;
-            case '\n':
-                p.print("\\n");
-                break;
-            case '\r':
-                p.print("\\r");
-                break;
-            case '\t':
-                p.print("\\t");
-                break;
-            default:
-                if (static_cast<unsigned char>(c) < 0x20u) {
-                    char buf[7];
-                    snprintf(buf, sizeof buf, "\\u%04x", static_cast<unsigned>(c));
-                    p.print(buf);
-                } else {
-                    p.write(static_cast<unsigned char>(c));
-                }
-        }
-    }
-    p.print('"');
-}
 
 inline void comma(Print& p, bool* needComma) {
     if (*needComma) p.print(',');
@@ -110,29 +69,29 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
 
     comma(o, &c), o.print("\"wifi\":");
     o.print('{'), c = false;
-    comma(o, &c), o.print("\"ssid\":"), writeEscaped(o, cfg.wifi.ssid);
-    comma(o, &c), o.print("\"password\":"), writeEscaped(o, cfg.wifi.password);
+    comma(o, &c), o.print("\"ssid\":"), json_escape::writeQuoted(o, cfg.wifi.ssid);
+    comma(o, &c), o.print("\"password\":"), json_escape::writeQuoted(o, cfg.wifi.password);
     comma(o, &c), o.print("\"ap_timeout_sec\":"), o.print(cfg.wifi.ap_timeout_sec);
     comma(o, &c), o.print("\"ap_timeout_enabled\":"), cfg.wifi.ap_timeout_enabled ? o.print("true") : o.print("false");
     o.print('}');
 
     comma(o, &c), o.print("\"gsm\":");
     o.print('{'), c = false;
-    comma(o, &c), o.print("\"apn\":"), writeEscaped(o, cfg.gsm.apn);
-    comma(o, &c), o.print("\"apn_user\":"), writeEscaped(o, cfg.gsm.apn_user);
-    comma(o, &c), o.print("\"apn_pass\":"), writeEscaped(o, cfg.gsm.apn_pass);
-    comma(o, &c), o.print("\"owner_phone\":"), writeEscaped(o, cfg.gsm.owner_phone);
-    comma(o, &c), o.print("\"dtmf_password\":"), writeEscaped(o, cfg.gsm.dtmf_password);
+    comma(o, &c), o.print("\"apn\":"), json_escape::writeQuoted(o, cfg.gsm.apn);
+    comma(o, &c), o.print("\"apn_user\":"), json_escape::writeQuoted(o, cfg.gsm.apn_user);
+    comma(o, &c), o.print("\"apn_pass\":"), json_escape::writeQuoted(o, cfg.gsm.apn_pass);
+    comma(o, &c), o.print("\"owner_phone\":"), json_escape::writeQuoted(o, cfg.gsm.owner_phone);
+    comma(o, &c), o.print("\"dtmf_password\":"), json_escape::writeQuoted(o, cfg.gsm.dtmf_password);
     o.print('}');
 
     comma(o, &c), o.print("\"mqtt\":");
     o.print('{'), c = false;
-    comma(o, &c), o.print("\"broker\":"), writeEscaped(o, cfg.mqtt.broker);
+    comma(o, &c), o.print("\"broker\":"), json_escape::writeQuoted(o, cfg.mqtt.broker);
     comma(o, &c), o.print("\"port\":"), o.print(cfg.mqtt.port);
-    comma(o, &c), o.print("\"client_id\":"), writeEscaped(o, cfg.mqtt.client_id);
-    comma(o, &c), o.print("\"user\":"), writeEscaped(o, cfg.mqtt.user);
-    comma(o, &c), o.print("\"pass\":"), writeEscaped(o, cfg.mqtt.pass);
-    comma(o, &c), o.print("\"topic_prefix\":"), writeEscaped(o, cfg.mqtt.topic_prefix);
+    comma(o, &c), o.print("\"client_id\":"), json_escape::writeQuoted(o, cfg.mqtt.client_id);
+    comma(o, &c), o.print("\"user\":"), json_escape::writeQuoted(o, cfg.mqtt.user);
+    comma(o, &c), o.print("\"pass\":"), json_escape::writeQuoted(o, cfg.mqtt.pass);
+    comma(o, &c), o.print("\"topic_prefix\":"), json_escape::writeQuoted(o, cfg.mqtt.topic_prefix);
     comma(o, &c), o.print("\"publish_interval_sec\":"), o.print(cfg.mqtt.publish_interval_sec);
     o.print('}');
 
@@ -147,13 +106,13 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         printJsonFloat(o, cfg.vehicle.engine_stopped_voltage_threshold);
     comma(o, &c), o.print("\"starter_relay_id\":"), o.print(cfg.vehicle.starter_relay_id);
     comma(o, &c), o.print("\"start_method\":"),
-        writeEscaped(o, vehicle_rules::startMethodToString(cfg.vehicle.start_method));
+        json_escape::writeQuoted(o, vehicle_rules::startMethodToString(cfg.vehicle.start_method));
     comma(o, &c), o.print("\"start_input_id\":"), o.print(cfg.vehicle.start_input_id);
     comma(o, &c), o.print("\"starter_crank_time_sec\":"), printJsonFloat(o, cfg.vehicle.starter_crank_time_sec);
     comma(o, &c), o.print("\"starter_retry_pause_sec\":"), o.print(cfg.vehicle.starter_retry_pause_sec);
     comma(o, &c), o.print("\"starter_attempts\":"), o.print(cfg.vehicle.starter_attempts);
     comma(o, &c), o.print("\"start_block_input_id\":"), o.print(cfg.vehicle.start_block_input_id);
-    comma(o, &c), o.print("\"engine_detection_source\":"), writeEscaped(o, cfg.vehicle.engine_detection_source);
+    comma(o, &c), o.print("\"engine_detection_source\":"), json_escape::writeQuoted(o, cfg.vehicle.engine_detection_source);
     comma(o, &c), o.print("\"engine_input_id\":"), o.print(cfg.vehicle.engine_input_id);
     o.print('}');
 
@@ -164,8 +123,8 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         const SensorConfig& sc = cfg.sensors[i];
         if (sc.id != 0) comma(o, &c), o.print("\"id\":"), o.print(sc.id);
         comma(o, &c), o.print("\"coeff\":"), printJsonFloat(o, sc.coeff);
-        if (sc.rom[0] != '\0') comma(o, &c), o.print("\"rom\":"), writeEscaped(o, sc.rom);
-        if (sc.name[0] != '\0') comma(o, &c), o.print("\"name\":"), writeEscaped(o, sc.name);
+        if (sc.rom[0] != '\0') comma(o, &c), o.print("\"rom\":"), json_escape::writeQuoted(o, sc.rom);
+        if (sc.name[0] != '\0') comma(o, &c), o.print("\"name\":"), json_escape::writeQuoted(o, sc.name);
         o.print('}');
     }
     o.print(']');
@@ -178,7 +137,7 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         if (ic.id != 0) comma(o, &c), o.print("\"id\":"), o.print(ic.id);
         comma(o, &c), o.print("\"enabled\":"), ic.enabled ? o.print("true") : o.print("false");
         comma(o, &c), o.print("\"type\":"), o.print(static_cast<int>(ic.type));
-        if (ic.name[0] != '\0') comma(o, &c), o.print("\"name\":"), writeEscaped(o, ic.name);
+        if (ic.name[0] != '\0') comma(o, &c), o.print("\"name\":"), json_escape::writeQuoted(o, ic.name);
         if (ic.type == InputType::DIGITAL) {
             comma(o, &c), o.print("\"active_state\":"), ic.active_state ? o.print("true") : o.print("false");
         } else {
@@ -196,8 +155,8 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
     o.print('{'), c = false;
     comma(o, &c), o.print("\"enabled\":"), cfg.thermostat.enabled ? o.print("true") : o.print("false");
     comma(o, &c), o.print("\"sensor_id\":"), o.print(cfg.thermostat.sensor_id);
-    comma(o, &c), o.print("\"sensor_name\":"), writeEscaped(o, findSensorNameById(cfg, cfg.thermostat.sensor_id));
-    comma(o, &c), o.print("\"comparison\":"), writeEscaped(o, cfg.thermostat.comparison);
+    comma(o, &c), o.print("\"sensor_name\":"), json_escape::writeQuoted(o, findSensorNameById(cfg, cfg.thermostat.sensor_id));
+    comma(o, &c), o.print("\"comparison\":"), json_escape::writeQuoted(o, cfg.thermostat.comparison);
     comma(o, &c), o.print("\"lower_threshold\":"), printJsonFloat(o, cfg.thermostat.lower_threshold);
     comma(o, &c), o.print("\"upper_threshold\":"), printJsonFloat(o, cfg.thermostat.upper_threshold);
     comma(o, &c), o.print("\"program_id_lower\":"), o.print(cfg.thermostat.program_id_lower);
@@ -223,7 +182,7 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
     comma(o, &c), o.print("\"time\":");
     o.print('{'), c = false;
     comma(o, &c), o.print("\"enabled\":"), cfg.time.enabled ? o.print("true") : o.print("false");
-    comma(o, &c), o.print("\"ntp_server\":"), writeEscaped(o, cfg.time.ntp_server);
+    comma(o, &c), o.print("\"ntp_server\":"), json_escape::writeQuoted(o, cfg.time.ntp_server);
     comma(o, &c), o.print("\"tz_offset_hours\":"), o.print(static_cast<int>(cfg.time.tz_offset_hours));
     comma(o, &c), o.print("\"sync_interval_hours\":"),
         o.print(static_cast<unsigned long>(cfg.time.sync_interval_hours));
@@ -251,8 +210,8 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         if (tt.id) comma(o, &c), o.print("\"id\":"), o.print(tt.id);
         comma(o, &c), o.print("\"enabled\":"), tt.enabled ? o.print("true") : o.print("false");
         comma(o, &c), o.print("\"sensor_id\":"), o.print(tt.sensor_id);
-        comma(o, &c), o.print("\"sensor_name\":"), writeEscaped(o, findSensorNameById(cfg, tt.sensor_id));
-        comma(o, &c), o.print("\"comparison\":"), writeEscaped(o, tt.comparison);
+        comma(o, &c), o.print("\"sensor_name\":"), json_escape::writeQuoted(o, findSensorNameById(cfg, tt.sensor_id));
+        comma(o, &c), o.print("\"comparison\":"), json_escape::writeQuoted(o, tt.comparison);
         comma(o, &c), o.print("\"threshold\":"), printJsonFloat(o, tt.threshold);
         comma(o, &c), o.print("\"program_id\":"), o.print(tt.program_id);
         o.print('}');

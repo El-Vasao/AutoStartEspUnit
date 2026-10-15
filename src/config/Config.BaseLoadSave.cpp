@@ -2,7 +2,7 @@
 #include "common/Constants.h"
 #include "common/ErrorCodes.h"
 #include "common/EspHal.h"
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 #include "common/Logger.h"
 #include "common/Utils.h"
 #include "config/internal/BaseConfigJsonIo.h"
@@ -25,7 +25,7 @@ size_t encodeBaseConfigForSave(Print& p, void* ctx) {
 }
 
 void logVehicleFix(const char* msg, void*) {
-    logger.log("[Config] fix: %s\n", msg);
+    logger.log(LogModule::Config, "fix: %s\n", msg);
 }
 
 } // namespace
@@ -33,20 +33,20 @@ void logVehicleFix(const char* msg, void*) {
 bool Config::loadBaseFromFile(const char* path, BaseConfig& target, size_t& outLen, uint16_t* outFileCrc) {
     File f = fileSystem.openRead(path);
     if (!f) {
-        logger.log("[Config] Failed to open file: %s\n", path);
+        logger.log(LogModule::Config, "Failed to open file: %s\n", path);
         lastLoadError_ = ErrorCode::CONFIG_MISSING;
         return false;
     }
 
     const size_t len = f.size();
     if (len == 0 || len >= Limits::CONFIG_JSON_SIZE) {
-        logger.log("[Config] Invalid config file size: %u\n", (unsigned)len);
+        logger.log(LogModule::Config, "Invalid config file size: %u\n", (unsigned)len);
         f.close();
         lastLoadError_ = ErrorCode::CONFIG_CRC_FAIL;
         return false;
     }
 #ifdef SERIAL_DEBUG
-    logger.log("[Config] File read OK, length %u\n", (unsigned)len);
+    logger.log(LogModule::Config, "File read OK, length %u\n", (unsigned)len);
 #endif
     outLen = len;
 
@@ -56,9 +56,9 @@ bool Config::loadBaseFromFile(const char* path, BaseConfig& target, size_t& outL
     }
 
     f.seek(0, SeekSet);
-    if (!config_internal::parseBaseConfigStreamingFromFile(f, target)) {
+    if (!config_internal::parseBaseConfigStreamingFromFile(f, target, config_internal::ParseMode::Lenient)) {
         f.close();
-        logger.log("[Config] JSON parse error (streaming)\n");
+        logger.log(LogModule::Config, "JSON parse error (streaming)\n");
         lastLoadError_ = ErrorCode::CONFIG_PARSE_FAIL;
         return false;
     }
@@ -76,7 +76,7 @@ bool Config::saveBaseConfig(const BaseConfig& cfg) {
     configCRC = config_internal::crc16SerializedBaseConfig(cfg, &len);
     espHalFeedWdt();
     if (len == 0 || len >= Limits::CONFIG_JSON_SIZE) {
-        logger.log("[Config] Serialization failed/too large (len=%u)\n", (unsigned)len);
+        logger.log(LogModule::Config, "Serialization failed/too large (len=%u)\n", (unsigned)len);
         return false;
     }
 
@@ -84,16 +84,16 @@ bool Config::saveBaseConfig(const BaseConfig& cfg) {
     espHalFeedWdt();
     if (!fileSystem.writeJsonAtomicStream("/config.json", encodeBaseConfigForSave, const_cast<BaseConfig*>(&cfg),
                                           Limits::CONFIG_JSON_SIZE)) {
-        logger.log("[Config] Failed to save base config\n");
+        logger.log(LogModule::Config, "Failed to save base config\n");
         return false;
     }
 
-    logger.log("[Config] Base config saved successfully, CRC=%04X\n", configCRC);
+    logger.log(LogModule::Config, "Base config saved successfully, CRC=%04X\n", configCRC);
     return true;
 }
 
 ConfigLoadOutcome Config::loadWithOutcome() {
-    logger.log("[Config] begin\n");
+    logger.log(LogModule::Config, "begin\n");
     lastLoadError_ = ErrorCode::NONE;
 
     // Важно: `BaseConfig` большой; при ошибке файла вызываем `reset()`, где на стеке ещё один `BaseConfig`.
@@ -103,38 +103,28 @@ ConfigLoadOutcome Config::loadWithOutcome() {
         size_t fileLen = 0;
         uint16_t fileCrc = 0;
         if (loadBaseFromFile("/config.json", tmp, fileLen, &fileCrc)) {
-            // Legacy adc_voltage_coeff (≥1) was paired with raw*(3.3/4095)*15*coeff.
-            // New formula is raw*coeff — fold old scale into RAM so live voltage is sane
-            // until the user saves (persists the folded value) or recalibrates.
-            if (tmp.vehicle.adc_voltage_coeff >= 1.0f) {
-                const float before = tmp.vehicle.adc_voltage_coeff;
-                tmp.vehicle.adc_voltage_coeff *= (3.3f / 4095.0f) * 15.0f;
-                logger.log("[Config] Folded legacy adc_voltage_coeff %.4f -> %.6f\n",
-                           before, tmp.vehicle.adc_voltage_coeff);
-            }
-            // Print(float) used to emit 2 decimals — 0.004 became 0.00 in flash.
             if (!(tmp.vehicle.adc_voltage_coeff > 0.0f) || !isfinite(tmp.vehicle.adc_voltage_coeff)) {
-                logger.log("[Config] adc_voltage_coeff invalid (%.6f); using DEFAULT_COEFF\n",
+                logger.log(LogModule::Config, "adc_voltage_coeff invalid (%.6f); using DEFAULT_COEFF\n",
                            tmp.vehicle.adc_voltage_coeff);
-                tmp.vehicle.adc_voltage_coeff = ADC::DEFAULT_COEFF;
+                tmp.vehicle.adc_voltage_coeff = Adc::DEFAULT_COEFF;
             }
             baseCache = tmp;
             loaded = true;
             configCRC = fileCrc;
-            logger.log("[Config] Config loaded successfully, CRC=%04X\n", configCRC);
+            logger.log(LogModule::Config, "Config loaded successfully, CRC=%04X\n", configCRC);
             return ConfigLoadOutcome::OkFromFile;
         }
     }
 
-    logger.log("[Config] Config load failed, resetting to defaults\n");
+    logger.log(LogModule::Config, "Config load failed, resetting to defaults\n");
     if (!reset()) {
-        logger.log("[Config] Reset failed\n");
+        logger.log(LogModule::Config, "Reset failed\n");
         if (lastLoadError_ == ErrorCode::NONE) {
             lastLoadError_ = ErrorCode::CONFIG_MISSING;
         }
         return ConfigLoadOutcome::Failed;
     }
-    logger.log("[Config] Defaults written and loaded into RAM, CRC=%04X; rebooting for clean startup\n", configCRC);
+    logger.log(LogModule::Config, "Defaults written and loaded into RAM, CRC=%04X; rebooting for clean startup\n", configCRC);
     return ConfigLoadOutcome::OkAfterFactoryDefaultsWrittenRebootRecommended;
 }
 
@@ -142,7 +132,7 @@ bool Config::save() { return saveBaseConfig(baseCache); }
 
 bool Config::setTzOffsetHours(int8_t hours) {
     if (hours < -12 || hours > 14) {
-        logger.log("[Config] reject tz_offset_hours=%d\n", (int)hours);
+        logger.log(LogModule::Config, "reject tz_offset_hours=%d\n", (int)hours);
         return false;
     }
     if (baseCache.time.tz_offset_hours == hours) return true;
@@ -150,10 +140,10 @@ bool Config::setTzOffsetHours(int8_t hours) {
     baseCache.time.tz_offset_hours = hours;
     if (!save()) {
         baseCache.time.tz_offset_hours = prev;
-        logger.log("[Config] setTzOffsetHours save failed, reverted to %+dh\n", (int)prev);
+        logger.log(LogModule::Config, "setTzOffsetHours save failed, reverted to %+dh\n", (int)prev);
         return false;
     }
-    logger.log("[Config] tz_offset_hours %+dh → %+dh\n", (int)prev, (int)hours);
+    logger.log(LogModule::Config, "tz_offset_hours %+dh → %+dh\n", (int)prev, (int)hours);
     return true;
 }
 
@@ -164,12 +154,12 @@ void Config::emitCurrentBaseConfigJson(Print& p) const {
 namespace config_storage_internal {
 void prepareFlashWriteLogGcAndWdt() {
     size_t freeSpace = fileSystem.getFreeSpace();
-    logger.log("[Config] Free space: %u bytes\n", freeSpace);
-    if (freeSpace < FSystem::MIN_FREE_SPACE) {
-        logger.log("[Config] Low free space, reclaiming orphans…\n");
+    logger.log(LogModule::Config, "Free space: %u bytes\n", freeSpace);
+    if (freeSpace < FsSpace::MIN_FREE_SPACE) {
+        logger.log(LogModule::Config, "Low free space, reclaiming orphans…\n");
         fileSystem.gc();
         freeSpace = fileSystem.getFreeSpace();
-        logger.log("[Config] Free space after reclaim: %u bytes\n", freeSpace);
+        logger.log(LogModule::Config, "Free space after reclaim: %u bytes\n", freeSpace);
     }
     config.wdtPort().feedNow();
     espHalFeedWdt();
@@ -177,9 +167,9 @@ void prepareFlashWriteLogGcAndWdt() {
 
 bool ensureProgramsDir() {
     if (!fileSystem.exists("/programs")) {
-        logger.log("[Config] Directory /programs does not exist, creating...\n");
+        logger.log(LogModule::Config, "Directory /programs does not exist, creating...\n");
         if (!fileSystem.mkdir("/programs")) {
-            logger.log("[Config] ERROR: Failed to create /programs directory\n");
+            logger.log(LogModule::Config, "ERROR: Failed to create /programs directory\n");
             return false;
         }
     }

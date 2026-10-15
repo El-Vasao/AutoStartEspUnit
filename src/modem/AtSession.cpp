@@ -2,6 +2,8 @@
 
 #include "common/Logger.h"
 
+#include <string.h>
+
 void AtSession::reset() {
     _state = State::Idle;
     _qHead = 0;
@@ -17,6 +19,8 @@ bool AtSession::enqueue_(Request* q, uint8_t qsize, uint8_t& head, uint8_t& coun
     if (count >= qsize) return false;
     const uint8_t idx = (uint8_t)((head + count) % qsize);
     q[idx] = r;
+    strlcpy(q[idx].cmdBuf, r.cmd ? r.cmd : "", sizeof(q[idx].cmdBuf));
+    q[idx].cmd = q[idx].cmdBuf;
     count++;
     return true;
 }
@@ -40,6 +44,7 @@ void AtSession::startNext_(uint32_t nowMs) {
         _qHead = (uint8_t)((_qHead + 1) % QSIZE);
         _qCount--;
     }
+    _active.cmd = _active.cmdBuf;
 
     _res = Result{};
     _deadlineMs = nowMs + (_active.timeoutMs ? _active.timeoutMs : 1);
@@ -61,9 +66,9 @@ void AtSession::finish_(bool ok, bool err, bool timeout) {
     const char* tag = (_active.tag && _active.tag[0]) ? _active.tag : nullptr;
     const char* cmd = (_active.cmd && _active.cmd[0]) ? _active.cmd : "";
     if (tag) {
-        logger.log("[AT] << TIMEOUT for %s (%s)\n", cmd, tag);
+        logger.log(LogModule::AT, "<< TIMEOUT for %s (%s)\n", cmd, tag);
     } else {
-        logger.log("[AT] << TIMEOUT for %s\n", cmd);
+        logger.log(LogModule::AT, "<< TIMEOUT for %s\n", cmd);
     }
 }
 

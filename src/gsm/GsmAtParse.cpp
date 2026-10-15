@@ -1,5 +1,7 @@
 #include "gsm/GsmAtParse.h"
 
+#include "common/Constants.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -116,7 +118,9 @@ bool phonesMatch(const char* a, const char* b) {
     const size_t na = extractPhoneDigits(a, da, sizeof(da));
     const size_t nb = extractPhoneDigits(b, db, sizeof(db));
     if (na == 0 || nb == 0) return false;
-    const size_t need = (na < 10 && nb < 10) ? ((na < nb) ? na : nb) : 10;
+    const size_t need = (na < Gsm::PHONE_MATCH_MIN_DIGITS && nb < Gsm::PHONE_MATCH_MIN_DIGITS)
+                            ? ((na < nb) ? na : nb)
+                            : (size_t)Gsm::PHONE_MATCH_MIN_DIGITS;
     if (na < need || nb < need) {
         return na == nb && strcmp(da, db) == 0;
     }

@@ -1,4 +1,4 @@
-// include/ota/OTAHandler.h
+// include/ota/OtaHandler.h
 #pragma once
 
 #include <Arduino.h>
@@ -14,9 +14,9 @@
  *
  * No full `/update.bin` on disk — chunks from POST /upload feed the FSM directly.
  */
-class OTAHandler {
+class OtaHandler {
 public:
-    OTAHandler();
+    OtaHandler();
 
     void begin();
     void update();

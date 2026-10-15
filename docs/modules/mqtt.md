@@ -1,10 +1,19 @@
 # `mqtt`: MqttFsmClient, команды и статус
 
+```mermaid
+stateDiagram-v2
+  [*] --> Disconnected
+  Disconnected --> Connecting
+  Connecting --> Connected: CONNACK
+  Connecting --> Disconnected: refuse / timeout
+  Connected --> Disconnected: drop / keepalive
+```
+
 ## Роль
-MQTT-публикация статуса и подписка на команды выполняются **встроенным неблокирующим клиентом** (`MqttFsmClient`) через обёртку `MQTTClient`. Транспорт — `Client&` из GSM (SIM800 TCP).
+MQTT-публикация статуса и подписка на команды выполняются **встроенным неблокирующим клиентом** (`MqttFsmClient`) через обёртку `MqttClient`. Транспорт — `Client&` из GSM (SIM800 TCP).
 
 Основные файлы:
-- `include/mqtt/MQTTClient.h`, `src/mqtt/MQTTClient.Core.cpp`, `src/mqtt/MQTTClient.Commands.cpp`
+- `include/mqtt/MqttClient.h`, `src/mqtt/MqttClient.Core.cpp`, `src/mqtt/MqttClient.Commands.cpp`
 - `include/mqtt/MqttFsmClient.h`, `src/mqtt/MqttFsmClient.cpp`
 - парсинг команд: `include/mqtt/MqttCommandParser.h`, `src/mqtt/MqttCommandParser.cpp`
 - JSON статуса: `src/mqtt/MqttStatusBuilder.cpp`
@@ -59,7 +68,7 @@ MQTT-публикация статуса и подписка на команды
 - Один MQTT-кадр = один атомарный `AT+CIPSEND` (`write` только буферизует, `flush`/`flushSend` стартует send).
 - RX ring overflow → reconnect (не drop-oldest — иначе desync framing).
 - `+IPD` framing exclusive while matching/reading; last payload byte never falls through to raw sniffer; `CIPHEAD=1` required.
-- MQTT RX stall: валидный неполный кадр → fail-closed reconnect (`rx_incomplete`); junk head → byte-hunt. Лог: hex головы + transport forensic (см. `gsm_modem.md`).
+- MQTT RX stall: валидный неполный кадр → fail-closed reconnect (`rx_incomplete`); junk head → byte-hunt. Лог: hex головы + transport forensic (см. [`modem.md`](modem.md)).
 - Tele не стартует CIPSEND, пока inbound assemble ждёт хвост кадра (снижает truncation mid-send).
 - `mqtt.loop()` always when READY; mid-CIPSEND TX no-op, RX drained.
 - Keepalive dead-man: no MQTT RX for `1.5 × keepAliveSec` → `keepalive_timeout` Error → reconnect.
@@ -236,7 +245,7 @@ retained `"offline"` / `"online"`.
 
 SoftAP SSE `gsm` event mirrors `gsmState`, `csq`, and `mqttConnected` for local debug (`gsmState` не в MQTT Tele — канал жив только при рабочем контуре модема).
 
-**Time vs MQTT CIP:** full modem cascade (`CCLK` → `CIPSHUT` → `CIPGSMLOC` → optional `CNTP`) cannot share the IP stack with MQTT TCP. Boot still runs the full cascade before first CIPSTART. While unsynced with MQTT up, TimeSyncManager prefers **CCLK-lite** (`AT+CCLK?` only, no drain; soft-miss / busy use a short re-arm, not fail-backoff) so NITZ can succeed without flapping the broker; after several lite misses (or force) it drains MQTT (offline + DISCONNECT + CIPCLOSE), runs `CIPSHUT` then CIPGSMLOC/CNTP, then reconnects — same drain recipe as voice/SMS. Heavy cascade failures use stepped backoff (2→5→15→30 min). `+CIPGSMLOC` is waited after command `OK` (URC often arrives later). Manual `set_time` still applies without tearing CIP. `time.stale` (48 h) is reported in status; schedule triggers still use `isSynced()`. Log tags: `[MQTTClient]`, `[TimeSync]`, `[Cellular]`, `[GSMController]`.
+**Time vs MQTT CIP:** full modem cascade (`CCLK` → `CIPSHUT` → `CIPGSMLOC` → optional `CNTP`) cannot share the IP stack with MQTT TCP. Boot still runs the full cascade before first CIPSTART. While unsynced with MQTT up, TimeSyncManager prefers **CCLK-lite** (`AT+CCLK?` only, no drain; soft-miss / busy use a short re-arm, not fail-backoff) so NITZ can succeed without flapping the broker; after several lite misses (or force) it drains MQTT (offline + DISCONNECT + CIPCLOSE), runs `CIPSHUT` then CIPGSMLOC/CNTP, then reconnects — same drain recipe as voice/SMS. Heavy cascade failures use stepped backoff (2→5→15→30 min). `+CIPGSMLOC` is waited after command `OK` (URC often arrives later). Manual `set_time` still applies without tearing CIP. `time.stale` (48 h) is reported in status; schedule triggers still use `isSynced()`. Log tags: `[MqttClient]`, `[TimeSync]`, `[Cellular]`, `[GsmController]`.
 
 **Abnormal reboot fact** (always undelivered on boot, except clean reasons):
 

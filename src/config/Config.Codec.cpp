@@ -5,7 +5,7 @@
 bool Config::validateCross(const BaseConfig& cfg) {
     const char* reason = vehicle_rules::validate(cfg);
     if (reason) {
-        logger.log("[Config] Rejected: %s\n", reason);
+        logger.log(LogModule::Config, "Rejected: %s\n", reason);
         return false;
     }
     return true;

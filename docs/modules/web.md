@@ -1,5 +1,13 @@
 # `web`: SoftAP, HTTP API, SSE (UI)
 
+```mermaid
+flowchart LR
+  AP[SoftAP] --> HTTP[ESPAsyncWebServer]
+  HTTP --> API[JSON API]
+  HTTP --> SSE[/events]
+  HTTP --> GZ[index.html.gz style.css.gz app.js.gz]
+```
+
 ## Роль
 
 Web-подсистема — локальный UI поверх SoftAP/captive portal:
@@ -106,7 +114,7 @@ ESP32-C3 Arduino: AsyncTCP/ESPAsyncWebServer callbacks могут выполня
 
 | Операция | Контекст | Контракт |
 |----------|----------|----------|
-| `core.otaStreamFeed` / `otaStreamFinish` / `otaStreamAbort` | upload handler `POST /upload` | Пишет в FSM `OTAHandler`; не делает LittleFS commit всего пакета; режим `OTA_UPDATE` **откладывается** через `pendingDeferredOtaFromWebUpload` → drain в `Core::update` |
+| `core.otaStreamFeed` / `otaStreamFinish` / `otaStreamAbort` | upload handler `POST /upload` | Пишет в FSM `OtaHandler`; не делает LittleFS commit всего пакета; режим `OTA_UPDATE` **откладывается** через `pendingDeferredOtaFromWebUpload` → drain в `Core::update` |
 | `core.onOtaHttpUploadStreamOpenedFromWeb` | upload index==0 | `prepareHttpUploadSession` + флаг deferred mode switch |
 | JSON body → tmp file | `jsonPostStreamOnBody` | Только stream write в `.tmp`; **apply** только из loop (`FlashCommitCoordinator`) |
 | `sendJsonBuffered` / static responses | GET handlers | Краткий `malloc` буфера ответа; не держать flash lock |

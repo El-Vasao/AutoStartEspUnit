@@ -19,6 +19,9 @@ public:
     void begin();
     void update();
 
+    /// Copy enabled flags from config without clearing last-fire day keys (OTA restore).
+    void syncEnabledFromConfig();
+
     void setEnabled(uint8_t index, bool en);
     bool isEnabled(uint8_t index) const;
 

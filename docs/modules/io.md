@@ -1,5 +1,13 @@
 # `io`: входы, реле, сенсоры
 
+```mermaid
+flowchart LR
+  Pins[GPIO] --> DI[DigitalInputs]
+  Pins --> Relays[RelayController]
+  OneWire[1-Wire] --> Sensors[SensorsController]
+  Adc[VBAT ADC] --> Sensors
+```
+
 ## Роль
 `io` — hot-path подсистема, которая взаимодействует с “железом”:
 - цифровые входы (антидребезг, pulse counter)
@@ -7,9 +15,9 @@
 - температурные датчики DS18B20 + измерение напряжения (ADC)
 
 Основные файлы:
-- `include/io/DigitalInputs.h` + `src/io/DigitalInputs.Core.cpp`
-- `include/io/RelayController.h` + `src/io/RelayController.Core.cpp`
-- `include/io/SensorsController.h` + `src/io/SensorsController.Core.cpp`
+- `include/io/DigitalInputs.h` + `src/io/DigitalInputs.cpp`
+- `include/io/RelayController.h` + `src/io/RelayController.cpp`
+- `include/io/SensorsController.h` + `src/io/SensorsController.cpp`
 - hardware map: `include/common/Pins.h`
 
 ## Инварианты

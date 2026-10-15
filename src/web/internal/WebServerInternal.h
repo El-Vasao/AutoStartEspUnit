@@ -18,7 +18,7 @@
 #include <stdlib.h>
 
 #include "web/WebServer.h"
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 #include "core/Core.h"
 #include "common/Logger.h"
 #include "common/Constants.h"

@@ -17,10 +17,9 @@ void ModemUart::emitFramedLine_(char* line) {
     if (onlyWs) return;
     // Skip modem echo of the last TX command (ATE1); ATE0 is preferred, this is safety.
     if (_lastTx[0] && strcmp(line, _lastTx) == 0) {
-        if (_handler) _handler(_handlerCtx, line);
         return;
     }
-    logger.log("[AT] << %s\n", line);
+    logger.log(LogModule::AT, "<< %s\n", line);
     if (_handler) _handler(_handlerCtx, line);
 }
 
@@ -51,7 +50,7 @@ void ModemUart::writeLine(const char* line) {
     _serial.print("\r\n");
     strlcpy(_lastTx, line, sizeof(_lastTx));
     // Text control-plane only; CIPSEND body uses writeBytes (not logged).
-    logger.log("[AT] >> %s\n", line);
+    logger.log(LogModule::AT, ">> %s\n", line);
     // No Serial.flush(): blocks long enough to trip WDT under AT load.
 }
 
@@ -100,7 +99,7 @@ void ModemUart::pollRx() {
         // CIPSEND prompt arrives without CRLF — log clearly and do not buffer (avoids
         // attaching TX-echo / binary to '>' and emitting garbage "lines").
         if (c == '>' && _lineLen == 0) {
-            logger.log("[AT] << CIPSEND prompt\n");
+            logger.log(LogModule::AT, "<< CIPSEND prompt\n");
             if ((++n & 0x3F) == 0) {
                 yield();
             }

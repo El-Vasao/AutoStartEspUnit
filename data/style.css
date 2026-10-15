@@ -104,13 +104,6 @@ body {
     margin: 0;
 }
 
-.status-bar {
-    margin-top: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
 .status-strip {
     display: flex;
     align-items: flex-start;
@@ -575,10 +568,6 @@ input:checked + .slider:before {
 .ui-locked nav,
 .ui-locked header {
     pointer-events: none;
-}
-/* Статус-бар оставляем кликабельным (перезагрузка и т.д.) во время записи во flash */
-.ui-locked header .status-bar {
-    pointer-events: auto;
 }
 
 /* ====================================================

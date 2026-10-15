@@ -4,6 +4,7 @@
 #include <Client.h>
 #include "common/Constants.h"
 #include "modem/AtSession.h"
+#include "modem/Sim800Lines.h"
 
 // URC-first single-socket TCP transport for SIM800.
 // - No CIPRXGET/CIPSTATUS polling
@@ -32,8 +33,6 @@ public:
     bool isBusBusy() const { return isTcpEpochBusy() || _at.isBusy(); }
 
     bool connectStart(const char* host, uint16_t port);
-    /// Clear stuck connect/send flags (e.g. Client::connect wall-clock timeout).
-    void abandonConnect(const char* reason = nullptr);
     void stop(const char* reason = nullptr);
 
     /// Time-sync (or other non-TCP owner) ran AT+CIPSHUT — invalidate warm CIPSTART / IP config cache.
@@ -69,7 +68,6 @@ public:
     int peek() const;
 
     /// After repeated CIPSHUT recovers without CONNECT OK — GSM should reattach bearer.
-    bool needsBearerReattach() const { return _needsBearerReattach; }
     bool consumeNeedsBearerReattach() {
         if (!_needsBearerReattach) return false;
         _needsBearerReattach = false;
@@ -106,7 +104,7 @@ private:
 
     char _host[TextBytes::Mqtt::BROKER]{};
     uint16_t _port{0};
-    char _cmdStart[GSM::CMD_BUFFER_SIZE]{};
+    char _cmdStart[Gsm::CMD_BUFFER_SIZE]{};
     char _cmdSend[32]{};
 
     // RX ring (push mode); overflow marks session fatal (no drop-oldest desync).
@@ -123,11 +121,7 @@ private:
     /// Length frozen into AT+CIPSEND=N at startSend_ (must match bytes written on '>').
     uint16_t _sendLen{0};
 
-    // +IPD parser state (byte-level)
-    enum class IpState : uint8_t { Idle, MatchI, MatchP, MatchD, MatchComma, ReadLen, ReadData };
-    IpState _ipState{IpState::Idle};
-    uint16_t _ipLen{0};
-    uint16_t _ipRead{0};
+    sim800_lines::IpdFramer _ipd;
 
     // Raw push framing: sniff short CRLF control lines; pass binary through.
     static constexpr uint8_t RAW_LINE_BUF_SIZE = Sim800Tcp::RAW_LINE_BUF;
@@ -144,8 +138,6 @@ private:
     bool discardingTcpPayload_(bool fromIpd) const;
     /// CRLF control-line filter / MQTT RX (no +IPD matcher). Used after match abort replay.
     void feedRawByte_(char c);
-    /// Abort partial +IPD match: replay consumed prefix into feedRawByte_, then current byte.
-    void abortIpdMatch_(IpState matchedUntil, char c);
     void clearRx_();
     bool startConnect_();
     bool enqueueIpConfig_();

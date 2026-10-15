@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  native-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install PlatformIO and gcovr
+        run: pip install --upgrade platformio gcovr
+      - name: Native tests
+        env:
+          PLATFORMIO_BUILD_FLAGS: "--coverage"
+        run: pio test -e native
+      - name: Coverage
+        run: gcovr -r . --filter src --filter include --exclude test --txt
+      - name: JS tests
+        run: node --test "test/js/**/*.test.mjs"
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .pio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            pio-${{ runner.os }}-
+      - name: Build firmware
+        run: pio run -e esp32c3

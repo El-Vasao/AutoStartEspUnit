@@ -16,9 +16,7 @@
     safe('programForm', APP.stores.registerProgramFormStore);
     safe('uiToast', APP.stores.registerUiToastStore);
     safe('uiBusy', APP.stores.registerUiBusyModalStore);
-    safe('uiStatusBar', APP.stores.registerUiStatusBarCompatStore);
     safe('uiFormat', APP.stores.registerUiFormattersStore);
-    safe('uiNotification', APP.stores.registerUiNotificationCompatStore);
     safe('uiState', APP.stores.registerUiStateStore);
     safe('uiDialog', APP.stores.registerUiConfirmDialogStore);
     safe('deviceStatus', APP.stores.registerDeviceStatusStore);

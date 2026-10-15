@@ -1,16 +1,16 @@
-// src/ota/OTAHandler.Stream.cpp
-#include "ota/OTAHandler.h"
+// src/ota/OtaHandler.Stream.cpp
+#include "ota/OtaHandler.h"
 
 #include "core/Core.h"
 #include "common/Logger.h"
 #include "common/Constants.h"
 #include "common/EspHal.h"
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 
 #include <Update.h>
 #include <cstring>
 
-bool OTAHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
+bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
     consumed = 0;
     if (!data || len == 0) return true;
     if (_phase == Phase::Failed || _phase == Phase::Done || _phase == Phase::Idle) {
@@ -23,24 +23,24 @@ bool OTAHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
 
         switch (_phase) {
             case Phase::Header: {
-                const size_t need = OTA::HEADER_SIZE - _hdrHave;
+                const size_t need = Ota::HEADER_SIZE - _hdrHave;
                 const size_t take = left < need ? left : need;
                 memcpy(_hdrBuf + _hdrHave, p, take);
                 _hdrHave = static_cast<uint8_t>(_hdrHave + take);
                 consumed += take;
-                if (_hdrHave < OTA::HEADER_SIZE) return true;
+                if (_hdrHave < Ota::HEADER_SIZE) return true;
 
                 _fwSize = static_cast<uint32_t>(_hdrBuf[0]) |
                           (static_cast<uint32_t>(_hdrBuf[1]) << 8) |
                           (static_cast<uint32_t>(_hdrBuf[2]) << 16) |
                           (static_cast<uint32_t>(_hdrBuf[3]) << 24);
-                logger.log("[OTAHandler] Firmware size: %u bytes\n", (unsigned)_fwSize);
-                if (_fwSize == 0 || _fwSize > OTA::APP_IMAGE_MAX) {
+                logger.log(LogModule::OtaHandler, "Firmware size: %u bytes\n", (unsigned)_fwSize);
+                if (_fwSize == 0 || _fwSize > Ota::APP_IMAGE_MAX) {
                     failStream("fwSize out of range");
                     return false;
                 }
                 yield();
-                logger.log("[OTAHandler] heap before Update.begin: free=%u maxBlk=%u\n",
+                logger.log(LogModule::OtaHandler, "heap before Update.begin: free=%u maxBlk=%u\n",
                            (unsigned)espHalFreeHeap(), (unsigned)espHalMaxBlock());
                 if (!Update.begin(_fwSize)) {
                     core.logHeapSnapshot("ota_update_begin_failed");
@@ -138,7 +138,7 @@ bool OTAHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                             (static_cast<uint32_t>(_metaBuf[1]) << 8) |
                             (static_cast<uint32_t>(_metaBuf[2]) << 16) |
                             (static_cast<uint32_t>(_metaBuf[3]) << 24);
-                logger.log("[OTAHandler] Extracting %s (%u bytes)\n", _nameBuf, (unsigned)_fileSize);
+                logger.log(LogModule::OtaHandler, "Extracting %s (%u bytes)\n", _nameBuf, (unsigned)_fileSize);
 
                 if (_fileSize == 0) {
                     // Empty file: still create via open/close.
@@ -191,7 +191,7 @@ bool OTAHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
     return true;
 }
 
-bool OTAHandler::streamFeed(const uint8_t* data, size_t len) {
+bool OtaHandler::streamFeed(const uint8_t* data, size_t len) {
     if (_phase == Phase::Idle) {
         _phase = Phase::Header;
     }
@@ -202,7 +202,7 @@ bool OTAHandler::streamFeed(const uint8_t* data, size_t len) {
 
     size_t offset = 0;
     while (offset < len) {
-        if (_totalAccepted + (len - offset) > OTA::FILE_MAX_SIZE) {
+        if (_totalAccepted + (len - offset) > Ota::FILE_MAX_SIZE) {
             failStream("package too large");
             return false;
         }
@@ -218,7 +218,7 @@ bool OTAHandler::streamFeed(const uint8_t* data, size_t len) {
     return _phase != Phase::Failed;
 }
 
-bool OTAHandler::streamFinish() {
+bool OtaHandler::streamFinish() {
     if (_phase == Phase::Failed) return false;
 
     // Firmware must be complete.
@@ -259,6 +259,6 @@ bool OTAHandler::streamFinish() {
     }
 
     _streamDoneOk = true;
-    logger.log("[OTAHandler] Stream finished OK, total=%u\n", (unsigned)_totalAccepted);
+    logger.log(LogModule::OtaHandler, "Stream finished OK, total=%u\n", (unsigned)_totalAccepted);
     return true;
 }

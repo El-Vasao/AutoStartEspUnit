@@ -1,17 +1,16 @@
 /**
- * @file GSMController.Fsm.Update.cpp
+ * @file GsmController.Fsm.Update.cpp
  * @brief Диспетчер update(), мост AtSession → await-флаги, редкий stall watchdog.
  */
-#include "gsm/GSMController.h"
+#include "gsm/GsmController.h"
 
 #include "gsm/GsmInitPhase.h"
-#include "gsm/GsmInitFsm.h"
 #include "common/Constants.h"
 #include "common/Logger.h"
 
 #include <stdint.h>
 
-uint32_t GSMController::gsmStallFingerprint() const {
+uint32_t GsmController::gsmStallFingerprint() const {
     uint32_t fp = (uint32_t)_state << 28;
     fp |= (uint32_t)(uint8_t)_initPhase << 20;
     fp |= (uint32_t)(uint8_t)_await << 16;
@@ -24,8 +23,8 @@ uint32_t GSMController::gsmStallFingerprint() const {
     return fp;
 }
 
-void GSMController::gsmMaybeLogStallWatchdog(uint32_t now) {
-    if (_state == GSMState::IDLE || _state == GSMState::READY) return;
+void GsmController::gsmMaybeLogStallWatchdog(uint32_t now) {
+    if (_state == GsmState::IDLE || _state == GsmState::READY) return;
 
     const uint32_t fp = gsmStallFingerprint();
     if (fp != _gsmStallPrevFp) {
@@ -34,8 +33,8 @@ void GSMController::gsmMaybeLogStallWatchdog(uint32_t now) {
         return;
     }
 
-    if ((int32_t)(now - _gsmStallFpSinceMs) < (int32_t)GSM::STALL_LOG_INTERVAL_MS) return;
-    if ((int32_t)(now - _gsmStallLastLogMs) < (int32_t)GSM::STALL_LOG_INTERVAL_MS) return;
+    if ((int32_t)(now - _gsmStallFpSinceMs) < (int32_t)Gsm::STALL_LOG_INTERVAL_MS) return;
+    if ((int32_t)(now - _gsmStallLastLogMs) < (int32_t)Gsm::STALL_LOG_INTERVAL_MS) return;
 
     _gsmStallLastLogMs = now;
 
@@ -47,10 +46,10 @@ void GSMController::gsmMaybeLogStallWatchdog(uint32_t now) {
     case AwaitKind::IP: awaitStr = "IP"; break;
     }
 
-    const char* phaseStr = (_state == GSMState::INIT) ? gsmInitPhaseName(_initPhase) : "-";
+    const char* phaseStr = (_state == GsmState::INIT) ? gsmInitPhaseName(_initPhase) : "-";
 
-    logger.log(
-        "[GSMController] stall: state=%s init=%s await=%s ok=%d err=%d creg=%d ip=%d "
+    logger.log(LogModule::GsmController,
+        "stall: state=%s init=%s await=%s ok=%d err=%d creg=%d ip=%d "
         "cmd=%u acmd=%u stallMs=%lu at=\"%.48s\"\n",
         getStateString(),
         phaseStr,
@@ -65,7 +64,7 @@ void GSMController::gsmMaybeLogStallWatchdog(uint32_t now) {
         _atCmdBuf);
 }
 
-void GSMController::drainAtResult_() {
+void GsmController::drainAtResult_() {
     if (!_stack.at.hasResult()) return;
     const AtSession::Result r = _stack.at.takeResult();
     if (_voicePhase == VoicePhase::CmgsWaitPrompt && r.gotPrompt) {
@@ -81,8 +80,8 @@ void GSMController::drainAtResult_() {
     }
 }
 
-void GSMController::gsmAbsorbAtSessionResult(const AtSession::Result& r) {
-    // RX: ModemUart вызывает AtSession::onLine до onRxLine (GSMController.Core).
+void GsmController::gsmAbsorbAtSessionResult(const AtSession::Result& r) {
+    // RX: ModemUart вызывает AtSession::onLine до onRxLine (GsmController.Core).
     // Ошибка/таймаут очереди AT — общий сигнал срыва; OK для Expect::Ok совпадает со строкой OK в handleAwaitLine.
     // _awaitGotCreg / _awaitGotIp ставит только handleAwaitLine (+CREG / SAPBR / IPv4).
     if (r.ok) {
@@ -93,11 +92,11 @@ void GSMController::gsmAbsorbAtSessionResult(const AtSession::Result& r) {
     }
 }
 
-void GSMController::update() {
+void GsmController::update() {
     _stack.uart.pollRx();
     _stack.at.tick(millis());
     const uint32_t now = millis();
-    if (_state == GSMState::READY || _stack.tcp.isConnected() || _stack.tcp.isConnecting() ||
+    if (_state == GsmState::READY || _stack.tcp.isConnected() || _stack.tcp.isConnecting() ||
         _stack.tcp.isBusBusy()) {
         _stack.tcp.tick(now);
     }
@@ -105,28 +104,28 @@ void GSMController::update() {
     drainAtResult_();
 
     switch (_state) {
-    case GSMState::IDLE:
+    case GsmState::IDLE:
         handleIdle();
         break;
-    case GSMState::INIT:
-        GsmInitFsm::tick(*this);
+    case GsmState::INIT:
+        handleInit();
         break;
-    case GSMState::REGISTERING:
+    case GsmState::REGISTERING:
         handleRegistering();
         break;
-    case GSMState::GPRS_SETUP:
+    case GsmState::GPRS_SETUP:
         handleGprsSetup();
         break;
-    case GSMState::GPRS_ATTACH:
+    case GsmState::GPRS_ATTACH:
         handleGprsAttach();
         break;
-    case GSMState::GPRS_GETIP:
+    case GsmState::GPRS_GETIP:
         handleGprsGetIp();
         break;
-    case GSMState::READY:
+    case GsmState::READY:
         handleReady();
         break;
-    case GSMState::ERROR:
+    case GsmState::ERROR:
         handleError();
         break;
     }
@@ -134,4 +133,4 @@ void GSMController::update() {
     gsmMaybeLogStallWatchdog(now);
 }
 
-void GSMController::handleIdle() {}
+void GsmController::handleIdle() {}

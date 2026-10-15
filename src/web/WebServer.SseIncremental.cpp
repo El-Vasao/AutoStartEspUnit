@@ -14,8 +14,8 @@
 #include "core/TimeSyncManager.h"
 #include "core/ErrorManager.h"
 #include "core/FlashCommitCoordinator.h"
-#include "gsm/GSMController.h"
-#include "mqtt/MQTTClient.h"
+#include "gsm/GsmController.h"
+#include "mqtt/MqttClient.h"
 
 #include <cstdio>
 #include <cstring>
@@ -74,7 +74,7 @@ static void emitGsmPayload_(PayloadPrint& gp, const SseStatusPort& st) {
     bool cg = false;
     commaOut(gp, &cg);
     gp.print("\"gsmState\":\"");
-    escapeJsonString(gp, st.gsm ? st.gsm->getStateString() : "");
+    json_escape::writeEscaped(gp, st.gsm ? st.gsm->getStateString() : "");
     gp.print('"');
     commaOut(gp, &cg);
     gp.print("\"csq\":{\"rssi\":");
@@ -205,7 +205,7 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
             bool cm = false;
             commaOut(mp, &cm);
             mp.print("\"mode\":\"");
-            escapeJsonString(mp, curMode);
+            json_escape::writeEscaped(mp, curMode);
             mp.print('"');
             mp.print('}');
             if (sendJsonEvent(ws, "mode", mp, statusQueueMax)) {
@@ -265,7 +265,7 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
         bool cm = false;
         commaOut(mp, &cm);
         mp.print("\"mode\":\"");
-        escapeJsonString(mp, curMode);
+        json_escape::writeEscaped(mp, curMode);
         mp.print('"');
         mp.print('}');
         if (sendJsonEvent(ws, "mode", mp, statusQueueMax)) {

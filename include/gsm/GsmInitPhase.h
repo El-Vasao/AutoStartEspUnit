@@ -40,7 +40,7 @@ enum class GsmInitPhase : uint8_t {
     CCgattWait = 33,
     CSapbr = 34,
     CSapbrWait = 35,
-    /// Пауза перед повтором `AT+CGATT?` после SIM busy / ошибки (см. GSM::INIT_CGATT_*).
+    /// Пауза перед повтором `AT+CGATT?` после SIM busy / ошибки (см. Gsm::INIT_CGATT_*).
     CCgattBackoff = 36,
 
     ModAte = 40,

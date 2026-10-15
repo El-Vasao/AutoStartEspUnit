@@ -7,7 +7,9 @@
 void setup() {
     logger.begin();
 
-    core.begin();
+    if (!core.begin()) {
+        logger.log(LogModule::Core, "begin failed; loop continues for diagnostics\n");
+    }
 }
 
 void loop() {

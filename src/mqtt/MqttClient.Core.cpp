@@ -1,4 +1,4 @@
-#include "mqtt/MQTTClient.h"
+#include "mqtt/MqttClient.h"
 
 #include "app/AppPorts.h"
 #include "config/Config.h"
@@ -17,13 +17,13 @@
 #include "common/Version.h"
 #include "core/Core.h"
 #include "core/TimeSyncManager.h"
-#include "gsm/GSMController.h"
+#include "gsm/GsmController.h"
 #include "io/SensorsController.h"
 #include "io/RelayController.h"
 #include "io/DigitalInputs.h"
 #include "program/ProgramExecutor.h"
 #include "core/ErrorManager.h"
-#include "mqtt/internal/CountingPrint.h"
+#include "mqtt/internal/CountingForwarder.h"
 
 namespace {
 
@@ -46,7 +46,7 @@ static size_t encodeMqttStatusForPublish(Print& p, void* ctx) {
 
 } // namespace
 
-void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
+void MqttClient::captureStatusSnapshot_(StatusSnapshot& s) const {
     s = StatusSnapshot{};
     s.uptimeSec = core.getUptime();
     strlcpy(s.modeName, core.getModeName(), sizeof(s.modeName));
@@ -127,28 +127,28 @@ void MQTTClient::captureStatusSnapshot_(StatusSnapshot& s) const {
 
 static constexpr uint32_t kMqttPublishBudgetMs = NetTiming::MQTT_PUBLISH_BUDGET_MS;
 
-MQTTClient::MQTTClient(Client& client)
+MqttClient::MqttClient(Client& client)
     : _netClient(client), _lastStatusPublish(0), _lastReconnectAttempt(0), _fsm(client)
 {
-    _fsm.setPublishCallback(&MQTTClient::onPublishThunk, this);
+    _fsm.setPublishCallback(&MqttClient::onPublishThunk, this);
 }
 
-uint8_t MQTTClient::getConsecutiveConnectFails() const {
+uint8_t MqttClient::getConsecutiveConnectFails() const {
     return _connectFailStreak;
 }
 
-const char* MQTTClient::getLastConnectFailReason() const {
+const char* MqttClient::getLastConnectFailReason() const {
     return _fsm.lastErrorReason();
 }
 
-void MQTTClient::joinTopic_(char* out, size_t outSz, const char* prefix, const char* suffix) {
+void MqttClient::joinTopic_(char* out, size_t outSz, const char* prefix, const char* suffix) {
     if (!out || outSz == 0) return;
     out[0] = '\0';
     if (!prefix || !prefix[0] || !suffix || !suffix[0]) return;
     snprintf(out, outSz, "%s/%s", prefix, suffix);
 }
 
-void MQTTClient::begin() {
+void MqttClient::begin() {
     const auto& mqttCfg = config.getBase().mqtt;
 
     // Make defensive, NUL-terminated copies of config strings.
@@ -195,7 +195,7 @@ void MQTTClient::begin() {
     _fsm.begin(c);
 
     // One-line begin: lengths only for credentials (no plaintext pass on SSE).
-    logger.log("[MQTTClient] begin keepAlive=%us proto=%s idLen=%u userLen=%u passLen=%u "
+    logger.log(LogModule::MqttClient, "begin keepAlive=%us proto=%s idLen=%u userLen=%u passLen=%u "
                "avail=%s status=%s cmd=%s reply=%s\n",
                (unsigned)NetTiming::MQTT_KEEPALIVE_SEC,
                (c.proto == MqttFsmClient::Proto::Mqtt31) ? "3.1" : "3.1.1",
@@ -203,24 +203,28 @@ void MQTTClient::begin() {
                (unsigned)strlen(_mqttUser),
                (unsigned)strlen(_mqttPass),
                _topicAvail, _topicStatus, _topicCmd, _topicReply);
-    logger.logSerialOnly("[MQTTClient] cfg: user=%s prefix=%s\n", _mqttUser, mqttCfg.topic_prefix);
+    logger.logSerialOnly(LogModule::MqttClient, "cfg: user=%s prefix=%s\n", _mqttUser, mqttCfg.topic_prefix);
 
     if (!_reconnectEnabled) {
-        logger.log("[MQTTClient] begin(): reconnect disabled, skipping initial connect\n");
+        logger.log(LogModule::MqttClient, "begin(): reconnect disabled, skipping initial connect\n");
     } else {
         _lastReconnectAttempt = millis();
         connect();
     }
 }
 
-void MQTTClient::onTransportRxOverflow() {
-    logger.log("[MQTTClient] transport RX overflow — forcing reconnect\n");
+void MqttClient::onTransportRxOverflow() {
+    logger.log(LogModule::MqttClient, "transport RX overflow — forcing reconnect\n");
     _fsm.forceError("rx_overflow");
 }
 
-void MQTTClient::loop() {
+void MqttClient::loop() {
     // Still drain clean disconnect even when reconnect is disabled (suspend path).
-    if (!_reconnectEnabled && !_fsm.isDisconnectPending()) return;
+    if (!_reconnectEnabled && !_fsm.isDisconnectPending() && !_fsm.isConnected() &&
+        _fsm.state() != MqttFsmClient::State::TcpConnecting &&
+        _fsm.state() != MqttFsmClient::State::MqttConnecting) {
+        return;
+    }
 
     const bool modemCtrlBusy = _ctrlPlaneBusy && _ctrlPlaneBusy(_ctrlPlaneBusyCtx);
 
@@ -261,7 +265,7 @@ void MQTTClient::loop() {
                 _subscribeQueued = true;
                 _subWaitStartMs = millis();
                 _subackTimeoutLogged = false;
-                logger.log("[MQTTClient] Connected. subscribe=%s status=%s avail=%s\n",
+                logger.log(LogModule::MqttClient, "Connected. subscribe=%s status=%s avail=%s\n",
                            _topicCmd, _topicStatus, _topicAvail);
             }
         }
@@ -288,7 +292,7 @@ void MQTTClient::loop() {
         if (subTimedOut) {
             if (!_subackTimeoutLogged) {
                 _subackTimeoutLogged = true;
-                logger.log("[MQTTClient] SUBACK timeout %ums — retrying SUBSCRIBE (hold online/status)\n",
+                logger.log(LogModule::MqttClient, "SUBACK timeout %ums — retrying SUBSCRIBE (hold online/status)\n",
                            (unsigned)kSubackTimeoutMs);
             }
             _fsm.requeueSubscribe();
@@ -303,7 +307,7 @@ void MQTTClient::loop() {
         if (txOk && subReady && _onlinePublishDue && _topicAvail[0]) {
             if (_fsm.publish(_topicAvail, kOnlinePayload, sizeof(kOnlinePayload) - 1u, true, true)) {
                 _onlinePublishDue = false;
-                logger.log("[MQTTClient] pub avail online\n");
+                logger.log(LogModule::MqttClient, "pub avail online\n");
             }
         }
 
@@ -345,8 +349,8 @@ void MQTTClient::loop() {
     }
 }
 
-void MQTTClient::disconnect() {
-    logger.log("[MQTTClient] disconnect()\n");
+void MqttClient::disconnect() {
+    logger.log(LogModule::MqttClient, "disconnect()\n");
     abandonLastErrDelivery_();
     if (_fsm.isConnected() && _topicAvail[0]) {
         static constexpr uint8_t kOfflinePayload[] = "offline";
@@ -363,24 +367,24 @@ void MQTTClient::disconnect() {
     _activeRunId[0] = '\0';
 }
 
-bool MQTTClient::needsDisconnectDrain() const {
+bool MqttClient::needsDisconnectDrain() const {
     return _fsm.isDisconnectPending() || _fsm.hasOutbound();
 }
 
-void MQTTClient::noteSessionErrorIfNeeded_() {
+void MqttClient::noteSessionErrorIfNeeded_() {
     if (_fsm.state() != MqttFsmClient::State::Error) return;
     if (_sessionErrorRecorded) return;
     _sessionErrorRecorded = true;
     if (_connectFailStreak < 255) _connectFailStreak++;
     const char* why = _fsm.lastErrorReason();
     if (why && why[0]) {
-        logger.log("[MQTTClient] session error=%s streak=%u\n", why, (unsigned)_connectFailStreak);
+        logger.log(LogModule::MqttClient, "session error=%s streak=%u\n", why, (unsigned)_connectFailStreak);
     }
     // One ErrorManager entry per disconnect; delivered via last_err on first status after reconnect.
     core.getErrorManager().set(ErrorCode::MQTT_CONNECT_FAIL);
 }
 
-void MQTTClient::connect() {
+void MqttClient::connect() {
     // Do not request connect while CNTP (or CIPSEND) owns the stack — CIPSTART would race NTP.
     if (_ctrlPlaneBusy && _ctrlPlaneBusy(_ctrlPlaneBusyCtx)) {
         return;
@@ -390,18 +394,18 @@ void MQTTClient::connect() {
     const auto& mqttCfg = config.getBase().mqtt;
     if (_fsm.state() == MqttFsmClient::State::Idle ||
         _fsm.state() == MqttFsmClient::State::Error) {
-        logger.log("[MQTTClient] connect() broker=%s:%u\n", mqttCfg.broker, (unsigned)mqttCfg.port);
+        logger.log(LogModule::MqttClient, "connect() broker=%s:%u\n", mqttCfg.broker, (unsigned)mqttCfg.port);
     }
     _fsm.requestConnect();
 }
 
-void MQTTClient::onPublishThunk(void* ctx, const char* topic, const uint8_t* payload, uint16_t len, bool retained) {
+void MqttClient::onPublishThunk(void* ctx, const char* topic, const uint8_t* payload, uint16_t len, bool retained) {
     (void)retained;
     if (!ctx) return;
-    ((MQTTClient*)ctx)->handlePublish(topic, payload, len, retained);
+    ((MqttClient*)ctx)->handlePublish(topic, payload, len, retained);
 }
 
-bool MQTTClient::publishStatus(bool forceFull) {
+bool MqttClient::publishStatus(bool forceFull) {
     if (!_topicStatus[0]) return false;
 
     StatusSnapshot snapshot{};
@@ -433,17 +437,17 @@ bool MQTTClient::publishStatus(bool forceFull) {
     if (!_fsm.publishPrintedMeasured(_topicStatus, encodeMqttStatusForPublish, &ctx,
                                      JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, false, false, &measured)) {
         if (measured > JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES) {
-            logger.log("[MQTTClient] publishStatus: status JSON too large for MQTT buffer (max %u, got %u)\n",
+            logger.log(LogModule::MqttClient, "publishStatus: status JSON too large for MQTT buffer (max %u, got %u)\n",
                        (unsigned)JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, (unsigned)measured);
         } else {
-            logger.log("[MQTTClient] publishStatus failed (busy/not connected/wire); measured=%u max=%u\n",
+            logger.log(LogModule::MqttClient, "publishStatus failed (busy/not connected/wire); measured=%u max=%u\n",
                        (unsigned)measured, (unsigned)JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES);
         }
         return false; // keep undelivered for retry
     }
     const uint32_t dt = millis() - t0;
     if (dt > kMqttPublishBudgetMs) {
-        logger.log("[MQTTClient] status publish serialize+stage slow (%u ms) (> budget %u ms)\n", (unsigned)dt,
+        logger.log(LogModule::MqttClient, "status publish serialize+stage slow (%u ms) (> budget %u ms)\n", (unsigned)dt,
                    (unsigned)kMqttPublishBudgetMs);
     }
 
@@ -462,11 +466,11 @@ bool MQTTClient::publishStatus(bool forceFull) {
     _lastPublished = snapshot;
     _lastPublished.lastErrCount = 0;
     _havePublishedBaseline = true;
-    logger.log("[MQTTClient] pub status %s bytes=%u\n", needFull ? "full" : "delta", (unsigned)measured);
+    logger.log(LogModule::MqttClient, "pub status %s bytes=%u\n", needFull ? "full" : "delta", (unsigned)measured);
     return true;
 }
 
-void MQTTClient::confirmLastErrDelivery_() {
+void MqttClient::confirmLastErrDelivery_() {
     if (!_lastErrAwaitConfirm) return;
     if (_fsm.hasOutbound()) return;
     if (_ctrlPlaneBusy && _ctrlPlaneBusy(_ctrlPlaneBusyCtx)) return;
@@ -475,9 +479,9 @@ void MQTTClient::confirmLastErrDelivery_() {
     _lastErrPendingCount = 0;
 }
 
-void MQTTClient::abandonLastErrDelivery_() {
+void MqttClient::abandonLastErrDelivery_() {
     if (!_lastErrAwaitConfirm) return;
-    logger.log("[MQTTClient] last_err delivery abandoned (session/tcp) — will retry\n");
+    logger.log(LogModule::MqttClient, "last_err delivery abandoned (session/tcp) — will retry\n");
     _lastErrAwaitConfirm = false;
     _lastErrPendingCount = 0;
 }

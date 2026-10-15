@@ -1,11 +1,13 @@
 // src/config/Config.BaseSax.cpp
 #include "config/internal/BaseConfigJsonIo.h"
+#include "config/internal/JsonScalar.h"
 
-#include "json/Json.ParseFile.h"
+#include "json/JsonParseFile.h"
 #include "JsonListener.h"
 #include "JsonStreamingParser.h"
 
 #include "common/Constants.h"
+#include "common/Logger.h"
 #include "config/ConfigTypes.h"
 #include "config/VehicleRules.h"
 
@@ -20,50 +22,11 @@ namespace {
 
 bool streq(const char* a, const char* b) { return a && b && strcmp(a, b) == 0; }
 
-bool parseBool(const char* v, bool def) {
-    if (!v || !*v) return def;
-    if (strcmp(v, "true") == 0 || strcmp(v, "1") == 0) return true;
-    if (strcmp(v, "false") == 0 || strcmp(v, "0") == 0) return false;
-    return def;
-}
 
-uint32_t parseU32(const char* v, uint32_t def) {
-    if (!v || !*v) return def;
-    char* end = nullptr;
-    unsigned long n = strtoul(v, &end, 10);
-    if (!end || *end != '\0') return def;
-    return static_cast<uint32_t>(n);
-}
 
-uint16_t parseU16(const char* v, uint16_t def) {
-    uint32_t n = parseU32(v, def);
-    if (n > 65535u) return 65535;
-    return static_cast<uint16_t>(n);
-}
 
-uint8_t parseU8(const char* v, uint8_t def) {
-    uint32_t n = parseU32(v, def);
-    if (n > 255u) return 255;
-    return static_cast<uint8_t>(n);
-}
 
-float parseF(const char* v, float def) {
-    if (!v || !*v) return def;
-    char* end = nullptr;
-    float f = strtof(v, &end);
-    if (!end || end == v || *end != '\0' || !isfinite(f)) return def;
-    return f;
-}
 
-int16_t parseI16(const char* v, int16_t def) {
-    if (!v || !*v) return def;
-    char* end = nullptr;
-    long n = strtol(v, &end, 10);
-    if (!end || *end != '\0') return def;
-    if (n > 32767) return 32767;
-    if (n < -32768) return -32768;
-    return static_cast<int16_t>(n);
-}
 
 void initBaseLikeFillBasic(BaseConfig& t) {
     for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
@@ -73,7 +36,7 @@ void initBaseLikeFillBasic(BaseConfig& t) {
         t.sensors[i].rom[0] = '\0';
     }
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
-        t.inputs[i].id = static_cast<uint16_t>(i + 1);
+        t.inputs[i].id = Pin::INPUT_IDS[i];
         t.inputs[i].enabled = true;
         t.inputs[i].type = InputType::DIGITAL;
         t.inputs[i].active_state = LOW;
@@ -118,6 +81,7 @@ public:
     bool failed() const { return failed_; }
     bool rootNotObject() const { return rootNotObject_; }
     bool sawRootObject() const { return sawRootObject_; }
+    uint8_t extraTrimmed() const { return extraTrimmed_; }
 
     void whitespace(char) override {}
     void startDocument() override {
@@ -129,6 +93,7 @@ public:
         si_ = 255;
         ii_ = 255;
         junkNest_ = 0;
+        extraTrimmed_ = 0;
         seenActive_ = false;
         hasAdcCalibrate_ = false;
         adcCalibrateVoltage_ = 0.0f;
@@ -174,7 +139,9 @@ public:
                 else if (si_ + 1 < HardwareLimits::SENSORS)
                     si_++;
                 else {
-                    failed_ = true;
+                    extraTrimmed_++;
+                    push(St::Junk);
+                    junkNest_ = 1;
                     break;
                 }
                 push(St::SensorObj);
@@ -186,7 +153,9 @@ public:
                 else if (ii_ + 1 < HardwareLimits::INPUTS)
                     ii_++;
                 else {
-                    failed_ = true;
+                    extraTrimmed_++;
+                    push(St::Junk);
+                    junkNest_ = 1;
                     break;
                 }
                 push(St::InputObj);
@@ -233,16 +202,22 @@ public:
         if (closing == St::InTrigObj) {
             if (t_->input_triggers_count < Limits::MAX_TRIGGERS) {
                 t_->input_triggers[t_->input_triggers_count++] = trig_;
+            } else {
+                extraTrimmed_++;
             }
         }
         if (closing == St::TempTrigObj) {
             if (t_->temperature_triggers_count < Limits::MAX_TRIGGERS) {
                 t_->temperature_triggers[t_->temperature_triggers_count++] = ttrig_;
+            } else {
+                extraTrimmed_++;
             }
         }
         if (closing == St::SchedTrigObj) {
             if (t_->schedule_triggers_count < Limits::MAX_SCHEDULE_TRIGGERS) {
                 t_->schedule_triggers[t_->schedule_triggers_count++] = strig_;
+            } else {
+                extraTrimmed_++;
             }
         }
         pop();
@@ -252,6 +227,7 @@ public:
         if (failed_) return;
         if (sp_ < 0) {
             rootNotObject_ = true;
+            failed_ = true;
             return;
         }
         if (top() == St::Junk) {
@@ -302,9 +278,9 @@ public:
                 else if (streq(pending_, "password"))
                     strlcpy(t_->wifi.password, v ? v : "", sizeof t_->wifi.password);
                 else if (streq(pending_, "ap_timeout_sec"))
-                    t_->wifi.ap_timeout_sec = parseU16(v, 0);
+                    t_->wifi.ap_timeout_sec = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "ap_timeout_enabled"))
-                    t_->wifi.ap_timeout_enabled = parseBool(v, false);
+                    t_->wifi.ap_timeout_enabled = json_scalar::parseBool(v, false);
                 break;
             case St::Gsm:
                 if (streq(pending_, "apn")) strlcpy(t_->gsm.apn, v ? v : "", sizeof t_->gsm.apn);
@@ -320,7 +296,7 @@ public:
             case St::Mqtt:
                 if (streq(pending_, "broker")) strlcpy(t_->mqtt.broker, v ? v : "", sizeof t_->mqtt.broker);
                 else if (streq(pending_, "port"))
-                    t_->mqtt.port = parseU16(v, 1883);
+                    t_->mqtt.port = json_scalar::parseU16(v, 1883);
                 else if (streq(pending_, "client_id"))
                     strlcpy(t_->mqtt.client_id, v ? v : "", sizeof t_->mqtt.client_id);
                 else if (streq(pending_, "user"))
@@ -335,49 +311,49 @@ public:
                         t_->mqtt.topic_prefix[--n] = '\0';
                     }
                 } else if (streq(pending_, "publish_interval_sec"))
-                    t_->mqtt.publish_interval_sec = parseU16(v, Defaults::MQTT_PUBLISH_INTERVAL_SEC);
+                    t_->mqtt.publish_interval_sec = json_scalar::parseU16(v, Defaults::MQTT_PUBLISH_INTERVAL_SEC);
                 break;
             case St::Vehicle:
-                if (streq(pending_, "adc_voltage_coeff")) t_->vehicle.adc_voltage_coeff = parseF(v, 1.0f);
+                if (streq(pending_, "adc_voltage_coeff")) t_->vehicle.adc_voltage_coeff = json_scalar::parseF(v, 1.0f);
                 else if (streq(pending_, "adc_calibrate_voltage")) {
                     // Ephemeral: not stored in BaseConfig; used only on posted apply.
                     hasAdcCalibrate_ = true;
-                    adcCalibrateVoltage_ = parseF(v, 0.0f);
+                    adcCalibrateVoltage_ = json_scalar::parseF(v, 0.0f);
                 } else if (streq(pending_, "starter_max_time_sec"))
-                    t_->vehicle.starter_max_time_sec = parseU16(v, StarterLimits::MAX_TIME_DEFAULT_SEC);
+                    t_->vehicle.starter_max_time_sec = json_scalar::parseU16(v, StarterLimits::MAX_TIME_DEFAULT_SEC);
                 else if (streq(pending_, "wait_after_start_sec"))
-                    t_->vehicle.wait_after_start_sec = parseU16(v, StarterLimits::WAIT_AFTER_START_DEFAULT_SEC);
+                    t_->vehicle.wait_after_start_sec = json_scalar::parseU16(v, StarterLimits::WAIT_AFTER_START_DEFAULT_SEC);
                 else if (streq(pending_, "engine_running_voltage_threshold"))
                     t_->vehicle.engine_running_voltage_threshold =
-                        parseF(v, StarterLimits::RUNNING_VOLTAGE_DEFAULT);
+                        json_scalar::parseF(v, StarterLimits::RUNNING_VOLTAGE_DEFAULT);
                 else if (streq(pending_, "engine_stopped_voltage_threshold"))
                     t_->vehicle.engine_stopped_voltage_threshold =
-                        parseF(v, StarterLimits::STOPPED_VOLTAGE_DEFAULT);
+                        json_scalar::parseF(v, StarterLimits::STOPPED_VOLTAGE_DEFAULT);
                 else if (streq(pending_, "starter_relay_id"))
-                    t_->vehicle.starter_relay_id = parseU16(v, 2002);
+                    t_->vehicle.starter_relay_id = json_scalar::parseU16(v, 2002);
                 else if (streq(pending_, "start_method"))
                     t_->vehicle.start_method = vehicle_rules::startMethodFromString(v, StartMethod::Timed);
                 else if (streq(pending_, "start_input_id"))
-                    t_->vehicle.start_input_id = parseU16(v, 0);
+                    t_->vehicle.start_input_id = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "starter_crank_time_sec"))
-                    t_->vehicle.starter_crank_time_sec = parseF(v, StarterLimits::CRANK_TIME_DEFAULT_SEC);
+                    t_->vehicle.starter_crank_time_sec = json_scalar::parseF(v, StarterLimits::CRANK_TIME_DEFAULT_SEC);
                 else if (streq(pending_, "starter_retry_pause_sec"))
-                    t_->vehicle.starter_retry_pause_sec = parseU16(v, StarterLimits::RETRY_PAUSE_DEFAULT_SEC);
+                    t_->vehicle.starter_retry_pause_sec = json_scalar::parseU16(v, StarterLimits::RETRY_PAUSE_DEFAULT_SEC);
                 else if (streq(pending_, "starter_attempts"))
-                    t_->vehicle.starter_attempts = parseU8(v, StarterLimits::ATTEMPTS_DEFAULT);
+                    t_->vehicle.starter_attempts = json_scalar::parseU8(v, StarterLimits::ATTEMPTS_DEFAULT);
                 else if (streq(pending_, "start_block_input_id"))
-                    t_->vehicle.start_block_input_id = parseU16(v, 0);
+                    t_->vehicle.start_block_input_id = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "engine_detection_source"))
                     strlcpy(t_->vehicle.engine_detection_source, v ? v : "voltage",
                             sizeof t_->vehicle.engine_detection_source);
                 else if (streq(pending_, "engine_input_id"))
-                    t_->vehicle.engine_input_id = parseU16(v, 0);
+                    t_->vehicle.engine_input_id = json_scalar::parseU16(v, 0);
                 break;
             case St::SensorObj:
                 if (si_ == 255 || si_ >= HardwareLimits::SENSORS) break;
-                if (streq(pending_, "id")) t_->sensors[si_].id = parseU16(v, 0);
+                if (streq(pending_, "id")) t_->sensors[si_].id = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "coeff"))
-                    t_->sensors[si_].coeff = parseF(v, 0.1f);
+                    t_->sensors[si_].coeff = json_scalar::parseF(v, 0.1f);
                 else if (streq(pending_, "name"))
                     strlcpy(t_->sensors[si_].name, v ? v : "", sizeof t_->sensors[si_].name);
                 else if (streq(pending_, "rom"))
@@ -385,109 +361,106 @@ public:
                 break;
             case St::InputObj:
                 if (ii_ == 255 || ii_ >= HardwareLimits::INPUTS) break;
-                if (streq(pending_, "id")) t_->inputs[ii_].id = parseU16(v, 0);
-                else if (streq(pending_, "enabled"))
-                    t_->inputs[ii_].enabled = parseBool(v, true);
+                // "id" is ignored: input ids are hardware identity (Pin::INPUT_IDS), set in initBaseLikeFillBasic.
+                if (streq(pending_, "enabled"))
+                    t_->inputs[ii_].enabled = json_scalar::parseBool(v, true);
                 else if (streq(pending_, "type"))
-                    t_->inputs[ii_].type = static_cast<InputType>(parseU8(v, 0));
+                    t_->inputs[ii_].type = (json_scalar::parseU8(v, 0) == static_cast<uint8_t>(InputType::PULSE_COUNTER))
+                                               ? InputType::PULSE_COUNTER
+                                               : InputType::DIGITAL;
                 else if (streq(pending_, "name"))
                     strlcpy(t_->inputs[ii_].name, v ? v : "", sizeof t_->inputs[ii_].name);
                 else if (streq(pending_, "active_state")) {
-                    t_->inputs[ii_].active_state = parseBool(v, true);
+                    t_->inputs[ii_].active_state = json_scalar::parseBool(v, true);
                     seenActive_ = true;
                 }
                 break;
             case St::PulseObj:
                 if (ii_ == 255 || ii_ >= HardwareLimits::INPUTS) break;
                 if (streq(pending_, "pulses_per_rev"))
-                    t_->inputs[ii_].pulse.pulses_per_rev = parseU16(v, 1);
+                    t_->inputs[ii_].pulse.pulses_per_rev = json_scalar::parseU16(v, 1);
                 else if (streq(pending_, "threshold_rpm"))
-                    t_->inputs[ii_].pulse.threshold_rpm = parseU16(v, 0);
+                    t_->inputs[ii_].pulse.threshold_rpm = json_scalar::parseU16(v, 0);
                 break;
             case St::Thermostat:
-                if (streq(pending_, "enabled")) t_->thermostat.enabled = parseBool(v, false);
+                if (streq(pending_, "enabled")) t_->thermostat.enabled = json_scalar::parseBool(v, false);
                 else if (streq(pending_, "sensor_id"))
-                    t_->thermostat.sensor_id = parseU16(v, 0);
+                    t_->thermostat.sensor_id = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "comparison"))
                     strlcpy(t_->thermostat.comparison, v ? v : "above", sizeof t_->thermostat.comparison);
                 else if (streq(pending_, "lower_threshold"))
-                    t_->thermostat.lower_threshold = parseF(v, 5.0f);
+                    t_->thermostat.lower_threshold = json_scalar::parseF(v, 5.0f);
                 else if (streq(pending_, "upper_threshold"))
-                    t_->thermostat.upper_threshold = parseF(v, 10.0f);
+                    t_->thermostat.upper_threshold = json_scalar::parseF(v, 10.0f);
                 else if (streq(pending_, "program_id_lower"))
-                    t_->thermostat.program_id_lower = parseU8(v, 0);
+                    t_->thermostat.program_id_lower = json_scalar::parseU8(v, 0);
                 else if (streq(pending_, "program_id_upper"))
-                    t_->thermostat.program_id_upper = parseU8(v, 0);
+                    t_->thermostat.program_id_upper = json_scalar::parseU8(v, 0);
                 break;
             case St::BatterySaver:
-                if (streq(pending_, "enabled")) t_->battery_saver.enabled = parseBool(v, false);
+                if (streq(pending_, "enabled")) t_->battery_saver.enabled = json_scalar::parseBool(v, false);
                 else if (streq(pending_, "voltage_start_threshold"))
-                    t_->battery_saver.voltage_start_threshold = parseF(v, 11.8f);
+                    t_->battery_saver.voltage_start_threshold = json_scalar::parseF(v, 11.8f);
                 else if (streq(pending_, "voltage_abort_threshold"))
-                    t_->battery_saver.voltage_abort_threshold = parseF(v, 10.5f);
+                    t_->battery_saver.voltage_abort_threshold = json_scalar::parseF(v, 10.5f);
                 else if (streq(pending_, "hysteresis"))
-                    t_->battery_saver.hysteresis = parseF(v, 0.5f);
+                    t_->battery_saver.hysteresis = json_scalar::parseF(v, 0.5f);
                 else if (streq(pending_, "min_low_voltage_duration_sec"))
-                    t_->battery_saver.min_low_voltage_duration_sec = parseU16(v, 180);
+                    t_->battery_saver.min_low_voltage_duration_sec = json_scalar::parseU16(v, 180);
                 else if (streq(pending_, "min_time_between_attempts_sec"))
-                    t_->battery_saver.min_time_between_attempts_sec = parseU16(v, 1800);
+                    t_->battery_saver.min_time_between_attempts_sec = json_scalar::parseU16(v, 1800);
                 else if (streq(pending_, "max_attempts_per_day"))
-                    t_->battery_saver.max_attempts_per_day = parseU8(v, 3);
+                    t_->battery_saver.max_attempts_per_day = json_scalar::parseU8(v, 3);
                 else if (streq(pending_, "program_id"))
-                    t_->battery_saver.program_id = parseU8(v, 0);
+                    t_->battery_saver.program_id = json_scalar::parseU8(v, 0);
                 break;
             case St::TimeCfg:
-                if (streq(pending_, "enabled")) t_->time.enabled = parseBool(v, true);
+                if (streq(pending_, "enabled")) t_->time.enabled = json_scalar::parseBool(v, true);
                 else if (streq(pending_, "ntp_server"))
                     strlcpy(t_->time.ntp_server, v ? v : "pool.ntp.org", sizeof t_->time.ntp_server);
                 else if (streq(pending_, "tz_offset_hours"))
-                    t_->time.tz_offset_hours = static_cast<int8_t>(parseI16(v, 3));
-                else if (streq(pending_, "tz_offset_min")) {
-                    // Legacy minutes → whole hours (truncate toward zero).
-                    const int16_t mins = parseI16(v, 180);
-                    t_->time.tz_offset_hours = static_cast<int8_t>(mins / 60);
-                }
+                    t_->time.tz_offset_hours = static_cast<int8_t>(json_scalar::parseI16(v, 3));
                 else if (streq(pending_, "sync_interval_hours"))
-                    t_->time.sync_interval_hours = parseU32(v, Defaults::TIME_SYNC_INTERVAL_HOURS);
+                    t_->time.sync_interval_hours = json_scalar::parseU32(v, Defaults::TIME_SYNC_INTERVAL_HOURS);
                 break;
             case St::InTrigObj:
-                if (streq(pending_, "id")) trig_.id = parseU16(v, 0);
+                if (streq(pending_, "id")) trig_.id = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "enabled"))
-                    trig_.enabled = parseBool(v, false);
+                    trig_.enabled = json_scalar::parseBool(v, false);
                 else if (streq(pending_, "input_id"))
-                    trig_.input_id = parseU16(v, 0);
+                    trig_.input_id = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "trigger_level"))
-                    trig_.trigger_level = parseU8(v, 1);
+                    trig_.trigger_level = json_scalar::parseU8(v, 1);
                 else if (streq(pending_, "program_id"))
-                    trig_.program_id = parseU8(v, 0);
+                    trig_.program_id = json_scalar::parseU8(v, 0);
                 break;
             case St::TempTrigObj:
-                if (streq(pending_, "enabled")) ttrig_.enabled = parseBool(v, false);
-                else if (streq(pending_, "id")) ttrig_.id = parseU16(v, 0);
+                if (streq(pending_, "enabled")) ttrig_.enabled = json_scalar::parseBool(v, false);
+                else if (streq(pending_, "id")) ttrig_.id = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "sensor_id"))
-                    ttrig_.sensor_id = parseU16(v, 0);
+                    ttrig_.sensor_id = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "comparison"))
                     strlcpy(ttrig_.comparison, v ? v : "above", sizeof ttrig_.comparison);
                 else if (streq(pending_, "threshold"))
-                    ttrig_.threshold = parseF(v, 0.0f);
+                    ttrig_.threshold = json_scalar::parseF(v, 0.0f);
                 else if (streq(pending_, "program_id"))
-                    ttrig_.program_id = parseU8(v, 0);
+                    ttrig_.program_id = json_scalar::parseU8(v, 0);
                 break;
             case St::SchedTrigObj:
-                if (streq(pending_, "id")) strig_.id = parseU16(v, 0);
+                if (streq(pending_, "id")) strig_.id = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "enabled"))
-                    strig_.enabled = parseBool(v, false);
+                    strig_.enabled = json_scalar::parseBool(v, false);
                 else if (streq(pending_, "hour"))
-                    strig_.hour = parseU8(v, 0);
+                    strig_.hour = json_scalar::parseU8(v, 0);
                 else if (streq(pending_, "minute"))
-                    strig_.minute = parseU8(v, 0);
+                    strig_.minute = json_scalar::parseU8(v, 0);
                 else if (streq(pending_, "days_mask"))
-                    strig_.days_mask = parseU8(v, 0x7F);
+                    strig_.days_mask = json_scalar::parseU8(v, 0x7F);
                 else if (streq(pending_, "program_id"))
-                    strig_.program_id = parseU8(v, 0);
+                    strig_.program_id = json_scalar::parseU8(v, 0);
                 break;
             case St::Root:
-                if (streq(pending_, "setup_required")) t_->setup_required = parseBool(v, false);
+                if (streq(pending_, "setup_required")) t_->setup_required = json_scalar::parseBool(v, false);
                 break;
             default:
                 break;
@@ -520,6 +493,7 @@ private:
     ScheduleTriggerConfig strig_;
 
     int junkNest_{0};
+    uint8_t extraTrimmed_{0};
 
     bool failed_{false};
     bool rootNotObject_{false};
@@ -531,24 +505,31 @@ private:
 
 } // namespace
 
-bool parseBaseConfigStreamingFromFile(File& file, BaseConfig& cfg,
+bool parseBaseConfigStreamingFromFile(File& file, BaseConfig& cfg, ParseMode mode,
                                       bool* outHasAdcCalibrate,
                                       float* outAdcCalibrateVoltage) {
     BaseConfigListener listener(cfg);
-    jsonStreamingParseWholeFile(file, listener);
+    const bool complete = jsonStreamingParseWholeFile(file, listener);
     if (outHasAdcCalibrate) *outHasAdcCalibrate = listener.hasAdcCalibrate();
     if (outAdcCalibrateVoltage) *outAdcCalibrateVoltage = listener.adcCalibrateVoltage();
-    if (listener.rootNotObject()) return true;
-    if (!listener.sawRootObject()) return false;
-    return !listener.failed();
+    if (listener.rootNotObject() || !listener.sawRootObject() || listener.failed()) return false;
+    if (!complete && mode == ParseMode::Strict) return false;
+    if (listener.extraTrimmed()) {
+        logger.log(LogModule::Config, "config arrays trimmed (%u extra object(s))\n",
+                   (unsigned)listener.extraTrimmed());
+    }
+    return true;
 }
 
 bool parseBaseConfigStreamingFromProgmem(BaseConfig& cfg, const char* pgmDoc) {
     BaseConfigListener listener(cfg);
-    jsonStreamingParseProgmem(listener, pgmDoc);
-    if (listener.rootNotObject()) return true;
-    if (!listener.sawRootObject()) return false;
-    return !listener.failed();
+    const bool complete = jsonStreamingParseProgmem(listener, pgmDoc);
+    if (listener.rootNotObject() || !listener.sawRootObject() || listener.failed()) return false;
+    if (listener.extraTrimmed()) {
+        logger.log(LogModule::Config, "config arrays trimmed (%u extra object(s))\n",
+                   (unsigned)listener.extraTrimmed());
+    }
+    return complete;
 }
 
 } // namespace config_internal

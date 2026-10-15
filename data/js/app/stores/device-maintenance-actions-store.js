@@ -27,7 +27,7 @@
           message: 'Перезагрузить модем?',
           onConfirm: async () => {
             try {
-              await APP.api.apiJson('/modem/reboot', { method: 'POST' });
+              await APP.api.apiJson(APP.api.endpoints?.modemReboot || '/modem/reboot', { method: 'POST' });
               Alpine.store('uiNotification').info('Перезагрузка модема…');
             } catch (e) {
               Alpine.store('uiNotification').error('Ошибка сети');

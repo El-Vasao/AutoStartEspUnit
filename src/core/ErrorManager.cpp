@@ -1,19 +1,25 @@
-// src/core/Core.ErrorManager.cpp
+// src/core/ErrorManager.cpp
 #include "core/ErrorManager.h"
-#include "common/Utils.h"
+#include "common/Crc16.h"
 #include "common/Logger.h"
 
+#include <stddef.h>
 #include <string.h>
 
 /**
- * @file Core.ErrorManager.cpp
+ * @file ErrorManager.cpp
  * @brief Error history ring + RTC persist + MQTT one-shot delivery flags.
  *        Multiple distinct ErrorCodes may be active concurrently.
  */
 
 namespace {
 RTC_DATA_ATTR RtcErrorBlock s_rtcErrorBlock;
+
+/// CRC over everything before `crc` (padding included; blocks are memset before filling).
+uint16_t rtcBlockCrc(const RtcErrorBlock& b) {
+    return calculateCRC16(reinterpret_cast<const uint8_t*>(&b), offsetof(RtcErrorBlock, crc));
 }
+} // namespace
 
 ErrorManager::ErrorManager() : _lastError(ErrorCode::NONE), _errorTime(0) {}
 
@@ -99,7 +105,7 @@ void ErrorManager::set(ErrorCode err) {
 
     _lastError = err;
     _errorTime = nowSec;
-    logger.log("[ErrorManager] ERROR: %s [%d]\n", errorCodeToString(err), (int)err);
+    logger.log(LogModule::ErrorManager, "ERROR: %s [%d]\n", errorCodeToString(err), (int)err);
     persist_();
 }
 
@@ -109,7 +115,7 @@ void ErrorManager::clear() {
     _errorTime = 0;
     // Keep ring history for MQTT one-shot; do not wipe RTC ring.
     persist_();
-    logger.log("[ErrorManager] Cleared (history kept)\n");
+    logger.log(LogModule::ErrorManager, "Cleared (history kept)\n");
 }
 
 void ErrorManager::clear(ErrorCode code) {
@@ -126,7 +132,7 @@ void ErrorManager::clear(ErrorCode code) {
 
     recomputeCurrent_();
     persist_();
-    logger.log("[ErrorManager] Cleared code: %s [%d]\n", errorCodeToString(code), (int)code);
+    logger.log(LogModule::ErrorManager, "Cleared code: %s [%d]\n", errorCodeToString(code), (int)code);
 }
 
 void ErrorManager::recordBootReset(ErrorCode err) {
@@ -158,7 +164,7 @@ void ErrorManager::recordBootReset(ErrorCode err) {
         _errorTime = nowSec;
     }
 
-    logger.log("[ErrorManager] BOOT RESET: %s [%d] active=%u\n", errorCodeToString(err), (int)err,
+    logger.log(LogModule::ErrorManager, "BOOT RESET: %s [%d] active=%u\n", errorCodeToString(err), (int)err,
                (unsigned)active);
     persist_();
 }
@@ -214,12 +220,11 @@ void ErrorManager::markDelivered(const ErrorSnapshotEntry* sent, uint8_t n) {
 }
 
 void ErrorManager::loadFromRtc() {
-    RtcErrorBlock record = s_rtcErrorBlock;
+    RtcErrorBlock record;
+    memcpy(&record, &s_rtcErrorBlock, sizeof(record));
 
     if (record.magic != RTC_MAGIC) return;
-
-    uint16_t crc = calculateCRC16((const uint8_t*)&record, sizeof(record) - sizeof(record.crc));
-    if (crc != record.crc) return;
+    if (rtcBlockCrc(record) != record.crc) return;
 
     _count = record.count;
     if (_count > ErrorHistory::CAPACITY) _count = ErrorHistory::CAPACITY;
@@ -242,12 +247,13 @@ void ErrorManager::loadFromRtc() {
     // Ensure current matches remaining actives (supports multi-active RTC restore).
     recomputeCurrent_();
 
-    logger.log("[ErrorManager] Loaded from RTC: current=%s count=%u\n", errorCodeToString(_lastError),
+    logger.log(LogModule::ErrorManager, "Loaded from RTC: current=%s count=%u\n", errorCodeToString(_lastError),
                (unsigned)_count);
 }
 
 void ErrorManager::saveToRtc() {
-    RtcErrorBlock record{};
+    RtcErrorBlock record;
+    memset(&record, 0, sizeof(record));
     record.magic = RTC_MAGIC;
     record.count = _count;
     record.current = _lastError;
@@ -261,8 +267,8 @@ void ErrorManager::saveToRtc() {
             record.entries[i] = {};
         }
     }
-    record.crc = calculateCRC16((const uint8_t*)&record, sizeof(record) - sizeof(record.crc));
-    s_rtcErrorBlock = record;
+    record.crc = rtcBlockCrc(record);
+    memcpy(&s_rtcErrorBlock, &record, sizeof(record));
 }
 
 void ErrorManager::clearRtc() {

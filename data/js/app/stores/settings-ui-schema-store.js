@@ -5,18 +5,7 @@
 
   APP.stores.registerSettingsUiSchemaStore = function registerSettingsUiSchemaStore(Alpine) {
     function getByPath(obj, path) {
-      try {
-        if (!obj) return undefined;
-        const parts = String(path || '').split('.').filter(Boolean);
-        let cur = obj;
-        for (const p of parts) {
-          if (cur == null) return undefined;
-          cur = cur[p];
-        }
-        return cur;
-      } catch (e) {
-        return undefined;
-      }
+      return APP.path.get(obj, path);
     }
 
     function compileShowIf(showIf) {

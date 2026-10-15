@@ -12,8 +12,8 @@ class RelayController;
 class SensorsController;
 class DigitalInputs;
 class ProgramExecutor;
-class GSMController;
-class MQTTClient;
+class GsmController;
+class MqttClient;
 class ErrorManager;
 class TimeSyncManager;
 
@@ -76,7 +76,7 @@ public:
     // Запросить перезагрузку (выполняется из Core::update/loop)
     void requestReboot(uint32_t delayMs = 0);
 
-    // Сброс к заводским настройкам (удаление конфига)
+    /// Queue factory config reset; flash + reboot run from Core::update().
     void factoryReset();
 
     // Stream OTA: POST /upload feeds Update + FS tail (no /update.bin).
@@ -109,8 +109,8 @@ public:
     SensorsController& getSensors();
     DigitalInputs& getInputs();
     ProgramExecutor& getProgramExecutor();
-    GSMController& getGSM();
-    MQTTClient& getMQTT();
+    GsmController& getGSM();
+    MqttClient& getMQTT();
     ErrorManager& getErrorManager();
 
     // Runtime управление (делегируется менеджерам)
@@ -132,14 +132,11 @@ public:
 
     /// OTA enter: stop domain automations (triggers / battery saver / thermostat).
     void suspendDomainManagersForOta();
-    /// OTA exit: reload runtime enables from config via manager begin().
+    /// OTA exit: restore runtime enables from config without resetting trigger edges.
     void restoreDomainManagersAfterOta();
 
     /// NORMAL_SILENT → NORMAL (SoftAP on). Returns false if not in silent.
     bool wakeWifiApFromSilent();
-
-    /// Сводная статистика через `logger` (SSE/UI).
-    void printStats();
 
     // Статус “двигатель работает” (для UI/логики)
     bool isEngineRunning() const;

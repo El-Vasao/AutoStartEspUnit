@@ -1,4 +1,4 @@
-// include/gsm/GSMController.h
+// include/gsm/GsmController.h
 #pragma once
 
 #include <Arduino.h>
@@ -7,10 +7,9 @@
 #include "common/ErrorCodes.h"
 #include "gsm/GsmModemStack.h"
 #include "gsm/GsmInitPhase.h"
-#include "gsm/GsmInitFsm.h"
 
 // Состояния GSM-модема
-enum class GSMState : uint8_t {
+enum class GsmState : uint8_t {
     IDLE,                ///< ожидание
     INIT,                ///< инициализация (AT-команды)
     REGISTERING,         ///< регистрация в сети (AT+CREG?)
@@ -33,7 +32,7 @@ enum class GSMState : uint8_t {
  * Важно по памяти:
  * - RX ответа модема — кольцевой буфер `char[_responseBuffer]` фиксированного размера (без Arduino `String`).
  */
-class GSMController {
+class GsmController {
 public:
     enum class VoiceKind : uint8_t { None = 0, OutCall, OutSms, Inbound };
     enum class VoicePhase : uint8_t {
@@ -57,7 +56,7 @@ public:
         FinishFail,
     };
 
-    GSMController();
+    GsmController();
 
     // Запуск/перезапуск автомата (после загрузки конфига)
     void begin();
@@ -73,7 +72,7 @@ public:
     void clearReattachBackoff();
 
     // Проверить, готов ли модем к работе (GPRS подключён)
-    bool isReady() const { return _state == GSMState::READY; }
+    bool isReady() const { return _state == GsmState::READY; }
 
     // Получить название оператора
     const char* getOperator() const { return _operator; }
@@ -91,7 +90,7 @@ public:
     const char* getStateString() const;
 
     // Текущее состояние (enum)
-    GSMState getState() const { return _state; }
+    GsmState getState() const { return _state; }
 
     // Получить ссылку на клиент для MQTT
     Client& getClient() { return _stack.client; }
@@ -142,10 +141,6 @@ public:
     /// AT-only CCLK probe; allowed while MQTT CIP is up. Stale clock → soft miss (no fail mask).
     bool requestCclkProbe(int8_t tzOffsetHours);
     bool timeSyncBusy() const { return _timeStep != TimeStep::Idle; }
-    /// True while cascade is on CCLK-only probe (safe with TCP socket up).
-    bool timeCclkOnlyBusy() const {
-        return _timeCclkOnly && _timeStep == TimeStep::CclkProbe;
-    }
     /// Heavy cascade owns CIP (not CCLK-lite) — defer reattach / block MQTT connect.
     bool timeHeavySyncBusy() const {
         return _timeStep != TimeStep::Idle && !_timeCclkOnly;
@@ -175,13 +170,13 @@ public:
     bool takePendingProgramStart(uint8_t& programIdOut);
 
 private:
-    static constexpr size_t RESPONSE_BUF_SIZE = GSM::RESPONSE_BUFFER_SIZE;
-    static constexpr size_t AT_CMD_BUF_SIZE = GSM::CMD_BUFFER_SIZE;
+    static constexpr size_t RESPONSE_BUF_SIZE = Gsm::RESPONSE_BUFFER_SIZE;
+    static constexpr size_t AT_CMD_BUF_SIZE = Gsm::CMD_BUFFER_SIZE;
 
     HardwareSerial* _serial;        ///< указатель на последовательный порт (Serial)
     GsmModemStack _stack;
 
-    GSMState _state;                 ///< текущее состояние
+    GsmState _state;                 ///< текущее состояние
     uint32_t _baud;                  ///< найденная/используемая скорость UART
     uint32_t _stateStartTime;        ///< время входа в текущее состояние (мс)
     uint32_t _lastCommandTime;       ///< время последней отправленной команды (мс)
@@ -207,7 +202,6 @@ private:
     int8_t _cgattStat{-1};           ///< -1 unknown, иначе 0/1 из +CGATT
     bool _pdpDeactSeen{false};
     bool _closedSeen{false};
-    bool _modemRestartedSeen{false};
     uint32_t _tcpClosedFirstMs{0};
     uint8_t _tcpClosedStreak{0};
 
@@ -221,8 +215,6 @@ private:
     bool _awaitGotIp{false};
     uint16_t _cmdId{0};
     uint16_t _awaitCmdId{0};
-    uint8_t _awaitLinesLeft{0};
-    uint8_t _initCfgStep{0};
     uint8_t _gprsCfgStep{0};
     /// GPRS_ATTACH: 0=probe SAPBR=2,1, 1=open SAPBR=1,1, 2=re-probe after open fail.
     uint8_t _attachProbeStep{0};
@@ -231,7 +223,6 @@ private:
     // Bring-up health
     uint32_t _bringupStartMs{0};
     uint8_t _recoveryLevel{0};
-    uint8_t _backoffStep{0};
     uint32_t _cooldownUntilMs{0};
     bool _restartPending{false};
     /// ERROR L2/L3: waiting for CIPSHUT / SAPBR0 before arming begin().
@@ -240,26 +231,24 @@ private:
     uint8_t _errorRecoveryCycles{0};
     uint32_t _postLockQuietUntilMs{0};
     uint32_t _waitFirstUntilMs{0};
-    uint8_t _waitFirstStep{0};
 
     /// Липкий до `stop()`: хоть раз успешно пройден шаг `AT`+`AT+CGMI` (SIMCOM) в этой GSM‑сессии.
     bool _verifiedModemContactSinceStop{false};
     uint32_t _firstAtFallbackStartMs{0};
     /// Не раньше этого millis() слать следующий hypothesis AT (spaced backoff).
     uint32_t _hypNextAttemptMs{0};
-    /// Подрежим INIT (hypothesis AT/CGMI, baud search, IPR NV, resume CREG…; см. GsmInitFsm.cpp).
+    /// Подрежим INIT (hypothesis AT/CGMI, baud search, IPR NV, resume CREG…; см. GsmController.Fsm.Init.cpp).
     GsmInitPhase _initPhase{GsmInitPhase::None};
     bool _baudSearchActive{false};
     uint8_t _baudSearchRound{0};
     uint8_t _baudSearchBaudIdx{0};
-    uint8_t _baudSearchSub{0};
     uint32_t _baudSearchDeadlineMs{0};
     uint32_t _baudCooldownUntilMs{0};
     bool _didIprNvProbeThisCycle{false};
     /// Один best-effort `AT+CFUN=1,1` на цикл до baud search (или уже сделан UI/ERROR L4).
     bool _didPreBaudSearchCfun{false};
     bool _resumeSapbrHadIp{false};
-    GSMState _postResumeTarget{GSMState::REGISTERING};
+    GsmState _postResumeTarget{GsmState::REGISTERING};
     /// Счётчик повторов `AT+CGATT?` в INIT (SIM busy до CPIN READY).
     uint8_t _initCgattBusyRetries{0};
 
@@ -275,7 +264,7 @@ private:
         uint8_t state;
         uint16_t aux;
     };
-    static constexpr uint8_t EVENT_RING_SIZE = GSM::EVENT_RING_SIZE;
+    static constexpr uint8_t EVENT_RING_SIZE = Gsm::EVENT_RING_SIZE;
     GsmEvent _ev[EVENT_RING_SIZE]{};
     uint8_t _evHead{0};
     void ev(uint8_t type, uint16_t aux = 0);
@@ -315,6 +304,7 @@ private:
     uint32_t _voiceTimeoutMs{0};
     uint32_t _voiceEpochStartMs{0};
     uint32_t _voicePhaseDeadlineMs{0};
+    uint32_t _voiceHangupDeadlineMs{0};
     bool _voiceResultReady{false};
     bool _voiceResultOk{false};
     bool _voicePromptSeen{false};
@@ -332,7 +322,6 @@ private:
     uint32_t _gsmStallLastLogMs{0};
 
     void flushInput();
-    void sendRawLogged(const char* s, const char* tag = "RAW");
     void logRxSnippet(const char* tag) const;
     bool gsmCgmiResponseManufacturerOk() const;
     bool gsmParseStoredIprBaud(uint32_t& baudOut) const;
@@ -363,7 +352,7 @@ private:
     bool responseContains(const char* needle) const;
 
     // Смена состояния
-    void changeState(GSMState newState);
+    void changeState(GsmState newState);
 
     /// Clear sticky GSM bring-up errors (NO_RESPONSE / REG_FAIL / APN_FAIL) on READY.
     void clearGsmBringupErrors_();
@@ -408,7 +397,5 @@ private:
     bool voiceTryBeginInbound_(const char* clipDigits);
     void voiceOnDtmfTone_(char tone);
     void voiceHandleUrc_(const char* line);
-
-    friend class GsmInitFsm;
 };
 

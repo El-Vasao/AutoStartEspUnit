@@ -6,7 +6,7 @@
   // optionsFrom sources whose option values are numeric ids.
   const INT_SOURCES = new Set([
     'relays', 'programRelays', 'inputs', 'inputIds', 'digitalInputIds', 'pulseInputIds', 'startInputIds',
-    'sensors', 'programs'
+    'sensors', 'sensorIds', 'programs'
   ]);
 
   APP.schemaNormalize.inferValueTypeFromField = function inferValueTypeFromField(field) {
@@ -109,9 +109,13 @@
 
       // engine_input_id: no maxItems-based limit (uses ids)
 
-      // Arrays sized to hardware inventories
-      try { sc.properties.sensors.maxItems = sensors; } catch (e) {}
-      try { sc.properties.inputs.maxItems = inputs; } catch (e) {}
+      // Arrays sized to hardware inventories. Skip 0 so Ajv init before hwCounts stays at schema defaults.
+      if (sensors > 0) {
+        try { sc.properties.sensors.maxItems = sensors; } catch (e) {}
+      }
+      if (inputs > 0) {
+        try { sc.properties.inputs.maxItems = inputs; } catch (e) {}
+      }
 
       return sc;
     } catch (e) {

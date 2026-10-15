@@ -53,6 +53,15 @@ void skipWs(const char*& p) {
     while (*p && isspace((unsigned char)*p)) p++;
 }
 
+bool idCharsetOk(const char* s) {
+    if (!s || !*s) return false;
+    for (const char* p = s; *p; ++p) {
+        const unsigned char c = (unsigned char)*p;
+        if (!(isalnum(c) || c == '_' || c == '-')) return false;
+    }
+    return true;
+}
+
 bool readJsonStringContent(const char*& p, char* out, size_t outCap) {
     if (!out || outCap == 0) return false;
     size_t w = 0;
@@ -163,7 +172,7 @@ bool parseMqttCommandJson(const char* json, MqttCommand& out) {
             if (!readJsonStringContent(p, vbuf, sizeof vbuf)) return false;
             switch (key) {
                 case Key::Id:
-                    if (vbuf[0] == '\0' || strlen(vbuf) > MqttCmd::ID_MAX_LEN) return false;
+                    if (vbuf[0] == '\0' || strlen(vbuf) > MqttCmd::ID_MAX_LEN || !idCharsetOk(vbuf)) return false;
                     copyTo(out.id, sizeof(out.id), vbuf);
                     break;
                 case Key::Cmd:

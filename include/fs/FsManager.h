@@ -1,4 +1,4 @@
-// include/fs/FSManager.h
+// include/fs/FsManager.h
 #pragma once
 
 #include <Arduino.h>
@@ -34,7 +34,7 @@ struct FileMetadata {
     FilePriority priority;           ///< приоритет
     FileAccess access;               ///< тип доступа
     uint32_t maxSize;                ///< максимальный размер (байт)
-    bool cacheInRam;                 ///< подсказка для Config, не используется в FSManager
+    bool cacheInRam;                 ///< подсказка для Config, не используется в FsManager
     bool gzipSupported;              ///< UI static: on FS only as path.gz (build.py axiom)
     uint16_t crc;                    ///< контрольная сумма (опционально)
 } __attribute__((packed));
@@ -62,11 +62,11 @@ struct FileMetadata {
  *
  * Backup/restore/healthCheck копируют и считают CRC потоково; copyFileAtomic_ использует стековый scratch-буфер.
  */
-class FSManager {
+class FsManager {
 public:
     using JsonStreamEncodeFn = size_t (*)(Print& p, void* ctx);
 
-    FSManager();
+    FsManager();
 
     /// Ссылка на смонтированный том для API, требующих `FS&` (см. комментарий к классу). Не вызывать на ней open/remove.
     FS& webFs() { return LittleFS; }
@@ -129,9 +129,6 @@ public:
 
     // Восстановить файл из резервной копии
     bool restore(const char* path);
-
-    // Open UI static for web: FS holds only path.gz (logical `path` without suffix).
-    File openWebFile(const char* path);
 
     /// Обновить снимок total/used (ESP32 LittleFS не даёт настоящий GC).
     bool refreshFsInfo();
@@ -200,5 +197,5 @@ private:
 
 };
 
-extern FSManager fileSystem;
+extern FsManager fileSystem;
 

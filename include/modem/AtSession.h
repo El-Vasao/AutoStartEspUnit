@@ -4,6 +4,12 @@
 #include "common/Constants.h"
 #include "modem/ModemUart.h"
 
+/**
+ * @brief Non-blocking AT command queues on ModemUart.
+ *
+ * Two queues (normal + high-priority). Each slot copies the command into
+ * `cmdBuf` so callers do not keep a live pointer. See docs/modules/modem.md.
+ */
 class AtSession {
 public:
     enum class Expect : uint8_t {
@@ -15,11 +21,12 @@ public:
     };
 
     struct Request {
-        const char* cmd;           // command without CRLF
+        const char* cmd;           // command without CRLF (after enqueue, points at cmdBuf)
         uint32_t timeoutMs;
         uint8_t expectMask;        // Expect bitmask
         const char* prefix;        // for LinePrefix
         const char* tag;           // optional (for higher-level logs)
+        char cmdBuf[Gsm::CMD_BUFFER_SIZE]{};
     };
 
     struct Result {
@@ -42,6 +49,7 @@ public:
     // Queue an AT request (non-blocking). Returns false if queue full.
     bool enqueue(const Request& r);
     bool enqueueHigh(const Request& r);
+    uint8_t normalQueueFree() const { return (uint8_t)(QSIZE - _qCount); }
 
     // Drive progress: send next queued command if idle, check timeout.
     void tick(uint32_t nowMs);
@@ -62,8 +70,8 @@ private:
 
     ModemUart& _uart;
 
-    static constexpr uint8_t QSIZE = GSM::AT_QSIZE;
-    static constexpr uint8_t HQSIZE = GSM::AT_HQSIZE;
+    static constexpr uint8_t QSIZE = Gsm::AT_QSIZE;
+    static constexpr uint8_t HQSIZE = Gsm::AT_HQSIZE;
     Request _q[QSIZE]{};
     uint8_t _qHead{0};
     uint8_t _qCount{0};

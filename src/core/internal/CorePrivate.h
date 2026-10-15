@@ -6,10 +6,10 @@
 #include "core/BatterySaverManager.h"
 #include "io/DigitalInputs.h"
 #include "core/ErrorManager.h"
-#include "gsm/GSMController.h"
-#include "mqtt/MQTTClient.h"
+#include "gsm/GsmController.h"
+#include "mqtt/MqttClient.h"
 #include "core/ModeManager.h"
-#include "ota/OTAHandler.h"
+#include "ota/OtaHandler.h"
 #include "program/ProgramExecutor.h"
 #include "io/RelayController.h"
 #include "io/SensorsController.h"
@@ -26,7 +26,7 @@
  * Контракт:
  * - заголовок относится к реализации `core` и не должен включаться вне `src/core/...`;
  * - все подсистемы хранятся как поля (статическая композиция), чтобы RAM-профиль был предсказуем;
- * - порядок полей важен: зависимости (например, `MQTTClient`) инициализируются после своих провайдеров (`GSMController`).
+ * - порядок полей важен: зависимости (например, `MqttClient`) инициализируются после своих провайдеров (`GsmController`).
  *
  * Зачем отдельный struct:
  * - публичный `include/core/Core.h` остаётся лёгким (без тяжелых include’ов);
@@ -61,13 +61,13 @@ struct CorePrivate {
     RelayController relay;
     DigitalInputs inputs;
     ProgramExecutor programExecutor;
-    GSMController gsm;
-    MQTTClient mqtt{gsm.getClient()};
+    GsmController gsm;
+    MqttClient mqtt{gsm.getClient()};
     CellularCore cellular;
 
     // Managers
     ModeManager modeManager;
-    OTAHandler otaHandler;
+    OtaHandler otaHandler;
     ErrorManager errorManager;
 
     TriggerManager triggerManager{config, inputs, sensors, programExecutor};
@@ -83,8 +83,6 @@ struct CorePrivate {
     uint32_t lastFsMaintenance{0};
     uint32_t lastErrorReport{0};
     uint32_t lastStatsPrint{0};
-    uint32_t loopCounter{0};
-    uint32_t maxLoopTime{0};
 
     bool engineRunning{false};
 

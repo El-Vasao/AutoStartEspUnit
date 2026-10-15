@@ -20,7 +20,7 @@
   };
 
   APP.uiMaps.badges = Object.assign(APP.uiMaps.badges || {}, {
-    /** From `/status`: `mode` (kernel/core mode string). */
+    /** From `/bootstrap` and SSE `mode`/`snapshot`: kernel/core mode string. */
     statusMode(raw) {
       const v = String(raw || '').trim();
       const map = {
@@ -40,7 +40,7 @@
     }
     ,
 
-    /** From `/status`: `gsmState` (GSM FSM stage string). */
+    /** From `/bootstrap` and SSE `gsm`/`snapshot`: GSM FSM stage string. */
     gsmState(raw) {
       const v = String(raw || '').trim().toUpperCase();
       const map = {

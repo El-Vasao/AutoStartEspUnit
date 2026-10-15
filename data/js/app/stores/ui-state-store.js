@@ -65,11 +65,7 @@
   }
 
   APP.stores.registerUiStateStore = function registerUiStateStore(Alpine) {
-    // Drop legacy persisted tab keys so refresh always lands on panel / default sub-tab.
-    try {
-      localStorage.removeItem('ui.activeTab');
-      localStorage.removeItem('ui.activeSubTab');
-    } catch (e) {}
+    // Tabs are session-only: every load opens «Панель» / wifi.
 
     Alpine.store('uiState', {
       // initLock: SoftAP boot checklist; flashLock: flash commit / busy write

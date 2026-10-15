@@ -1,4 +1,4 @@
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 #include "common/Constants.h"
 #include "common/Logger.h"
 #include <WiFi.h>
@@ -6,7 +6,7 @@
 #include <cstdio>
 #include <sys/stat.h>
 
-FSManager fileSystem;
+FsManager fileSystem;
 
 static const FileMetadata fileRegistry[] PROGMEM = {
     // Критические файлы
@@ -67,20 +67,9 @@ static const FileMetadata fileRegistry[] PROGMEM = {
         0
     },
 
-    // Для OTA-обновлений
-    {
-        // OTA-пакет загружается через WebServer и обрабатывается OTAHandler.
-        "/update.bin",
-        FilePriority::PRIO_NORMAL,
-        FileAccess::ACCESS_READ_WRITE,
-        OTA::FILE_MAX_SIZE,
-        false,
-        false,
-        0
-    }
 };
 
-FSManager::FSManager() :
+FsManager::FsManager() :
     initialized(false),
     lastFsInfoRefresh(0),
     readCount(0),
@@ -94,8 +83,8 @@ FSManager::FSManager() :
     memset(pathBuffer, 0, sizeof(pathBuffer));
 }
 
-bool FSManager::begin() {
-    logger.log("[FSManager] begin\n");
+bool FsManager::begin() {
+    logger.log(LogModule::FsManager, "begin\n");
 
     if (initialized) return true;
 
@@ -103,41 +92,41 @@ bool FSManager::begin() {
         initialized = true;
         fsInfo.totalBytes = LittleFS.totalBytes();
         fsInfo.usedBytes = LittleFS.usedBytes();
-        logger.log("[FSManager] LittleFS mounted, total: %u KB, used: %u KB\n",
+        logger.log(LogModule::FsManager, "LittleFS mounted, total: %u KB, used: %u KB\n",
                    fsInfo.totalBytes / 1024, fsInfo.usedBytes / 1024);
         if (!exists("/programs")) {
             LittleFS.mkdir("/programs");
 #ifdef SERIAL_DEBUG
-            logger.log("[FSManager] Created /programs directory\n");
+            logger.log(LogModule::FsManager, "Created /programs directory\n");
 #endif
         }
         // Создаём папки для библиотек, если их ещё нет (на всякий случай)
         if (!exists("/js")) {
             LittleFS.mkdir("/js");
 #ifdef SERIAL_DEBUG
-            logger.log("[FSManager] Created /js directory\n");
+            logger.log(LogModule::FsManager, "Created /js directory\n");
 #endif
         }
         if (!exists("/css")) {
             LittleFS.mkdir("/css");
 #ifdef SERIAL_DEBUG
-            logger.log("[FSManager] Created /css directory\n");
+            logger.log(LogModule::FsManager, "Created /css directory\n");
 #endif
         }
-        logger.log("[FSManager] OK\n");
+        logger.log(LogModule::FsManager, "OK\n");
         return true;
     }
 
-    logger.log("[FSManager] LittleFS mount failed, formatting...\n");
+    logger.log(LogModule::FsManager, "LittleFS mount failed, formatting...\n");
     if (!LittleFS.format()) {
-        logger.log("[FSManager] LittleFS format FAILED\n");
+        logger.log(LogModule::FsManager, "LittleFS format FAILED\n");
         errorCount++;
         return false;
     }
 
-    logger.log("[FSManager] LittleFS formatted, mounting again...\n");
+    logger.log(LogModule::FsManager, "LittleFS formatted, mounting again...\n");
     if (!LittleFS.begin()) {
-        logger.log("[FSManager] LittleFS mount FAILED after format\n");
+        logger.log(LogModule::FsManager, "LittleFS mount FAILED after format\n");
         errorCount++;
         return false;
     }
@@ -154,21 +143,21 @@ bool FSManager::begin() {
     if (!exists("/css")) {
         LittleFS.mkdir("/css");
     }
-    logger.log("[FSManager] LittleFS mounted after format\n");
-    logger.log("[FSManager] OK\n");
+    logger.log(LogModule::FsManager, "LittleFS mounted after format\n");
+    logger.log(LogModule::FsManager, "OK\n");
     return true;
 }
 
-void FSManager::end() {
-    logger.log("[FSManager] Stopping...()\n");
+void FsManager::end() {
+    logger.log(LogModule::FsManager, "Stopping...()\n");
     if (initialized) {
         LittleFS.end();
         initialized = false;
     }
 }
 
-bool FSManager::format() {
-    logger.log("[FSManager] format()\n");
+bool FsManager::format() {
+    logger.log(LogModule::FsManager, "format()\n");
     bool result = LittleFS.format();
     if (result) {
         initialized = false;
@@ -176,7 +165,7 @@ bool FSManager::format() {
     return result;
 }
 
-bool FSManager::exists(const char* path) const {
+bool FsManager::exists(const char* path) const {
     if (!initialized || !path || path[0] != '/') return false;
     // ESP32 Arduino exists() opens for read and logs E when missing
     // (vfs_api: "does not exist, no permits for creation"). Use POSIX stat instead.
@@ -187,12 +176,12 @@ bool FSManager::exists(const char* path) const {
     return (::stat(full, &st) == 0);
 }
 
-bool FSManager::rename(const char* oldPath, const char* newPath) {
+bool FsManager::rename(const char* oldPath, const char* newPath) {
     if (!initialized) return false;
     return LittleFS.rename(oldPath, newPath);
 }
 
-const FileMetadata* FSManager::getMetadata(const char* path) {
+const FileMetadata* FsManager::getMetadata(const char* path) {
     for (size_t i = 0; i < sizeof(fileRegistry) / sizeof(FileMetadata); i++) {
         FileMetadata meta;
         memcpy_P(&meta, &fileRegistry[i], sizeof(FileMetadata));
@@ -204,7 +193,7 @@ const FileMetadata* FSManager::getMetadata(const char* path) {
     return nullptr;
 }
 
-bool FSManager::ensurePath(const char* path) {
+bool FsManager::ensurePath(const char* path) {
     if (!initialized) return false;
 
     if (!path || path[0] == '\0') return true;
@@ -228,16 +217,16 @@ bool FSManager::ensurePath(const char* path) {
 
     bool created = LittleFS.mkdir(parent);
 #ifdef SERIAL_DEBUG
-    logger.log("[FSManager] %s directory: %s\n", created ? "Created" : "Failed to create", parent);
+    logger.log(LogModule::FsManager, "%s directory: %s\n", created ? "Created" : "Failed to create", parent);
 #else
     if (!created) {
-        logger.log("[FSManager] Failed to create directory: %s\n", parent);
+        logger.log(LogModule::FsManager, "Failed to create directory: %s\n", parent);
     }
 #endif
     return created;
 }
 
-bool FSManager::hasRequiredWebAssets() const {
+bool FsManager::hasRequiredWebAssets() const {
     if (!initialized) return false;
 
     // Axiom: UI shell assets on FS are only *.gz (logical names in WebAssets::REQUIRED).
@@ -259,7 +248,7 @@ bool FSManager::hasRequiredWebAssets() const {
     return true;
 }
 
-void FSManager::forEachInDir(const char* path, DirVisitFn fn, void* ctx) {
+void FsManager::forEachInDir(const char* path, DirVisitFn fn, void* ctx) {
     if (!initialized || !path || !fn) return;
     File root = LittleFS.open(path);
     if (!root || !root.isDirectory()) {

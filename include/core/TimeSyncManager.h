@@ -7,7 +7,7 @@
 #include "common/Constants.h"
 
 class Config;
-class GSMController;
+class GsmController;
 
 /**
  * Soft wall clock: cascade CCLK → CIPSHUT → CIPGSMLOC → (optional CNTP) on SIM800, then settimeofday.
@@ -20,7 +20,7 @@ class GSMController;
  */
 class TimeSyncManager {
 public:
-    TimeSyncManager(Config& config, GSMController& gsm);
+    TimeSyncManager(Config& config, GsmController& gsm);
 
     void begin();
     void update();
@@ -58,7 +58,7 @@ private:
     };
 
     Config& _config;
-    GSMController& _gsm;
+    GsmController& _gsm;
 
     bool _synced{false};
     uint32_t _lastSyncMs{0};

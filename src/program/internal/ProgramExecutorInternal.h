@@ -27,7 +27,7 @@ static inline int8_t findTempTriggerIndexById(uint16_t id) {
 }
 
 static inline void logInvalidTriggerAndSkip(uint8_t idx, const char* what) {
-    logger.log("[ProgramExecutor] Invalid %s index %u (max=%u), skipping step\n",
+    logger.log(LogModule::ProgramExecutor, "Invalid %s index %u (max=%u), skipping step\n",
                what ? what : "trigger", (unsigned)idx, (unsigned)Limits::MAX_TRIGGERS);
 }
 } // namespace program_executor_internal

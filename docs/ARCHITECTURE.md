@@ -3,7 +3,7 @@
 Этот документ фиксирует *контракты и ограничения* для кодовой базы. Он нужен, чтобы рефактор не превращался в набор
 разрозненных правок и чтобы новые изменения не размывали границы модулей.
 
-Target: PlatformIO env `esp32c3` (~170 KB free heap after boot). Исторические заметки по ESP8266 — в `docs/archive/`.
+Target: PlatformIO env `esp32c3` (~170 KB free heap after boot). Pins: [`HARDWARE.md`](HARDWARE.md).
 
 ## 1) Слои и направление зависимостей
 
@@ -17,7 +17,7 @@ flowchart TD
   Core --> Domain[io,program,core/*Manager]
   Core --> Services[config,fs,gsm,mqtt,ota]
   Core --> Web[web/WebServer]
-  Services --> FS[fs/FSManager]
+  Services --> FS[fs/FsManager]
   Web --> Core
   Web --> FS
 ```
@@ -96,9 +96,9 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
     (full только после connect до успешного TX и по `get_status`; иначе delta/skip; контракт: `docs/modules/mqtt.md` §4)
 - **Anti-hang**: публикация JSON-статуса по таймеру (delta/skip) плюс first/full и `get_status`; чтение/запись в транспорт режутся лимитами `MqttFsmClient::Budgets`.
   Локальное время «измерить + застейджить» JSON ограничивают **логируемым** порогом
-  (~10 мс в `MQTTClient::publishStatus`) и не приводят к принудительному `disconnect()` сами по себе.
+  (~10 мс в `MqttClient::publishStatus`) и не приводят к принудительному `disconnect()` сами по себе.
   SIM800: send-epoch до `SEND OK`, selective discard (raw UART junk drop / `+IPD` keep),
-  `POST_BOOT_SETTLE_MS` до `gsm.begin()`, `mqtt.loop()` всегда при READY (TX no-op mid-CIPSEND, RX дренируется; см. `docs/modules/gsm_modem.md`).
+  `POST_BOOT_SETTLE_MS` до `gsm.begin()`, `mqtt.loop()` всегда при READY (TX no-op mid-CIPSEND, RX дренируется; см. [`modules/gsm.md`](modules/gsm.md), [`modules/modem.md`](modules/modem.md)).
   MQTT outbound: очередь Ctrl/Tele (`TX_Q_DEPTH=3`, Tele не занимает последний слот, FIFO send), атомарный CIPSEND, presence после SUBACK или timeout+retry (см. `docs/modules/mqtt.md`). RX overflow → reconnect.
 
 ### Долгие операции и watchdog/cooperate
@@ -120,7 +120,7 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
 
 Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удалены** (ESP32-C3).
 
-Полевой baseline: [`docs/ESP32C3.md`](ESP32C3.md). Детали stream OTA: [`docs/modules/ota.md`](modules/ota.md).
+Полевой baseline: [`HARDWARE.md`](HARDWARE.md). Детали stream OTA: [`modules/ota.md`](modules/ota.md).
 
 ## 3.1) “Горячие” и “холодные” зоны
 
@@ -135,7 +135,7 @@ Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удале
 
 ## 3.2) Cellular (SIM800): AT/transport/logging contracts
 
-Поведение `begin()`/`INIT` описано в [`docs/modules/gsm_modem.md`](modules/gsm_modem.md); константы — только из `namespace GSM` в `Constants.h`.
+Поведение `begin()`/`INIT` описано в [`modules/gsm.md`](modules/gsm.md); константы — только из `namespace Gsm` в `Constants.h`.
 
 ### Единый AT pipeline
 - **Все AT-команды должны идти через `AtSession` + `ModemUart`**.
@@ -169,7 +169,7 @@ Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удале
 
 ## 4) Политика доступа к LittleFS
 
-Правило: **вся работа с FS только через `FSManager` (`fileSystem`)**.
+Правило: **вся работа с FS только через `FsManager` (`fileSystem`)**.
 
 Исключение:
 - если сторонняя библиотека требует `FS&`, разрешено передать `fileSystem.webFs()`,
@@ -179,7 +179,7 @@ Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удале
 - централизованный учёт ошибок и атомарность;
 - единая политика deferred операций (чтобы не пересекать flash с выполнением программы).
 
-`FSManager::gc()` на ESP32 Arduino **не компактирует** том: reclaim известных orphan temp + refresh free-space. После вызова всегда проверяйте `getFreeSpace()`.
+`FsManager::gc()` на ESP32 Arduino **не компактирует** том: reclaim известных orphan temp + refresh free-space. После вызова всегда проверяйте `getFreeSpace()`.
 
 ## 5) Комментарии (стиль “осмысленной документации”)
 

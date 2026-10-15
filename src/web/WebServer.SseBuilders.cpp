@@ -10,7 +10,7 @@
 #include "common/Utils.h"
 #include "core/ErrorManager.h"
 #include "core/FlashCommitCoordinator.h"
-#include "gsm/GSMController.h"
+#include "gsm/GsmController.h"
 #include "io/DigitalInputs.h"
 #include "io/RelayController.h"
 #include "io/SensorsController.h"
@@ -194,7 +194,7 @@ static void emitProgramFields(Print& p, bool* needComma, const SseStatusPort& st
     p.print("\"lastProgramName\":\"");
     {
         const char* lastName = st.program->getLastProgramName();
-        escapeJsonString(p, (lastName && lastName[0]) ? lastName : "\xe2\x80\x94"); // —
+        json_escape::writeEscaped(p, (lastName && lastName[0]) ? lastName : "\xe2\x80\x94"); // —
     }
     p.print('"');
 
@@ -202,7 +202,7 @@ static void emitProgramFields(Print& p, bool* needComma, const SseStatusPort& st
     p.print("\"currentProgramName\":");
     if (st.program->isRunning()) {
         p.print('"');
-        escapeJsonString(p, st.program->getCurrentProgramName());
+        json_escape::writeEscaped(p, st.program->getCurrentProgramName());
         p.print('"');
     } else {
         p.print("null");
@@ -259,7 +259,7 @@ static void emitFlashCommitObject(Print& p, const SseStatusPort& st) {
     }
     commaOut(p, &inner);
     p.print("\"lastOp\":\"");
-    escapeJsonString(p, lastOp);
+    json_escape::writeEscaped(p, lastOp);
     p.print('"');
     commaOut(p, &inner);
     p.print("\"lastOk\":");
@@ -290,7 +290,7 @@ void emitActiveErrorsArray(Print& p, const SseStatusPort& st) {
             p.print("{\"code\":");
             p.print((unsigned)buf[i].code);
             p.print(",\"msg\":\"");
-            escapeJsonString(p, buf[i].msg);
+            json_escape::writeEscaped(p, buf[i].msg);
             p.print("\",\"active\":");
             p.print(buf[i].active ? "true" : "false");
             p.print('}');
@@ -334,7 +334,7 @@ void emitClocksPayload(Print& p, const SseStatusPort& st) {
     p.print(static_cast<long>(st.tzOffsetHours));
     commaOut(p, &c);
     p.print("\"timeSource\":\"");
-    escapeJsonString(p, st.timeSource);
+    json_escape::writeEscaped(p, st.timeSource);
     p.print('"');
     p.print('}');
 }
@@ -345,7 +345,7 @@ void emitSnapshotPayload(Print& p, const SseStatusPort& st) {
 
     commaOut(p, &c);
     p.print("\"mode\":\"");
-    escapeJsonString(p, st.modeName);
+    json_escape::writeEscaped(p, st.modeName);
     p.print('"');
 
     commaOut(p, &c);
@@ -362,7 +362,7 @@ void emitSnapshotPayload(Print& p, const SseStatusPort& st) {
 
     commaOut(p, &c);
     p.print("\"gsmState\":\"");
-    escapeJsonString(p, st.gsm ? st.gsm->getStateString() : "");
+    json_escape::writeEscaped(p, st.gsm ? st.gsm->getStateString() : "");
     p.print('"');
 
     commaOut(p, &c);

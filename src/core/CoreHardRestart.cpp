@@ -4,7 +4,7 @@
 
 #include <WiFi.h>
 
-[[noreturn]] __attribute__((noinline)) void core_hard_restart_now() {
+[[noreturn]] __attribute__((noinline)) void coreHardRestartNow() {
     espHalFeedWdt();
 #ifdef SERIAL_DEBUG
     Serial.flush();

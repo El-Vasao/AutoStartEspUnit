@@ -1,5 +1,5 @@
 /**
- * @file SensorsController.Core.cpp
+ * @file SensorsController.cpp
  * @brief Реализация контроллера сенсоров (DS18B20 + ADC напряжение).
  *
  * Память/устойчивость:
@@ -71,18 +71,18 @@ void SensorsController::clearSensorErrorIf_(ErrorCode code) {
 }
 
 void SensorsController::begin() {
-    logger.log("[SensorsController] begin\n");
+    logger.log(LogModule::SensorsController, "begin\n");
     pinMode(Pin::ONEWIRE, INPUT);
 
     // Battery divider outputs ~0–1 V into ADC; 0 dB atten ≈ 0–1.1 V full-scale on ESP32-C3.
     analogSetAttenuation(ADC_0db);
-    analogReadResolution(ADC::RESOLUTION_BITS);
+    analogReadResolution(Adc::RESOLUTION_BITS);
 
     auto& ow = owBackend();
     ow.dallas.begin();
     _sensorCount = discoverSensors();
 
-    logger.log("[SensorsController] Found %u DS18B20 sensors\n", _sensorCount);
+    logger.log(LogModule::SensorsController, "Found %u DS18B20 sensors\n", _sensorCount);
     printAllAddresses();
 
     for (uint8_t i = 0; i < _sensorCount; i++) {
@@ -91,10 +91,10 @@ void SensorsController::begin() {
 
     requestTemperatures();
 
-    logger.log("[SensorsController] VoltageMonitor OK\n");
+    logger.log(LogModule::SensorsController, "VoltageMonitor OK\n");
     updateVoltage();
     if (_voltageData.valid) {
-        logger.log("[SensorsController] Initial voltage: %.2fV\n", _voltageData.voltage);
+        logger.log(LogModule::SensorsController, "Initial voltage: %.2fV\n", _voltageData.voltage);
     }
 
     // Выводим конфиг датчиков (ROM+имя) из конфига
@@ -102,7 +102,7 @@ void SensorsController::begin() {
         const char* rom = config.getBase().sensors[i].rom;
         const char* name = config.getBase().sensors[i].name;
         if ((rom && rom[0]) || (name && name[0])) {
-            logger.log("[SensorsController] Config sensor %d: rom=%s name=%s coeff=%.2f\n",
+            logger.log(LogModule::SensorsController, "Config sensor %d: rom=%s name=%s coeff=%.2f\n",
                        i,
                        (rom && rom[0]) ? rom : "—",
                        (name && name[0]) ? name : "—",
@@ -163,8 +163,11 @@ void SensorsController::updateTemperatures() {
     }
 
     if (_conversionInProgress && (now - _conversionStartTime > DS18B20::CONVERSION_TIMEOUT_MS)) {
-        logger.log("[SensorsController] Temperature conversion timeout\n");
+        logger.log(LogModule::SensorsController, "Temperature conversion timeout\n");
         _conversionInProgress = false;
+        for (uint8_t i = 0; i < _sensorCount; i++) {
+            _sensorData[i].valid = false;
+        }
         if (_sensorCount > 0) {
             noteOneWireBusError_();
         }
@@ -226,18 +229,13 @@ uint32_t SensorsController::getLastTemperatureTime(uint8_t index) const {
     return _sensorData[index].lastReadTime;
 }
 
-void SensorsController::printAddress(uint8_t index) const {
-    (void)index;
-    // Адреса выводятся через logger в printAllAddresses().
-}
-
 void SensorsController::printAllAddresses() const {
     for (uint8_t i = 0; i < _sensorCount; i++) {
         char addrStr[TextBytes::Sensors::ADDR_STRING];
         snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
                  _foundAddresses[i][0], _foundAddresses[i][1], _foundAddresses[i][2], _foundAddresses[i][3],
                  _foundAddresses[i][4], _foundAddresses[i][5], _foundAddresses[i][6], _foundAddresses[i][7]);
-        logger.log("[SensorsController]   Sensor %u: %s\n", i, addrStr);
+        logger.log(LogModule::SensorsController, "  Sensor %u: %s\n", i, addrStr);
     }
 }
 
@@ -251,15 +249,15 @@ void SensorsController::updateVoltage() {
     uint16_t raw = analogRead(Pin::VBAT);
 
     _voltageBuffer[_voltageIndex] = raw;
-    _voltageIndex = (_voltageIndex + 1) % ADC::SAMPLES;
-    if (_adcFillCount < ADC::SAMPLES) _adcFillCount++;
+    _voltageIndex = (_voltageIndex + 1) % Adc::SAMPLES;
+    if (_adcFillCount < Adc::SAMPLES) _adcFillCount++;
 
     // Average only filled samples — dividing a sparse buffer by SAMPLES
     // understates raw and blows up calibrate (coeff = V / raw).
     uint32_t sum = 0;
     const uint8_t n = _adcFillCount;
-    if (n >= ADC::SAMPLES) {
-        for (uint8_t i = 0; i < ADC::SAMPLES; i++) sum += _voltageBuffer[i];
+    if (n >= Adc::SAMPLES) {
+        for (uint8_t i = 0; i < Adc::SAMPLES; i++) sum += _voltageBuffer[i];
     } else {
         for (uint8_t i = 0; i < n; i++) sum += _voltageBuffer[i];
     }
@@ -267,12 +265,13 @@ void SensorsController::updateVoltage() {
 
     _lastAdcAvg = avg;
     _voltageData.voltage = calculateVoltage(avg);
-    _voltageData.valid = true;
+    const bool rail = (avg == 0) || (avg >= (uint16_t)Adc::MAX_RAW);
+    _voltageData.valid = (n > 0) && !rail;
     _voltageData.lastReadTime = now;
 
     // Sustained rail/open ADC after the filter window is full — sticky diagnostic only.
-    if (_adcFillCount >= ADC::SAMPLES) {
-        const bool saturated = (raw == 0) || (raw >= (uint16_t)ADC::MAX_RAW);
+    if (_adcFillCount >= Adc::SAMPLES) {
+        const bool saturated = (raw == 0) || (raw >= (uint16_t)Adc::MAX_RAW);
         if (saturated) {
             noteAdcReadFail_();
         } else {
@@ -296,7 +295,7 @@ float SensorsController::calculateVoltage(uint16_t raw) const {
 bool SensorsController::computeAdcVoltageCoeff(float measuredVolts, float& outCoeff) const {
     // Near-zero raw (sparse window / open pin) would yield a huge coeff.
     constexpr uint16_t kMinAdcRawForCalibrate = 50;
-    if (!(measuredVolts > 0.0f) || !isAdcFilterReady() || _lastAdcAvg < kMinAdcRawForCalibrate) {
+    if (!(measuredVolts > 0.0f) || !isVoltageWindowFull() || _lastAdcAvg < kMinAdcRawForCalibrate) {
         return false;
     }
     outCoeff = measuredVolts / static_cast<float>(_lastAdcAvg);

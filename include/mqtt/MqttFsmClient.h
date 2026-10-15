@@ -183,8 +183,6 @@ private:
     void pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uint32_t deadlineMs);
     /// Drop one RX head byte while hunting MQTT frame sync (no session tear-down).
     bool resyncDropOne_(const char* why);
-    /// True if head is a valid MQTT type+remLen and buffer is still short of totalLen.
-    bool stallIsValidIncomplete_(uint32_t& needOut) const;
     static bool pastDeadline_(uint32_t deadlineMs);
 
     bool buildConnect_();
@@ -194,9 +192,4 @@ private:
     bool buildPublish_(const char* topic, const uint8_t* payload, uint16_t len, bool retained, OutClass cls);
 
     bool parseOneFrame_();
-
-    static uint16_t writeU16_(uint8_t* p, uint16_t v) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)(v & 0xFF); return 2; }
-    static uint16_t putStr_(uint8_t* p, uint16_t cap, const char* s);
-    static uint8_t encodeRemainingLen_(uint32_t len, uint8_t out[4]);
-    static bool decodeRemainingLen_(const uint8_t* p, uint16_t cap, uint32_t& outLen, uint8_t& outUsed);
 };

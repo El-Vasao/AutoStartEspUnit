@@ -49,6 +49,57 @@
     return new Promise(r => setTimeout(r, ms));
   };
 
+  function isIndexSeg(s) { return /^\d+$/.test(String(s)); }
+
+  APP.path = APP.path || {
+    get(obj, path) {
+      try {
+        if (!obj) return undefined;
+        const parts = String(path || '').split('.').filter(Boolean);
+        let cur = obj;
+        for (const p of parts) {
+          if (cur == null) return undefined;
+          cur = isIndexSeg(p) ? cur[Number(p)] : cur[p];
+        }
+        return cur;
+      } catch (e) {
+        return undefined;
+      }
+    },
+    set(obj, path, value) {
+      try {
+        if (!obj) return false;
+        const parts = String(path || '').split('.').filter(Boolean);
+        if (!parts.length) return false;
+        let cur = obj;
+        for (let i = 0; i < parts.length - 1; i++) {
+          const p = parts[i];
+          const next = parts[i + 1];
+          const idx = isIndexSeg(p) ? Number(p) : null;
+          if (idx !== null) {
+            if (!Array.isArray(cur)) return false;
+            if (cur[idx] == null || typeof cur[idx] !== 'object') cur[idx] = isIndexSeg(next) ? [] : {};
+            cur = cur[idx];
+          } else {
+            if (cur[p] == null || typeof cur[p] !== 'object') cur[p] = isIndexSeg(next) ? [] : {};
+            cur = cur[p];
+          }
+        }
+        const last = parts[parts.length - 1];
+        if (isIndexSeg(last)) {
+          const idx = Number(last);
+          if (!Array.isArray(cur)) return false;
+          cur[idx] = value;
+        } else {
+          cur[last] = value;
+        }
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+  };
+
   /**
    * Convert JS number (or numeric string) to plain decimal string without exponent.
    * Intended for UI inputs to avoid `1e+21` / `1e-7` representations.

@@ -1,5 +1,5 @@
-// Frontend↔Device contract (API endpoints + basic response shapes)
-// Keep this file dependency-free: it must be safe to load early.
+// Frontend↔Device contract: HTTP endpoints and timeouts. Every endpoint here must be registered
+// in src/web (checked by test/js/contract.test.mjs). Keep this file dependency-free: loaded early.
 (function () {
   const APP = (window.APP = window.APP || {});
 
@@ -7,7 +7,6 @@
 
   APP.contract.api = {
     endpoints: {
-      status: '/status',
       events: '/events',
       /** Inventory + live snapshot in one response. */
       bootstrap: '/bootstrap',
@@ -23,8 +22,9 @@
       program: '/program',
 
       reboot: '/reboot',
+      modemReboot: '/modem/reboot',
+      /** Stream OTA package: firmware + LittleFS tail in one POST; device reboots after it. */
       upload: '/upload',
-      otaStart: '/ota/start',
 
       /** POST body: op=thermostat|batterysaver|input|trigger_input_id|trigger_temp_id (+ id/enabled) */
       runtime: '/runtime',
@@ -48,23 +48,5 @@
       /** Alias for startEvents wait (same budget). */
       ssePanelReadyTimeoutMs: 12000,
     }
-  };
-
-  // Minimal expected shape for /status. This is NOT a validator, only documentation + defaults.
-  APP.contract.statusDefaults = {
-    mode: '—',
-    version: '—',
-    uptime: 0,
-    freeHeap: null,
-    activeErrors: [],
-    relays: [],
-    inputs: [],
-    inputFrequencies: [],
-    inputsEnabled: [],
-    tempSensors: [],
-    voltage: null,
-    lastProgramName: '—',
-    runtime: {},
-    flashCommit: { pending: false, lastOp: 'none', lastOk: true, lastMillis: 0 },
   };
 })();

@@ -1,10 +1,10 @@
 /**
- * @file GSMController.Voice.cpp
+ * @file GsmController.Voice.cpp
  * @brief Exclusive voice/SMS modem epoch: CALL_OWNER, SMS_OWNER, inbound DTMF program start.
  *
  * MQTT CIP is suspended for the whole epoch (CellularCore drain → StopTcp → AT → idle).
  */
-#include "gsm/GSMController.h"
+#include "gsm/GsmController.h"
 
 #include "config/Config.h"
 #include "gsm/GsmAtParse.h"
@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
-void GSMController::voiceReset_() {
+void GsmController::voiceReset_() {
     _voiceKind = VoiceKind::None;
     _voicePhase = VoicePhase::Idle;
     _voicePhone[0] = '\0';
@@ -25,13 +25,14 @@ void GSMController::voiceReset_() {
     _voiceTimeoutMs = 0;
     _voiceEpochStartMs = 0;
     _voicePhaseDeadlineMs = 0;
+    _voiceHangupDeadlineMs = 0;
     _voicePromptSeen = false;
     _voiceNoCarrier = false;
 }
 
-void GSMController::voiceFinish_(bool ok) {
+void GsmController::voiceFinish_(bool ok) {
     const VoiceKind kind = _voiceKind;
-    logger.log("[GSMController] voice epoch end ok=%u kind=%u\n", (unsigned)ok, (unsigned)kind);
+    logger.log(LogModule::GsmController, "voice epoch end ok=%u kind=%u\n", (unsigned)ok, (unsigned)kind);
     if (kind == VoiceKind::OutCall || kind == VoiceKind::OutSms) {
         _voiceResultOk = ok;
         _voiceResultReady = true;
@@ -39,15 +40,15 @@ void GSMController::voiceFinish_(bool ok) {
     voiceReset_();
 }
 
-void GSMController::notifyMqttDrainedForServiceEpoch() {
+void GsmController::notifyMqttDrainedForServiceEpoch() {
     if (_voicePhase != VoicePhase::NeedMqttDrain) return;
     _voicePhase = VoicePhase::StopTcp;
-    logger.log("[GSMController] voice: MQTT drained, stopping TCP\n");
+    logger.log(LogModule::GsmController, "voice: MQTT drained, stopping TCP\n");
 }
 
-void GSMController::abortModemServiceEpoch() {
+void GsmController::abortModemServiceEpoch() {
     if (_voicePhase == VoicePhase::Idle) return;
-    logger.log("[GSMController] voice: abort (preempt/stop)\n");
+    logger.log(LogModule::GsmController, "voice: abort (preempt/stop)\n");
     if (_voicePhase == VoicePhase::NeedMqttDrain || _voicePhase == VoicePhase::StopTcp ||
         _voicePhase == VoicePhase::FinishOk || _voicePhase == VoicePhase::FinishFail) {
         voiceFinish_(false);
@@ -60,9 +61,9 @@ void GSMController::abortModemServiceEpoch() {
     }
 }
 
-bool GSMController::requestCallOwner(uint32_t timeoutMs) {
+bool GsmController::requestCallOwner(uint32_t timeoutMs) {
     if (_voicePhase != VoicePhase::Idle) return false;
-    if (_state != GSMState::READY) return false;
+    if (_state != GsmState::READY) return false;
     const char* phone = config.getBase().gsm.owner_phone;
     if (!phone || !phone[0]) return false;
 
@@ -72,9 +73,9 @@ bool GSMController::requestCallOwner(uint32_t timeoutMs) {
 
     strlcpy(_voicePhone, phone, sizeof(_voicePhone));
     _voiceSmsText[0] = '\0';
-    _voiceTimeoutMs = timeoutMs ? timeoutMs : GSM::VOICE_DEFAULT_RING_MS;
-    if (_voiceTimeoutMs > GSM::VOICE_CALL_CEILING_MS) {
-        _voiceTimeoutMs = GSM::VOICE_CALL_CEILING_MS;
+    _voiceTimeoutMs = timeoutMs ? timeoutMs : Gsm::VOICE_DEFAULT_RING_MS;
+    if (_voiceTimeoutMs > Gsm::VOICE_CALL_CEILING_MS) {
+        _voiceTimeoutMs = Gsm::VOICE_CALL_CEILING_MS;
     }
     _voiceKind = VoiceKind::OutCall;
     _voicePhase = VoicePhase::NeedMqttDrain;
@@ -82,14 +83,14 @@ bool GSMController::requestCallOwner(uint32_t timeoutMs) {
     _voiceResultReady = false;
     _voiceResultOk = false;
     _voiceNoCarrier = false;
-    logger.log("[GSMController] voice: request CALL_OWNER timeout=%lu\n",
+    logger.log(LogModule::GsmController, "voice: request CALL_OWNER timeout=%lu\n",
                (unsigned long)_voiceTimeoutMs);
     return true;
 }
 
-bool GSMController::requestSmsOwner(const char* message) {
+bool GsmController::requestSmsOwner(const char* message) {
     if (_voicePhase != VoicePhase::Idle) return false;
-    if (_state != GSMState::READY) return false;
+    if (_state != GsmState::READY) return false;
     const char* phone = config.getBase().gsm.owner_phone;
     if (!phone || !phone[0]) return false;
     if (!message || !message[0]) return false;
@@ -100,25 +101,25 @@ bool GSMController::requestSmsOwner(const char* message) {
 
     strlcpy(_voicePhone, phone, sizeof(_voicePhone));
     strlcpy(_voiceSmsText, message, sizeof(_voiceSmsText));
-    _voiceTimeoutMs = GSM::SMS_CMGS_TIMEOUT_MS;
+    _voiceTimeoutMs = Gsm::SMS_CMGS_TIMEOUT_MS;
     _voiceKind = VoiceKind::OutSms;
     _voicePhase = VoicePhase::NeedMqttDrain;
     _voiceEpochStartMs = millis();
     _voiceResultReady = false;
     _voiceResultOk = false;
     _voicePromptSeen = false;
-    logger.log("[GSMController] voice: request SMS_OWNER\n");
+    logger.log(LogModule::GsmController, "voice: request SMS_OWNER\n");
     return true;
 }
 
-bool GSMController::takeVoiceOpResult(bool& okOut) {
+bool GsmController::takeVoiceOpResult(bool& okOut) {
     if (!_voiceResultReady) return false;
     okOut = _voiceResultOk;
     _voiceResultReady = false;
     return true;
 }
 
-bool GSMController::takePendingProgramStart(uint8_t& programIdOut) {
+bool GsmController::takePendingProgramStart(uint8_t& programIdOut) {
     if (!_voicePendingProgramValid) return false;
     programIdOut = _voicePendingProgramId;
     _voicePendingProgramValid = false;
@@ -126,22 +127,22 @@ bool GSMController::takePendingProgramStart(uint8_t& programIdOut) {
     return true;
 }
 
-void GSMController::voiceAbortInboundClipWait_() {
+void GsmController::voiceAbortInboundClipWait_() {
     _inboundRingSeen = false;
     _inboundClipDeadlineMs = 0;
     _inboundClipDigits[0] = '\0';
 }
 
-bool GSMController::voiceTryBeginInbound_(const char* clipDigits) {
+bool GsmController::voiceTryBeginInbound_(const char* clipDigits) {
     if (_voicePhase != VoicePhase::Idle) return false;
-    if (_state != GSMState::READY) return false;
+    if (_state != GsmState::READY) return false;
 
     const auto& gsmCfg = config.getBase().gsm;
     if (!gsmCfg.dtmf_password[0]) return false;
     if (!gsmCfg.owner_phone[0]) return false;
     if (!clipDigits || !clipDigits[0]) return false;
     if (!gsm_at::phonesMatch(gsmCfg.owner_phone, clipDigits)) {
-        logger.log("[GSMController] voice: CLIP reject (not owner)\n");
+        logger.log(LogModule::GsmController, "voice: CLIP reject (not owner)\n");
         return false;
     }
 
@@ -157,14 +158,14 @@ bool GSMController::voiceTryBeginInbound_(const char* clipDigits) {
     _voiceKind = VoiceKind::Inbound;
     _voicePhase = VoicePhase::NeedMqttDrain;
     _voiceEpochStartMs = millis();
-    _voiceTimeoutMs = GSM::VOICE_CALL_CEILING_MS;
+    _voiceTimeoutMs = Gsm::VOICE_CALL_CEILING_MS;
     _voiceNoCarrier = false;
     voiceAbortInboundClipWait_();
-    logger.log("[GSMController] voice: inbound owner match, starting epoch\n");
+    logger.log(LogModule::GsmController, "voice: inbound owner match, starting epoch\n");
     return true;
 }
 
-void GSMController::voiceOnDtmfTone_(char tone) {
+void GsmController::voiceOnDtmfTone_(char tone) {
     if (_voicePhase != VoicePhase::CollectPassword && _voicePhase != VoicePhase::CollectProgId) {
         return;
     }
@@ -189,15 +190,15 @@ void GSMController::voiceOnDtmfTone_(char tone) {
         const size_t pwLen = strlen(gsmCfg.dtmf_password);
         if (_voiceDtmfLen < pwLen) return;
         if (strcmp(_voiceDtmfBuf, gsmCfg.dtmf_password) != 0) {
-            logger.log("[GSMController] voice: DTMF password mismatch\n");
+            logger.log(LogModule::GsmController, "voice: DTMF password mismatch\n");
             _voicePhase = VoicePhase::HangupSend;
             return;
         }
-        logger.log("[GSMController] voice: DTMF password OK, await program id\n");
+        logger.log(LogModule::GsmController, "voice: DTMF password OK, await program id\n");
         _voiceProgDigitLen = 0;
         _voiceProgDigits[0] = '\0';
         _voicePhase = VoicePhase::CollectProgId;
-        _voicePhaseDeadlineMs = now + GSM::VOICE_PROGID_TIMEOUT_MS;
+        _voicePhaseDeadlineMs = now + Gsm::VOICE_PROGID_TIMEOUT_MS;
         return;
     }
 
@@ -216,13 +217,13 @@ void GSMController::voiceOnDtmfTone_(char tone) {
             id = id * 10UL + (unsigned long)(_voiceProgDigits[i] - '0');
         }
         if (id == 0 || id > 255UL) {
-            logger.log("[GSMController] voice: bad program id\n");
+            logger.log(LogModule::GsmController, "voice: bad program id\n");
             _voicePhase = VoicePhase::HangupSend;
             return;
         }
         _voicePendingProgramId = (uint8_t)id;
         _voicePendingProgramValid = true;
-        logger.log("[GSMController] voice: inbound start program %u\n", (unsigned)id);
+        logger.log(LogModule::GsmController, "voice: inbound start program %u\n", (unsigned)id);
         _voicePhase = VoicePhase::HangupSend;
         _voiceResultOk = true; // hangup still runs; FinishOk after ATH
         return;
@@ -236,13 +237,13 @@ void GSMController::voiceOnDtmfTone_(char tone) {
     _voiceProgDigits[_voiceProgDigitLen] = '\0';
 }
 
-void GSMController::voiceHandleUrc_(const char* line) {
+void GsmController::voiceHandleUrc_(const char* line) {
     if (!line || !line[0]) return;
 
     if (strcmp(line, "RING") == 0 || strncmp(line, "+CRING:", 7) == 0) {
-        if (_voicePhase == VoicePhase::Idle && _state == GSMState::READY) {
+        if (_voicePhase == VoicePhase::Idle && _state == GsmState::READY) {
             _inboundRingSeen = true;
-            _inboundClipDeadlineMs = millis() + GSM::VOICE_CLIP_WAIT_MS;
+            _inboundClipDeadlineMs = millis() + Gsm::VOICE_CLIP_WAIT_MS;
             if (_inboundClipDigits[0]) {
                 (void)voiceTryBeginInbound_(_inboundClipDigits);
             }
@@ -257,7 +258,7 @@ void GSMController::voiceHandleUrc_(const char* line) {
             if (_voicePhase == VoicePhase::Idle) {
                 if (!_inboundRingSeen) {
                     _inboundRingSeen = true;
-                    _inboundClipDeadlineMs = millis() + GSM::VOICE_CLIP_WAIT_MS;
+                    _inboundClipDeadlineMs = millis() + Gsm::VOICE_CLIP_WAIT_MS;
                 }
                 (void)voiceTryBeginInbound_(digits);
             }
@@ -286,18 +287,18 @@ void GSMController::voiceHandleUrc_(const char* line) {
     }
 }
 
-void GSMController::serviceVoice_(uint32_t now) {
+void GsmController::serviceVoice_(uint32_t now) {
     if (_voicePhase == VoicePhase::Idle) {
         if (_inboundRingSeen && _inboundClipDeadlineMs != 0 &&
             (int32_t)(now - _inboundClipDeadlineMs) >= 0) {
-            logger.log("[GSMController] voice: CLIP wait timeout\n");
+            logger.log(LogModule::GsmController, "voice: CLIP wait timeout\n");
             voiceAbortInboundClipWait_();
         }
         return;
     }
 
-    if ((int32_t)(now - _voiceEpochStartMs) >= (int32_t)GSM::VOICE_CALL_CEILING_MS) {
-        logger.log("[GSMController] voice: epoch ceiling\n");
+    if ((int32_t)(now - _voiceEpochStartMs) >= (int32_t)Gsm::VOICE_CALL_CEILING_MS) {
+        logger.log(LogModule::GsmController, "voice: epoch ceiling\n");
         if (_voicePhase != VoicePhase::HangupSend && _voicePhase != VoicePhase::HangupWait &&
             _voicePhase != VoicePhase::FinishOk && _voicePhase != VoicePhase::FinishFail) {
             _voicePhase = VoicePhase::HangupSend;
@@ -328,7 +329,7 @@ void GSMController::serviceVoice_(uint32_t now) {
         // Voice call: trailing ';' required on SIM800.
         char cmd[48];
         snprintf(cmd, sizeof(cmd), "ATD%s;", _voicePhone);
-        if (!sendAt(cmd, "ATD", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS)) return;
+        if (!sendAt(cmd, "ATD", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS)) return;
         _voicePhase = VoicePhase::DialWaitOk;
         return;
     }
@@ -353,8 +354,17 @@ void GSMController::serviceVoice_(uint32_t now) {
         return;
 
     case VoicePhase::HangupSend:
+        if (_voiceHangupDeadlineMs == 0) {
+            _voiceHangupDeadlineMs = now + Gsm::VOICE_HANGUP_TIMEOUT_MS;
+        }
+        if ((int32_t)(now - _voiceHangupDeadlineMs) >= 0) {
+            _voiceHangupDeadlineMs = 0;
+            _voicePhase = VoicePhase::HangupWait;
+            _awaitOk = true;
+            return;
+        }
         if (_stack.at.isBusy() || _stack.at.hasResult()) return;
-        if (!sendAt("ATH", "ATH", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS)) return;
+        if (!sendAt("ATH", "ATH", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS)) return;
         _voicePhase = VoicePhase::HangupWait;
         return;
 
@@ -378,13 +388,13 @@ void GSMController::serviceVoice_(uint32_t now) {
         snprintf(cmd, sizeof(cmd), "AT+CMGS=\"%s\"", _voicePhone);
         _cmdId++;
         snprintf(_atCmdBuf, sizeof(_atCmdBuf), "%s", cmd);
-        AtSession::Request r{_atCmdBuf, GSM::SMS_CMGS_TIMEOUT_MS,
+        AtSession::Request r{_atCmdBuf, Gsm::SMS_CMGS_TIMEOUT_MS,
                              atExpectMask(AtSession::Expect::Prompt), nullptr, "CMGS"};
         if (!_stack.at.enqueue(r)) return;
         resetAwait();
         _lastCommandTime = now;
         _voicePromptSeen = false;
-        _voicePhaseDeadlineMs = now + GSM::SMS_CMGS_TIMEOUT_MS;
+        _voicePhaseDeadlineMs = now + Gsm::SMS_CMGS_TIMEOUT_MS;
         _voicePhase = VoicePhase::CmgsWaitPrompt;
         return;
     }
@@ -403,7 +413,7 @@ void GSMController::serviceVoice_(uint32_t now) {
     case VoicePhase::CmgsSendBody: {
         _stack.uart.writeRaw(_voiceSmsText);
         _stack.uart.writeByte(0x1A);
-        beginAwait(AwaitKind::OK, GSM::SMS_CMGS_TIMEOUT_MS);
+        beginAwait(AwaitKind::OK, Gsm::SMS_CMGS_TIMEOUT_MS);
         _voicePhase = VoicePhase::CmgsWaitOk;
         return;
     }
@@ -421,7 +431,7 @@ void GSMController::serviceVoice_(uint32_t now) {
 
     case VoicePhase::AnswerSend:
         if (_stack.at.isBusy() || _stack.at.hasResult()) return;
-        if (!sendAt("ATA", "ATA", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS)) return;
+        if (!sendAt("ATA", "ATA", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS)) return;
         _voicePhase = VoicePhase::AnswerWait;
         return;
 
@@ -436,19 +446,19 @@ void GSMController::serviceVoice_(uint32_t now) {
         _voiceDtmfLen = 0;
         _voiceDtmfBuf[0] = '\0';
         _voicePhase = VoicePhase::CollectPassword;
-        _voicePhaseDeadlineMs = now + GSM::VOICE_PASSWORD_TIMEOUT_MS;
+        _voicePhaseDeadlineMs = now + Gsm::VOICE_PASSWORD_TIMEOUT_MS;
         return;
 
     case VoicePhase::CollectPassword:
         if (_voiceNoCarrier || (int32_t)(now - _voicePhaseDeadlineMs) >= 0) {
-            logger.log("[GSMController] voice: password timeout\n");
+            logger.log(LogModule::GsmController, "voice: password timeout\n");
             _voicePhase = VoicePhase::HangupSend;
         }
         return;
 
     case VoicePhase::CollectProgId:
         if (_voiceNoCarrier || (int32_t)(now - _voicePhaseDeadlineMs) >= 0) {
-            logger.log("[GSMController] voice: program id timeout\n");
+            logger.log(LogModule::GsmController, "voice: program id timeout\n");
             _voicePendingProgramValid = false;
             _voicePhase = VoicePhase::HangupSend;
         }

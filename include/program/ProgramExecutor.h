@@ -78,13 +78,16 @@ private:
 
     LifecycleCb _lifecycleCb{nullptr};
     void* _lifecycleCtx{nullptr};
+    bool _pendingLifecycle{false};
+    uint8_t _pendingLifecycleId{0};
+    bool _pendingLifecycleOk{false};
 
-    static ActionId compileAction(const char* action);
     ActionId currentActionId() const;
 
     void executeStep(const CompiledStep& step, ActionId actionId);
     void nextStep();
     void finish(bool ok);
+    void firePendingLifecycle();
     /// Все реле выкл, программа завершается с ошибкой `code`; `reason` — в журнал.
     void abortWithError(const char* reason, ErrorCode code = ErrorCode::PROGRAM_ABORTED);
     void abortInvalidRef(const char* what, unsigned id);
@@ -96,8 +99,5 @@ private:
     /// Все реле выкл, программа завершается неудачей; `code` != NONE — фиксируется ошибка.
     void failStart(const char* reason, ErrorCode code = ErrorCode::NONE);
     void logStarterAttempt() const;
-
-    /// RELAY_* шаг, адресующий реле стартера (повторная проверка при запуске программы).
-    bool stepDrivesStarter(const CompiledStep& step, ActionId actionId) const;
 };
 

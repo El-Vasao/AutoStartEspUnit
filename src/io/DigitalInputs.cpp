@@ -1,5 +1,5 @@
 /**
- * @file DigitalInputs.Core.cpp
+ * @file DigitalInputs.cpp
  * @brief Реализация подсистемы IO: цифровые входы и импульсные счётчики.
  *
  * Инварианты:
@@ -17,6 +17,7 @@
 #include "io/DigitalInputs.h"
 #include "config/Config.h"
 #include "common/Pins.h"
+#include "io/HwMap.h"
 #include "common/Version.h"
 #include "core/Core.h"
 #include "common/Utils.h"
@@ -40,16 +41,12 @@ DigitalInputs::DigitalInputs() {
 }
 
 int8_t DigitalInputs::findIndexById(uint16_t inputId) const {
-    if (inputId == 0) return -1;
-    const auto& base = config.getBase();
-    for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
-        if (base.inputs[i].id == inputId) return (int8_t)i;
-    }
-    return -1;
+    // Config input ids always equal Pin::INPUT_IDS (enforced by the config parser).
+    return HwMap::inputIndexById(inputId);
 }
 
 void DigitalInputs::begin() {
-    logger.log("[DigitalInputs] begin\n");
+    logger.log(LogModule::DigitalInputs, "begin\n");
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
         const auto& cfg = config.getBase().inputs[i];
         uint8_t pin = inputs[i].pin;
@@ -71,13 +68,13 @@ void DigitalInputs::begin() {
         }
     }
 
-    logger.log("[DigitalInputs] OK\n");
+    logger.log(LogModule::DigitalInputs, "OK\n");
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
         const auto& cfg = config.getBase().inputs[i];
         char fallback[TextBytes::Inputs::FALLBACK_NAME];
         snprintf(fallback, sizeof(fallback), "IN%u", (unsigned)(i + 1));
         const char* displayName = (cfg.name[0] != '\0') ? cfg.name : fallback;
-        logger.log("[DigitalInputs]   Input %d: %s, type=%s, active_state=%s, runtime=%s\n", i+1, displayName,
+        logger.log(LogModule::DigitalInputs, "  Input %d: %s, type=%s, active_state=%s, runtime=%s\n", i+1, displayName,
                    cfg.type == InputType::DIGITAL ? "DIGITAL" : "PULSE_COUNTER",
                    cfg.active_state ? "HIGH" : "LOW",
                    _runtimeEnabled[i] ? "ON" : "OFF");
@@ -123,7 +120,10 @@ void DigitalInputs::update() {
     uint32_t now = millis();
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
         if (!_runtimeEnabled[i]) {
-            // Если вход отключён, пропускаем обработку
+            const auto& cfg = config.getBase().inputs[i];
+            inputs[i].currentState = !cfg.active_state;
+            inputs[i].lastRawState = inputs[i].currentState;
+            inputs[i].stable = true;
             continue;
         }
 
@@ -270,10 +270,11 @@ void DigitalInputs::setRuntimeEnabled(uint8_t index, bool en) {
             detachCounterInterrupt(index);
             resetRpm(index);
         }
-    } else {
-        // Для цифрового входа можно ничего не делать, просто перестаём обновлять состояние
-        // (уже учтено в update)
+    } else if (!en) {
+        inputs[index].currentState = !cfg.active_state;
+        inputs[index].lastRawState = inputs[index].currentState;
+        inputs[index].stable = true;
     }
-    logger.log("[DigitalInputs] Input %d runtime %s\n", index+1, en ? "enabled" : "disabled");
+    logger.log(LogModule::DigitalInputs, "Input %d runtime %s\n", index+1, en ? "enabled" : "disabled");
 }
 

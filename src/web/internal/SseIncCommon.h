@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <cstring>
 #include "common/Constants.h"
+#include "common/JsonEscape.h"
 #include "web/internal/SseStatusPort.h"
 
 namespace sse_inc_detail {
@@ -70,29 +71,6 @@ inline void commaOut(Print& p, bool* needComma) {
     *needComma = true;
 }
 
-inline void escapeJsonString(Print& p, const char* s) {
-    if (!s) return;
-    for (; *s; s++) {
-        const char ch = *s;
-        switch (ch) {
-            case '\\':
-                p.print("\\\\");
-                break;
-            case '"':
-                p.print("\\\"");
-                break;
-            case '\n':
-                p.print("\\n");
-                break;
-            case '\r':
-                p.print("\\r");
-                break;
-            default:
-                p.write(static_cast<uint8_t>(ch));
-                break;
-        }
-    }
-}
 
 void emitRelayInputTempVoltageMaps(Print& p, bool* needComma, const SseStatusPort& st);
 void emitActiveErrorsArray(Print& p, const SseStatusPort& st);

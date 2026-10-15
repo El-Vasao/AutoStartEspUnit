@@ -1,6 +1,7 @@
 #include "mqtt/MqttStatusBuilder.h"
 
 #include "common/Constants.h"
+#include "common/JsonEscape.h"
 #include "common/Pins.h"
 
 #include <math.h>
@@ -27,28 +28,6 @@ inline bool lastErrChanged(const StatusSnapshot& cur, const StatusSnapshot& prev
     return false;
 }
 
-inline void escapeMsg(Print& p, const char* s) {
-    if (!s) return;
-    for (const char* e = s; *e; e++) {
-        switch (*e) {
-            case '\\':
-                p.print("\\\\");
-                break;
-            case '"':
-                p.print("\\\"");
-                break;
-            case '\n':
-                p.print("\\n");
-                break;
-            case '\r':
-                p.print("\\r");
-                break;
-            default:
-                p.write(static_cast<uint8_t>(*e));
-                break;
-        }
-    }
-}
 
 /// Emit `last_err` array value only (key printed by caller). No-op if empty.
 inline void printLastErrArrayValue(Print& p, const StatusSnapshot& s) {
@@ -58,7 +37,7 @@ inline void printLastErrArrayValue(Print& p, const StatusSnapshot& s) {
         p.print("{\"code\":");
         p.print((unsigned)s.lastErr[i].code);
         p.print(",\"msg\":\"");
-        escapeMsg(p, s.lastErr[i].msg);
+        json_escape::writeEscaped(p, s.lastErr[i].msg);
         p.print("\",\"active\":");
         p.print(s.lastErr[i].active ? "true" : "false");
         p.print('}');

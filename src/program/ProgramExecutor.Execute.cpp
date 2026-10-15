@@ -2,7 +2,7 @@
 #include "program/ProgramExecutor.h"
 
 #include "core/Core.h"
-#include "gsm/GSMController.h"
+#include "gsm/GsmController.h"
 #include "io/DigitalInputs.h"
 #include "core/ErrorManager.h"
 #include "io/HwMap.h"
@@ -15,6 +15,10 @@
 using namespace program_executor_internal;
 
 void ProgramExecutor::update() {
+    struct FirePending {
+        ProgramExecutor* self;
+        ~FirePending() { self->firePendingLifecycle(); }
+    } fire{this};
     if (!_running) return;
 
     if (!_localSteps || !_localActions || _currentStep >= _localStepCount) {
@@ -93,7 +97,7 @@ void ProgramExecutor::update() {
             if (ok) {
                 nextStep();
             } else {
-                logger.log("[ProgramExecutor] %s failed\n",
+                logger.log(LogModule::ProgramExecutor, "%s failed\n",
                            actionId == ActionId::CALL_OWNER ? "CALL_OWNER" : "SMS_OWNER");
                 finish(false);
             }
@@ -106,14 +110,13 @@ void ProgramExecutor::update() {
 }
 
 void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
-    logger.log("[ProgramExecutor] step %u/%u actionId=%u relay_id=%u input_id=%u ms=%u timeout_ms=%u\n",
+    logger.log(LogModule::ProgramExecutor, "step %u/%u actionId=%u relay_id=%u input_id=%u ms=%u\n",
                (unsigned)(_currentStep + 1),
                (unsigned)_localStepCount,
                (unsigned)actionId,
                (unsigned)step.relay_id,
                (unsigned)step.input_id,
-               (unsigned)step.ms,
-               (unsigned)step.timeout_ms);
+               (unsigned)step.ms);
 
     _rt.phase = 0;
 
@@ -254,9 +257,9 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::CALL_OWNER: {
             // UI default ms=1s is too short for a ring; treat <3s as "use modem default".
             uint32_t ringMs = step.ms;
-            if (ringMs < ProgramTiming::CALL_OWNER_MIN_RING_MS) ringMs = GSM::VOICE_DEFAULT_RING_MS;
+            if (ringMs < ProgramTiming::CALL_OWNER_MIN_RING_MS) ringMs = Gsm::VOICE_DEFAULT_RING_MS;
             if (!core.getGSM().requestCallOwner(ringMs)) {
-                logger.log("[ProgramExecutor] CALL_OWNER rejected (no phone / GSM busy)\n");
+                logger.log(LogModule::ProgramExecutor, "CALL_OWNER rejected (no phone / GSM busy)\n");
                 finish(false);
                 return;
             }
@@ -265,12 +268,12 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
 
         case ActionId::SMS_OWNER: {
             if (!step.message[0]) {
-                logger.log("[ProgramExecutor] SMS_OWNER empty message\n");
+                logger.log(LogModule::ProgramExecutor, "SMS_OWNER empty message\n");
                 finish(false);
                 return;
             }
             if (!core.getGSM().requestSmsOwner(step.message)) {
-                logger.log("[ProgramExecutor] SMS_OWNER rejected (no phone / GSM busy)\n");
+                logger.log(LogModule::ProgramExecutor, "SMS_OWNER rejected (no phone / GSM busy)\n");
                 finish(false);
                 return;
             }
@@ -279,8 +282,10 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
 
         case ActionId::UNKNOWN:
         default:
-            logger.log("[ProgramExecutor] Unknown actionId %u, skipping step\n", (unsigned)actionId);
-            nextStep();
+            // start() rejects such programs; reaching this means the compiled copy is corrupt.
+            logger.log(LogModule::ProgramExecutor, "Unknown actionId %u at step %u\n", (unsigned)actionId,
+                       (unsigned)(_currentStep + 1));
+            abortWithError("unknown step", ErrorCode::PROGRAM_INVALID_REF);
             return;
     }
 }

@@ -20,4 +20,20 @@
 - На время голоса/SMS MQTT CIP **приостанавливается** (exclusive modem epoch); после эпохи MQTT переподключается. Параллельный CIP+voice не поддерживается.
 - Входящий `ProgramExecutor::start` может прервать текущую программу (как MQTT `run`).
 
-См. [`modules/gsm_modem.md`](modules/gsm_modem.md), [`modules/program.md`](modules/program.md).
+См. [`modules/gsm.md`](modules/gsm.md), [`modules/program.md`](modules/program.md).
+
+## ENGINE_START
+
+Шаг `ENGINE_START` — единственный путь к реле стартера. Алгоритм, вход, окно напряжения, попытки и тайминги берутся из `config.vehicle`, не из полей шага.
+
+- Timed / RPM / input — три алгоритма в `StarterMachine`.
+- Неизвестное имя шага не мапится в `ENGINE_START`.
+- CALL/SMS шаги и входящий DTMF **не** трогают реле.
+
+```mermaid
+flowchart LR
+  Step[ENGINE_START] --> Rules[VehicleRules]
+  Rules --> Starter[StarterMachine]
+  Starter --> Relay[starter relay]
+  Starter -->|fail| Err[START_FAILED / RELAY_TIMEOUT]
+```

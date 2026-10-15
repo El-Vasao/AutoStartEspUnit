@@ -19,32 +19,14 @@
         "properties": {
           "step": { "type": "integer", "minimum": 1, "maximum": 15 },
           "action": { "type": "string", "minLength": 1, "maxLength": 23 },
-
           "relay_id": { "type": "integer", "minimum": 0, "maximum": 65535 },
           "ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
-          "timeout_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
-
           "input_id": { "type": "integer", "minimum": 0, "maximum": 65535 },
-
-          "sensor_id": { "type": "integer", "minimum": 0, "maximum": 65535 },
-          "sensor_name": { "type": "string", "maxLength": 15 },
-
           "input_trigger_id": { "type": "integer", "minimum": 0, "maximum": 65535 },
           "temp_trigger_id": { "type": "integer", "minimum": 0, "maximum": 65535 },
-
-          "program_id": { "type": "integer", "minimum": 0, "maximum": 255 },
-          "expected_state": { "type": "integer", "enum": [0, 1] },
-
-          "comparison": { "type": "string", "enum": ["above", "below"] },
-          "threshold": { "type": "number" },
-
-          "engine_state": { "type": "integer", "enum": [0, 1] },
-          "timeout_action": { "type": "integer", "enum": [0, 1] },
-          "skip_count": { "type": "integer", "minimum": 0, "maximum": 255 },
           "message": { "type": "string", "maxLength": 64 }
         }
       }
     }
   }
 }
-

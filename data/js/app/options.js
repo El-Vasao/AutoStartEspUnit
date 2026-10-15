@@ -49,6 +49,7 @@
       // ENGINE_START input follows vehicle.start_method: rpm → pulse inputs, input → digital inputs.
       if (from === 'startInputIds') {
         const method = String(Alpine.store('settings')?.vehicle?.start_method || 'timed');
+        if (method === 'timed') return [];
         return inputIdsOfType(method === 'rpm' ? 1 : 0);
       }
 

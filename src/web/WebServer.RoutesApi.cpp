@@ -125,7 +125,7 @@ void WebServer::setupApiRoutes_() {
             gBootstrapInFlight = false;
             return;
         }
-        logger.log("[WebServer] /bootstrap done in %lu ms (heap free=%u max=%u)\n",
+        logger.log(LogModule::WebServer, "/bootstrap done in %lu ms (heap free=%u max=%u)\n",
                    (unsigned long)(millis() - startedAt),
                    (unsigned)espHalFreeHeap(),
                    (unsigned)espHalMaxBlock());
@@ -149,13 +149,13 @@ void WebServer::setupApiRoutes_() {
 
         if (closing) {
             if (ok) {
-                logger.log("[WebServer] UI session closed: id=%lu\n", static_cast<unsigned long>(sessionId));
+                logger.log(LogModule::WebServer, "UI session closed: id=%lu\n", static_cast<unsigned long>(sessionId));
             }
             if (ok && prevCount > 0 && newCount == 0) {
                 const size_t q = webServer.events.avgPacketsWaiting();
                 const uint16_t clients = webServer.refreshSseClientCount();
                 if (clients > 0 || q > 0) {
-                    logger.log("[WebServer] UI sessions=0 (explicit close): closing SSE (clients=%u, queue=%u)\n",
+                    logger.log(LogModule::WebServer, "UI sessions=0 (explicit close): closing SSE (clients=%u, queue=%u)\n",
                                (unsigned)clients, (unsigned)q);
                     webServer.events.close();
                     webServer.sseClientCount = 0;
@@ -211,20 +211,14 @@ void WebServer::setupApiRoutes_() {
 
             if (!index) {
                 gOtaHttpUploadAwaitTimedOut = false;
-                logger.log("[WebServer] Stream OTA upload start: %s\n", filename.c_str());
+                logger.log(LogModule::WebServer, "Stream OTA upload start: %s\n", filename.c_str());
 
-                if (fileSystem.exists("/update.bin")) {
-                    fileSystem.deleteFile("/update.bin");
-                }
-                if (fileSystem.exists("/update.bin.tmp")) {
-                    fileSystem.deleteFile("/update.bin.tmp");
-                }
                 fileSystem.gc();
 
                 size_t freeSpace = fileSystem.getFreeSpace();
-                logger.log("[WebServer] Free space before stream OTA: %u bytes\n", (unsigned)freeSpace);
-                if (freeSpace < OTA::STREAM_FS_HEADROOM + FSystem::MIN_FREE_SPACE) {
-                    logger.log("[WebServer] Insufficient FS headroom for UI tail\n");
+                logger.log(LogModule::WebServer, "Free space before stream OTA: %u bytes\n", (unsigned)freeSpace);
+                if (freeSpace < Ota::STREAM_FS_HEADROOM + FsSpace::MIN_FREE_SPACE) {
+                    logger.log(LogModule::WebServer, "Insufficient FS headroom for UI tail\n");
                     request->send(507, kContentTypeText, "Insufficient space");
                     return;
                 }
@@ -254,7 +248,7 @@ void WebServer::setupApiRoutes_() {
                 const AppPorts* p = webPorts();
                 const bool fed = p && p->ota.feed && p->ota.feed(p->ota.ctx, data, len);
                 if (!fed) {
-                    logger.log("[WebServer] Stream feed failed at %u bytes\n",
+                    logger.log(LogModule::WebServer, "Stream feed failed at %u bytes\n",
                                (unsigned)(gUploadCtx.totalSize + len));
                     gUploadCtx.errored = true;
                     if (p) {
@@ -266,9 +260,9 @@ void WebServer::setupApiRoutes_() {
                     return;
                 }
                 gUploadCtx.totalSize += len;
-                if (gUploadCtx.totalSize > OTA::FILE_MAX_SIZE) {
-                    logger.log("[WebServer] Upload rejected: too large (%u > %u)\n",
-                               (unsigned)gUploadCtx.totalSize, (unsigned)OTA::FILE_MAX_SIZE);
+                if (gUploadCtx.totalSize > Ota::FILE_MAX_SIZE) {
+                    logger.log(LogModule::WebServer, "Upload rejected: too large (%u > %u)\n",
+                               (unsigned)gUploadCtx.totalSize, (unsigned)Ota::FILE_MAX_SIZE);
                     gUploadCtx.errored = true;
                     if (p) {
                         if (p->ota.abort) p->ota.abort(p->ota.ctx);
@@ -281,7 +275,7 @@ void WebServer::setupApiRoutes_() {
             }
 
             if (final) {
-                logger.log("[WebServer] Stream upload finished, total size: %u\n",
+                logger.log(LogModule::WebServer, "Stream upload finished, total size: %u\n",
                            (unsigned)gUploadCtx.totalSize);
                 const AppPorts* p = webPorts();
                 const bool ok = !gUploadCtx.errored && p && p->ota.finish && p->ota.finish(p->ota.ctx);
@@ -299,18 +293,6 @@ void WebServer::setupApiRoutes_() {
                 request->send(200, kContentTypeJson, "{\"success\":true,\"rebooting\":true}");
             }
         });
-
-    server.on("/ota/start", HTTP_POST, [](AsyncWebServerRequest* request) {
-        // Compatibility: stream OTA finishes on /upload; this is a no-op success if already in OTA.
-        if (rejectIfFlashBusy(request)) return;
-        const AppPorts* p = webPorts();
-        if (p && p->ota.isOtaMode && p->ota.isOtaMode(p->ota.ctx)) {
-            sendJsonSuccess(request);
-            return;
-        }
-        request->send(400, kContentTypeJson,
-                      "{\"success\":false,\"message\":\"Use POST /upload (stream OTA); no staged update.bin\"}");
-    });
 
     server.on("/reboot", HTTP_POST, [](AsyncWebServerRequest* request) {
         request->send(200, kContentTypeText, "Rebooting...");

@@ -1,8 +1,9 @@
-// src/core/Core.ScheduleTriggerManager.cpp
+// src/core/ScheduleTriggerManager.cpp
 #include "core/ScheduleTriggerManager.h"
 
 #include "config/Config.h"
 #include "core/TimeSyncManager.h"
+#include "core/TriggerRules.h"
 #include "common/Logger.h"
 #include "common/Utils.h"
 
@@ -10,18 +11,10 @@
 #include <time.h>
 
 /**
- * @file Core.ScheduleTriggerManager.cpp
+ * @file ScheduleTriggerManager.cpp
  * @brief Local schedule triggers (HH:MM + weekday mask).
+ * Marks the local day only after ProgramExecutor::start() succeeds.
  */
-
-namespace {
-/// Convert tm_wday (0=Sun) to schedule bit (bit0=Mon … bit6=Sun).
-uint8_t scheduleBitFromTmWday(int tmWday) {
-    if (tmWday < 0 || tmWday > 6) return 0;
-    if (tmWday == 0) return (1u << 6); // Sunday
-    return static_cast<uint8_t>(1u << (tmWday - 1));
-}
-} // namespace
 
 ScheduleTriggerManager::ScheduleTriggerManager(Config& config, TimeSyncManager& timeSync,
                                                ProgramExecutor& executor)
@@ -30,18 +23,24 @@ ScheduleTriggerManager::ScheduleTriggerManager(Config& config, TimeSyncManager& 
     memset(_lastFireDayKey, 0, sizeof(_lastFireDayKey));
 }
 
-void ScheduleTriggerManager::begin() {
-    logger.log("[ScheduleTrigger] begin\n");
+void ScheduleTriggerManager::syncEnabledFromConfig() {
     const auto& full = _config.getBase();
-    for (uint8_t i = 0; i < full.schedule_triggers_count && i < Limits::MAX_SCHEDULE_TRIGGERS; i++) {
+    const uint8_t n = (full.schedule_triggers_count < Limits::MAX_SCHEDULE_TRIGGERS)
+                          ? full.schedule_triggers_count
+                          : Limits::MAX_SCHEDULE_TRIGGERS;
+    for (uint8_t i = 0; i < n; i++) {
         _enabled[i] = full.schedule_triggers[i].enabled;
-        _lastFireDayKey[i] = 0;
     }
-    for (uint8_t i = full.schedule_triggers_count; i < Limits::MAX_SCHEDULE_TRIGGERS; i++) {
+    for (uint8_t i = n; i < Limits::MAX_SCHEDULE_TRIGGERS; i++) {
         _enabled[i] = false;
-        _lastFireDayKey[i] = 0;
     }
-    logger.log("[ScheduleTrigger] OK (%u)\n", full.schedule_triggers_count);
+}
+
+void ScheduleTriggerManager::begin() {
+    logger.log(LogModule::ScheduleTriggerManager, "begin\n");
+    syncEnabledFromConfig();
+    memset(_lastFireDayKey, 0, sizeof(_lastFireDayKey));
+    logger.log(LogModule::ScheduleTriggerManager, "OK (%u)\n", _config.getBase().schedule_triggers_count);
 }
 
 void ScheduleTriggerManager::update() {
@@ -55,30 +54,28 @@ void ScheduleTriggerManager::update() {
     if (!_timeSync.localBrokenDown(local)) return;
 
     const uint32_t todayKey = calendarDayKey(local);
-    const uint8_t dowBit = scheduleBitFromTmWday(local.tm_wday);
     const auto& full = _config.getBase();
 
     for (uint8_t i = 0; i < full.schedule_triggers_count && i < Limits::MAX_SCHEDULE_TRIGGERS; i++) {
         if (!_enabled[i]) continue;
         const auto& s = full.schedule_triggers[i];
         if (s.program_id == 0) continue;
-        if (s.hour > 23 || s.minute > 59) continue;
-        const uint8_t mask = s.days_mask ? s.days_mask : 0x7F;
-        if ((mask & dowBit) == 0) continue;
-        if (local.tm_hour != s.hour || local.tm_min != s.minute) continue;
-        if (_lastFireDayKey[i] == todayKey) continue;
+        const bool due = trigger_rules::scheduleDue(s.hour, s.minute, s.days_mask,
+                                                    local.tm_hour, local.tm_min, local.tm_wday);
+        if (!trigger_rules::scheduleShouldFire(due, todayKey, _lastFireDayKey[i])) continue;
 
-        logger.log("[ScheduleTrigger] #%u %02u:%02u -> program %u\n", (unsigned)i, (unsigned)s.hour,
+        logger.log(LogModule::ScheduleTriggerManager, "#%u %02u:%02u -> program %u\n", (unsigned)i, (unsigned)s.hour,
                    (unsigned)s.minute, (unsigned)s.program_id);
-        _executor.start(s.program_id);
-        _lastFireDayKey[i] = todayKey;
+        if (_executor.start(s.program_id)) {
+            _lastFireDayKey[i] = todayKey;
+        }
     }
 }
 
 void ScheduleTriggerManager::setEnabled(uint8_t index, bool en) {
     if (index < Limits::MAX_SCHEDULE_TRIGGERS) {
         _enabled[index] = en;
-        logger.log("[ScheduleTrigger] %u runtime enabled: %d\n", index, en);
+        logger.log(LogModule::ScheduleTriggerManager, "%u runtime enabled: %d\n", index, en);
     }
 }
 

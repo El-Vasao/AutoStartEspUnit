@@ -21,10 +21,6 @@
       loadOk: true,
       editingMode: null,
 
-      get recent() {
-        return this.items.slice(0, 5);
-      },
-
       async loadList(force = false) {
         if (this.loaded && !force) return;
         if (this.loading && !force) return;
@@ -128,11 +124,11 @@
             if (!vr.ok) {
               const reason = (vr.errorsByPath?.__schema__ && vr.errorsByPath.__schema__[0]) ? String(vr.errorsByPath.__schema__[0]) : 'Неверные данные программы';
               Alpine.store('uiNotification').error(reason);
-              return;
+              return false;
             }
           } catch (e0) {
             Alpine.store('uiNotification').error('Проверьте поля программы');
-            return;
+            return false;
           }
 
           const self = this;
@@ -154,8 +150,12 @@
               await self.loadList(true);
             }
           });
-          if (res.busy409) return;
+          if (res.busy409) return false;
           if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка сохранения');
+          return !!res.ok;
+        } catch (e) {
+          Alpine.store('uiNotification').error('Ошибка сохранения');
+          return false;
         } finally {
           this.loading = false;
         }

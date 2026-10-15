@@ -1,5 +1,13 @@
 # `config`: базовая конфигурация и “программы”
 
+```mermaid
+flowchart LR
+  Json[/config.json/] --> Sax[Base SAX]
+  Sax --> Ram[BaseConfig RAM]
+  Ram --> Emit[JSON emit]
+  Emit --> Atomic[FsManager atomic write]
+```
+
 ## Роль
 `Config` — единый источник конфигурации в RAM (`BaseConfig`) + логика хранения в LittleFS.
 

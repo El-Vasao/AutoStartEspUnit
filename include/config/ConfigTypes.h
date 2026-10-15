@@ -39,7 +39,7 @@ struct WifiConfig {
 // ------------------------------------------------------------------
 // GSM
 // ------------------------------------------------------------------
-struct GSMConfig {
+struct GsmConfig {
     char apn[TextBytes::Gsm::APN];
     char apn_user[TextBytes::Gsm::APN_USER];
     char apn_pass[TextBytes::Gsm::APN_PASS];
@@ -47,7 +47,7 @@ struct GSMConfig {
     char owner_phone[TextBytes::Gsm::PHONE];
     char dtmf_password[TextBytes::Gsm::DTMF_PASSWORD];
 
-    GSMConfig() {
+    GsmConfig() {
         strcpy(apn, "internet.mts.ru");
         apn_user[0] = '\0';
         apn_pass[0] = '\0';
@@ -59,7 +59,7 @@ struct GSMConfig {
 // ------------------------------------------------------------------
 // MQTT
 // ------------------------------------------------------------------
-struct MQTTConfig {
+struct MqttConfig {
     char broker[TextBytes::Mqtt::BROKER];
     uint16_t port;
     char client_id[TextBytes::Mqtt::CLIENT_ID];
@@ -69,7 +69,7 @@ struct MQTTConfig {
     char topic_prefix[TextBytes::Mqtt::TOPIC_PREFIX];
     uint16_t publish_interval_sec;
 
-    MQTTConfig() : port(1883), publish_interval_sec(30) {
+    MqttConfig() : port(1883), publish_interval_sec(30) {
         strcpy(broker, "mqtt.example.com");
         strcpy(client_id, "autostart-ABC123");
         user[0] = '\0';
@@ -103,7 +103,7 @@ struct VehicleConfig {
     uint16_t engine_input_id;
 
     VehicleConfig()
-        : adc_voltage_coeff(ADC::DEFAULT_COEFF),
+        : adc_voltage_coeff(Adc::DEFAULT_COEFF),
           starter_max_time_sec(StarterLimits::MAX_TIME_DEFAULT_SEC),
           wait_after_start_sec(StarterLimits::WAIT_AFTER_START_DEFAULT_SEC),
           engine_running_voltage_threshold(StarterLimits::RUNNING_VOLTAGE_DEFAULT),
@@ -283,41 +283,20 @@ struct Step {
     char action[TextBytes::Programs::STEP_ACTION];
     uint16_t relay_id;
     uint32_t ms;
-    uint32_t timeout_ms;
-
     uint16_t input_id;
-    uint16_t sensor_id;
-    char sensor_name[TextBytes::Sensors::NAME];
     uint16_t input_trigger_id;
     uint16_t temp_trigger_id;
-    uint8_t program_id;
-    uint8_t expected_state;
-    char comparison[TextBytes::Triggers::COMPARISON];
-    float threshold;
-    uint8_t engine_state;
-    uint8_t timeout_action;
-    uint8_t skip_count;
     char message[TextBytes::Programs::STEP_MESSAGE];
 
     Step()
         : step(0),
           relay_id(0),
           ms(0),
-          timeout_ms(0),
           input_id(0),
-          sensor_id(0),
           input_trigger_id(0),
-          temp_trigger_id(0),
-          program_id(0),
-          expected_state(1),
-          threshold(0.0f),
-          engine_state(1),
-          timeout_action(0),
-          skip_count(0) {
+          temp_trigger_id(0) {
         action[0] = '\0';
-        sensor_name[0] = '\0';
         message[0] = '\0';
-        strcpy(comparison, "above");
     }
 };
 
@@ -340,8 +319,8 @@ struct BaseConfig {
     /// Если true — стартовать в SETUP_AP после factory default; с FE обычно не шлётся → false в JSON.
     bool setup_required;
     WifiConfig wifi;
-    GSMConfig gsm;
-    MQTTConfig mqtt;
+    GsmConfig gsm;
+    MqttConfig mqtt;
     VehicleConfig vehicle;
     ThermostatConfig thermostat;
     BatterySaverConfig battery_saver;

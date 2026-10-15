@@ -49,7 +49,7 @@ public:
     /// `vehicle.adc_calibrate_voltage`, asks `sensors` for coeff (raw stays inside sensors).
     /// Calibrate field is never persisted.
     bool applyPostedConfigJsonFile(const char* tmpPath, SensorsController& sensors);
-    bool commitPostedProgramFile(const char* tmpPath, uint8_t* outId = nullptr);
+    bool commitPostedProgramFile(const char* tmpPath, uint8_t* outId = nullptr, ErrorCode* outErr = nullptr);
 
     bool loadProgramCompiled(uint8_t id, CompiledStep* outSteps, uint8_t maxSteps,
                              uint8_t* outCount, char* outName, size_t outNameSize);

@@ -77,9 +77,6 @@ public:
     // Найти индекс датчика по ROM-строке ("AA:BB:...") среди найденных. Возвращает -1, если не найден.
     int8_t findSensorIndexByRom(const char* rom) const;
 
-    // Вывести адрес датчика (отладка)
-    void printAddress(uint8_t index) const;
-
     // Вывести все адреса (отладка)
     void printAllAddresses() const;
 
@@ -94,14 +91,11 @@ public:
     // Время последнего измерения напряжения
     uint32_t getLastVoltageTime() const { return _voltageData.lastReadTime; }
 
-    /// True once the sliding ADC window is full (safe to calibrate).
-    bool isAdcFilterReady() const { return _adcFillCount >= ADC::SAMPLES; }
-
     /// Drop collected samples (e.g. the cranking dip); the average restarts from the next reading.
     void resetVoltageWindow();
 
-    /// True once the window holds ADC::SAMPLES readings taken after the last reset.
-    bool isVoltageWindowFull() const { return _adcFillCount >= ADC::SAMPLES; }
+    /// True once the window holds Adc::SAMPLES readings taken after the last reset.
+    bool isVoltageWindowFull() const { return _adcFillCount >= Adc::SAMPLES; }
 
     /// Derive `adc_voltage_coeff` from a multimeter reading. Uses private raw only;
     /// returns false if filter not ready, raw too low, or measuredVolts ≤ 0.
@@ -132,7 +126,7 @@ private:
         bool valid;             ///< флаг валидности
     } _voltageData;
 
-    uint16_t _voltageBuffer[ADC::SAMPLES];  ///< буфер для скользящего среднего
+    uint16_t _voltageBuffer[Adc::SAMPLES];  ///< буфер для скользящего среднего
     uint8_t _voltageIndex;                   ///< текущий индекс в буфере
     uint32_t _lastVoltageRead;                ///< время последнего чтения АЦП (мс)
     uint8_t _adcFillCount{0};                 ///< samples collected toward a full filter window

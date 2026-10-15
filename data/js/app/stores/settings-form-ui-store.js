@@ -127,7 +127,20 @@
         const data = st.getConfigForSave?.() || {};
         const res = v.validatePath(data, path);
         this._setClientError(path, res.ok ? '' : (res.message || 'Неверное значение'));
-        return { ok: !!res.ok };
+        if (path.startsWith('vehicle.') || path.startsWith('inputs.')) {
+          const keep = new Set();
+          for (const e of vehicleCrossErrors(data)) {
+            keep.add(e.field);
+            if (!this._clientErrors[e.field] || e.field === path) this._setClientError(e.field, e.message);
+          }
+          for (const p of Object.keys(this._clientErrors || {})) {
+            if ((p.startsWith('vehicle.') || p.startsWith('inputs.')) && !keep.has(p) && p !== path) {
+              if (!v.validatePath(data, p)?.ok) continue;
+              this._setClientError(p, '');
+            }
+          }
+        }
+        return { ok: !!res.ok && !this._clientErrors[path] };
       },
       fieldWithPath(field, path) {
         try {
@@ -148,51 +161,10 @@
         return [];
       },
       getByPath(obj, path) {
-        try {
-          if (!obj) return undefined;
-          const parts = String(path || '').split('.').filter(Boolean);
-          let cur = obj;
-          for (const p of parts) {
-            if (cur == null) return undefined;
-            cur = cur[p];
-          }
-          return cur;
-        } catch (e) {
-          return undefined;
-        }
+        return APP.path.get(obj, path);
       },
       setByPath(obj, path, value) {
-        try {
-          if (!obj) return false;
-          const parts = String(path || '').split('.').filter(Boolean);
-          if (!parts.length) return false;
-          const isIndex = (s) => /^\d+$/.test(String(s));
-          let cur = obj;
-          for (let i = 0; i < parts.length - 1; i++) {
-            const p = parts[i];
-            const next = parts[i + 1];
-            if (isIndex(p)) {
-              const idx = Number(p);
-              if (!Array.isArray(cur)) return false;
-              if (cur[idx] == null || typeof cur[idx] !== 'object') cur[idx] = (isIndex(next) ? [] : {});
-              cur = cur[idx];
-            } else {
-              if (cur[p] == null || typeof cur[p] !== 'object') cur[p] = (isIndex(next) ? [] : {});
-              cur = cur[p];
-            }
-          }
-          const last = parts[parts.length - 1];
-          if (isIndex(last)) {
-            const idx = Number(last);
-            if (!Array.isArray(cur)) return false;
-            cur[idx] = value;
-          } else {
-            cur[last] = value;
-          }
-          return true;
-        } catch (e) {
-          return false;
-        }
+        return APP.path.set(obj, path, value);
       },
       coerceValue(field, raw) {
         const valueType = String(field?.valueType || '');

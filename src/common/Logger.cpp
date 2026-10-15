@@ -1,76 +1,148 @@
-// src/common/Logger.Core.cpp
+// src/common/Logger.cpp
 #include "common/Logger.h"
 
-/**
- * @file Logger.Core.cpp
- * @brief Минимальный логгер прошивки (SSE sink).
- *
- * Назначение:
- * - Форматировать сообщения в фиксированный буфер и передавать их в текущий “транспорт” логов.
- * - В релизной прошивке логгер не должен мешать UART0 (он занят под GSM), поэтому по умолчанию
- *   используется SSE (UI) как основной канал.
- *
- * Память:
- * - Фиксированный stack-буфер `Logging::MAX_MESSAGE_LENGTH`, без heap.
- *
- * Запрещено:
- * - Делать “сырые” дампы AT в высокочастотных путях.
- * - Добавлять хранение истории логов на устройстве (это память + фрагментация).
- */
+#include <stdio.h>
+#include <string.h>
 
-// Функция определена в WebServer.Core.cpp и рассылает логи в UI через SSE.
-// Примечание: это намеренно “слабая” связность — Logger не зависит от WebServer, но вызывает глобальную функцию.
+#if !defined(UNIT_TEST)
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
+
+// Defined in WebServer.Core.cpp (tests provide their own sink). Called only from the main loop task.
 void sseBroadcastLog(const char* message);
 
-void Logger::begin() {
-#ifdef SERIAL_DEBUG
-    Serial.begin(GSM::UART_BAUD);
+namespace {
+
+#if defined(UNIT_TEST)
+bool isrContext() { return false; }
+bool onLoopTask() { return !logger_test::g_foreignTask; }
+void rememberLoopTask() {}
+struct RingLock {};
+#else
+TaskHandle_t s_loopTask = nullptr;
+portMUX_TYPE s_ringMux = portMUX_INITIALIZER_UNLOCKED;
+
+bool isrContext() { return xPortInIsrContext(); }
+// Before begin() everything runs in setup() on the loop task.
+bool onLoopTask() { return s_loopTask == nullptr || xTaskGetCurrentTaskHandle() == s_loopTask; }
+void rememberLoopTask() { s_loopTask = xTaskGetCurrentTaskHandle(); }
+struct RingLock {
+    RingLock() { taskENTER_CRITICAL(&s_ringMux); }
+    ~RingLock() { taskEXIT_CRITICAL(&s_ringMux); }
+};
+#endif
+
+char s_ring[Logging::DEFERRED_SLOTS][Logging::MAX_MESSAGE_LENGTH];
+size_t s_ringHead = 0;   // next slot to read
+size_t s_ringCount = 0;
+
+void emit(const char* line) {
+    sseBroadcastLog(line);
+#if defined(SERIAL_DEBUG) && !defined(UNIT_TEST)
+    Serial.print(line);
 #endif
 }
 
-void Logger::log(const char* format, ...) {
-    // Сообщение должно содержать префикс модуля `[...]` — политика в Logger.h.
+} // namespace
+
+#if defined(UNIT_TEST)
+namespace logger_test {
+bool g_foreignTask = false;
+} // namespace logger_test
+#endif
+
+size_t logFormatLine(char* out, size_t cap, uint32_t ms, LogModule module, const char* format, va_list args) {
+    if (!out || cap == 0) return 0;
+    int n = snprintf(out, cap, "[%lums] [%s] ", (unsigned long)ms, logModuleName(module));
+    if (n < 0) n = 0;
+    size_t len = (size_t)n < cap ? (size_t)n : cap - 1;
+    if (format && len < cap - 1) {
+        const int m = vsnprintf(out + len, cap - len, format, args);
+        if (m > 0) len += (size_t)m;
+    }
+    if (len >= cap - 1) {
+        len = cap - 1;
+        if (cap >= 2) out[cap - 2] = '\n';
+        out[cap - 1] = '\0';
+    }
+    return len;
+}
+
+void Logger::begin() {
+#if defined(SERIAL_DEBUG) && !defined(UNIT_TEST)
+    Serial.begin(Gsm::UART_BAUD);
+#endif
+    rememberLoopTask();
+}
+
+void Logger::log(LogModule module, const char* format, ...) {
+    if (isrContext()) return;
     char buffer[Logging::MAX_MESSAGE_LENGTH];
-    int prefixLen = snprintf(buffer, sizeof(buffer), "[%lums] ", (unsigned long)millis());
-    if (prefixLen < 0) {
-        prefixLen = 0;
-    }
-    if ((size_t)prefixLen >= sizeof(buffer)) {
-        prefixLen = (int)(sizeof(buffer) - 1);
-    }
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer + (size_t)prefixLen, sizeof(buffer) - (size_t)prefixLen, format, args);
+    logFormatLine(buffer, sizeof(buffer), (uint32_t)millis(), module, format, args);
     va_end(args);
 
-    // Отправляем сообщение всем подключённым SSE-клиентам.
-    // Важно: логгер не буферизует историю; UI хранит её на стороне клиента.
-    sseBroadcastLog(buffer);
-#ifdef SERIAL_DEBUG
-    Serial.print(buffer);
-#endif
+    if (onLoopTask()) {
+        flushDeferred();
+        emit(buffer);
+        return;
+    }
+
+    RingLock lock;
+    if (s_ringCount >= Logging::DEFERRED_SLOTS) {
+        _deferredDropped++;
+        return;
+    }
+    const size_t slot = (s_ringHead + s_ringCount) % Logging::DEFERRED_SLOTS;
+    memcpy(s_ring[slot], buffer, sizeof(buffer));
+    s_ringCount++;
 }
 
-void Logger::logSerialOnly(const char* format, ...) {
+void Logger::flushDeferred() {
+    if (!onLoopTask()) return;
+    char line[Logging::MAX_MESSAGE_LENGTH];
+    for (;;) {
+        bool have = false;
+        uint32_t dropped = 0;
+        {
+            RingLock lock;
+            if (s_ringCount != 0) {
+                memcpy(line, s_ring[s_ringHead], sizeof(line));
+                s_ringHead = (s_ringHead + 1) % Logging::DEFERRED_SLOTS;
+                s_ringCount--;
+                have = true;
+            } else {
+                dropped = _deferredDropped - _deferredDroppedReported;
+                _deferredDroppedReported = _deferredDropped;
+            }
+        }
+        if (have) {
+            emit(line);
+            continue;
+        }
+        if (dropped != 0) {
+            snprintf(line, sizeof(line), "[%lums] [%s] %u deferred lines dropped (ring full)\n",
+                     (unsigned long)millis(), logModuleName(LogModule::Logger), (unsigned)dropped);
+            emit(line);
+        }
+        return;
+    }
+}
+
+void Logger::logSerialOnly(LogModule module, const char* format, ...) {
+#if defined(SERIAL_DEBUG) && !defined(UNIT_TEST)
+    char buffer[Logging::MAX_MESSAGE_LENGTH];
     va_list args;
     va_start(args, format);
-#ifdef SERIAL_DEBUG
-    char buffer[Logging::MAX_MESSAGE_LENGTH];
-    int prefixLen = snprintf(buffer, sizeof(buffer), "[%lums] ", (unsigned long)millis());
-    if (prefixLen < 0) {
-        prefixLen = 0;
-    }
-    if ((size_t)prefixLen >= sizeof(buffer)) {
-        prefixLen = (int)(sizeof(buffer) - 1);
-    }
-    vsnprintf(buffer + (size_t)prefixLen, sizeof(buffer) - (size_t)prefixLen, format, args);
+    logFormatLine(buffer, sizeof(buffer), (uint32_t)millis(), module, format, args);
     va_end(args);
     Serial.print(buffer);
 #else
-    va_end(args);
+    (void)module;
     (void)format;
 #endif
 }
 
 Logger logger;
-

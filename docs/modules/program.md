@@ -19,7 +19,7 @@
 - Рантайм-исполнение использует **компактные шаги**: `CompiledStep` (POD, без heap).
 - `CompiledStep[Limits::MAX_STEPS_PER_PROGRAM]` и `ActionId[]` — члены `ProgramExecutor`
   (фиксированные массивы, без heap и без PoolManager).
-- Строковые поля шага (`action`, `comparison`, `sensor_name`) остаются в JSON на диске и/или в UI.
+- Строковые поля шага (`action`, `message`) остаются в JSON на диске и/или в UI.
 - Исключение: `CompiledStep::message` — фиксированный буфер для `SMS_OWNER` (≤64 символа ASCII/GSM-7).
 
 ## Действия связи (v1)
@@ -31,5 +31,15 @@
 
 Пустой `owner_phone` / отказ GSM → программа завершается с fail.
 
-Входящий DTMF-старт (не шаг программы): см. [`gsm_modem.md`](gsm_modem.md) § Voice/SMS.
+Входящий DTMF-старт (не шаг программы): см. [`gsm.md`](gsm.md) § Voice/SMS.
+
+Неизвестная строка действия → `ActionId::UNKNOWN` → `PROGRAM_INVALID_REF` при приёме файла и в `start()`. Прошивка не подменяет шаг на `ENGINE_START` и не чинит файл на LittleFS.
+
+```mermaid
+flowchart TD
+  Start[ProgramExecutor.start] --> Check[program_validate.checkStep]
+  Check -->|UnknownAction| Fail[PROGRAM_INVALID_REF]
+  Check -->|ok| Run[Execute steps]
+  Run -->|ENGINE_START| Starter[StarterMachine]
+```
 

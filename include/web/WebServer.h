@@ -107,11 +107,11 @@ public:
      *
      * Архитектура:
      * - метод намеренно реализован в `.cpp`, чтобы публичный заголовок web-подсистемы
-     *   не тянул `FSManager.h` (снижаем связанность и compile fanout).
+     *   не тянул `FsManager.h` (снижаем связанность и compile fanout).
      */
     bool isFlashBusy() const;
 
-    /// OTAHandler: ожидание `final` превысило лимит — следующий chunk upload должен корректно сорваться.
+    /// OtaHandler: ожидание `final` превысило лимит — следующий chunk upload должен корректно сорваться.
     void markOtaHttpUploadAwaitTimedOut();
 
     bool touchUiSession(uint32_t id, uint32_t now);
@@ -169,9 +169,6 @@ private:
 
     const AppPorts* ports_{nullptr};
 
-    /// Unified status sender with queue cap.
-    void sendStatus_(size_t maxQueueDepth);
-
     // Запуск с конкретными SSID и паролем
     void startWithParams(const char* ssid, const char* pass);
 
@@ -181,11 +178,9 @@ private:
     // Проверка, совпадает ли текущая конфигурация AP с заданной
     bool isSameAPConfig(const char* ssid, const char* pass) const;
 
-    // Отладка: вывод текущей конфигурации AP
-    void dumpAPConfig(const char* ssid, const char* pass, const char* context) const;
     void rebuildActiveUiSessionCount();
 
-    /// POST JSON → tmp (FSManager), затем deferred apply в `processDeferred()`.
+    /// POST JSON → tmp (FsManager), затем deferred apply в `processDeferred()`.
     enum class JsonPostStreamKind : uint8_t { Config, Program };
     static const char* jsonPostTmpPath(JsonPostStreamKind k);
     static bool jsonPostOtherSidePending(JsonPostStreamKind k);

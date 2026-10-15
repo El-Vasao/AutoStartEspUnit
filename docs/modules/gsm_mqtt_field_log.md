@@ -1,6 +1,6 @@
 # GSM / MQTT field checklist log
 
-Operator worksheet for [`gsm_modem.md`](gsm_modem.md) § «Сценарии проверки» **4–7**.
+Operator worksheet for [`gsm.md`](gsm.md) § «Сценарии проверки» **4–7**.
 Firmware cannot substitute this run — fill on device after flash.
 
 | # | Scenario | Pass? | Date | Notes / log snippets |

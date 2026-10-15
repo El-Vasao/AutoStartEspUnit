@@ -16,7 +16,7 @@ bool sapbrLineHasUsableBearer(const char* line);
 /// Copy only digits from `in` into `out` (NUL-terminated). Returns digit count.
 size_t extractPhoneDigits(const char* in, char* out, size_t outCap);
 
-/// Match owner vs CLIP: compare digit suffixes (min 10 digits, or full if shorter).
+/// Match owner vs CLIP: compare digit suffixes (Gsm::PHONE_MATCH_MIN_DIGITS, or full if shorter).
 bool phonesMatch(const char* a, const char* b);
 
 /// Parse +CLIP: "number",... into digit buffer (digits only).

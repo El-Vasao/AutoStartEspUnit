@@ -3,7 +3,7 @@
 ## Logger (SSE-only)
 Файлы:
 - `include/common/Logger.h`
-- `src/common/Logger.Core.cpp`
+- `src/common/Logger.cpp`
 
 Политика:
 - Логи идут в UI через SSE (UART0 занят GSM).

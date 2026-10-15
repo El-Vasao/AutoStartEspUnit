@@ -43,6 +43,12 @@
       .header-toast-card.warning {
         border-color: rgba(251, 191, 36, 0.55);
       }
+      .header-toast-card.error {
+        border-color: rgba(248, 113, 113, 0.7);
+      }
+      .header-toast-card.success {
+        border-color: rgba(74, 222, 128, 0.55);
+      }
       /* Pre-Alpine boot splash (avoids blank white while SoftAP delivers /app.js) */
       #boot-splash {
         position: fixed;
@@ -290,7 +296,12 @@
                 </div>
             </div>
 
-            <!-- Статус-бар/баннеры/тосты убраны по требованию (моб. UX). -->
+            <div class="header-toast" x-show="$store.uiToast.open" x-cloak>
+                <div class="header-toast-card show" :class="$store.uiToast.variant" x-text="$store.uiToast.text"></div>
+            </div>
+            <div class="header-toast" x-show="$store.uiToast.hardwareError" x-cloak>
+                <div class="header-toast-card show error" x-text="$store.uiToast.hardwareError"></div>
+            </div>
         </header>
 
         <nav class="tab-bar">
@@ -516,6 +527,7 @@
                         <template x-if="$store.programs.current">
                             <div class="card program-editor" x-data="programEditor" x-init="initEditor()">
                                 <h3 x-text="$store.programs.editingMode === 'new' ? 'Новая программа' : 'Программа'"></h3>
+                                <div class="notice notice-warning" x-show="errors.steps" x-cloak x-text="errors.steps"></div>
                                 <form @submit.prevent="save()" @input="markDirty()" @change="markDirty()">
                                     <div class="form-group">
                                         <div class="form-group" x-data="APP.ui.withFieldShell($store.programForm.fieldRow(form, { type: 'number', valueType: 'int', label: 'ID', helpTitle: 'ID', help: 'Номер программы, 1–255. По нему её вызывают триггеры и MQTT.' }, 'id', { errors, errorKey: 'id', onChange: () => { markDirty(); validateDebounced(); } }))">

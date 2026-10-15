@@ -1,4 +1,4 @@
-// include/mqtt/MQTTClient.h
+// include/mqtt/MqttClient.h
 #pragma once
 
 #include <Arduino.h>
@@ -17,9 +17,9 @@ struct AppPorts;
  * Wire: ingress ack (202|4xx|503) then one final (thin id+code; list/status fat body).
  * `id` correlates request/reply only — no idempotency LRU.
  */
-class MQTTClient {
+class MqttClient {
 public:
-    explicit MQTTClient(Client& client);
+    explicit MqttClient(Client& client);
 
     void begin();
     void setAppPorts(const AppPorts* ports) { _ports = ports; }

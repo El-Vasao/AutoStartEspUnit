@@ -7,10 +7,10 @@ class RelayController;
 class DigitalInputs;
 class SensorsController;
 class ProgramExecutor;
-class GSMController;
+class GsmController;
 class ErrorManager;
 class FlashCommitCoordinator;
-class MQTTClient;
+class MqttClient;
 
 /**
  * Narrow read-side port for SSE/bootstrap JSON builders.
@@ -21,8 +21,8 @@ struct SseStatusPort {
     DigitalInputs* inputs{nullptr};
     SensorsController* sensors{nullptr};
     ProgramExecutor* program{nullptr};
-    GSMController* gsm{nullptr};
-    MQTTClient* mqtt{nullptr};
+    GsmController* gsm{nullptr};
+    MqttClient* mqtt{nullptr};
     ErrorManager* errors{nullptr};
     FlashCommitCoordinator* flash{nullptr};
 

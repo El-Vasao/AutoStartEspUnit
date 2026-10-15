@@ -32,7 +32,7 @@ bool ProgramExecutor::isStartBlocked() const {
 }
 
 void ProgramExecutor::failStart(const char* reason, ErrorCode code) {
-    logger.log("[Starter] start failed: %s, all relays OFF\n", reason);
+    logger.log(LogModule::Starter, "start failed: %s, all relays OFF\n", reason);
     core.getRelay().allOff();
     finish(false);
     if (code != ErrorCode::NONE) core.getErrorManager().set(code);
@@ -51,13 +51,13 @@ void ProgramExecutor::beginStarter() {
     _startInputIdx = -1;
     if (v.start_method != StartMethod::Timed) {
         if (const char* r = vehicle_rules::checkStartInput(base, v.start_method, v.start_input_id)) {
-            logger.log("[Starter] %s (start_input_id=%u)\n", r, (unsigned)v.start_input_id);
+            logger.log(LogModule::Starter, "%s (start_input_id=%u)\n", r, (unsigned)v.start_input_id);
             abortWithError("start input unusable", ErrorCode::PROGRAM_INVALID_REF);
             return;
         }
         _startInputIdx = HwMap::inputIndexById(v.start_input_id);
         if (_startInputIdx < 0 || !core.getInputs().isRuntimeEnabled((uint8_t)_startInputIdx)) {
-            logger.log("[Starter] start input %u disabled at runtime\n", (unsigned)v.start_input_id);
+            logger.log(LogModule::Starter, "start input %u disabled at runtime\n", (unsigned)v.start_input_id);
             abortWithError("start input disabled", ErrorCode::PROGRAM_INVALID_REF);
             return;
         }
@@ -75,7 +75,7 @@ void ProgramExecutor::beginStarter() {
 
     const uint32_t now = millis();
     _starter.begin(p, now);
-    logger.log("[Starter] begin method=%s attempts=%u crank=%ums max=%ums settle=%ums rest=%ums vrun=%.2f\n",
+    logger.log(LogModule::Starter, "begin method=%s attempts=%u crank=%ums max=%ums settle=%ums rest=%ums vrun=%.2f\n",
                vehicle_rules::startMethodToString(p.method), (unsigned)_starter.params().attempts,
                (unsigned)_starter.params().crankMs, (unsigned)p.maxMs, (unsigned)p.settleMs,
                (unsigned)p.restMs, (double)p.runningVoltage);
@@ -87,7 +87,7 @@ void ProgramExecutor::logStarterAttempt() const {
     char minV[12];
     if (a.hasMinVoltage) snprintf(minV, sizeof(minV), "%.2f", (double)a.minVoltage);
     else strlcpy(minV, "-", sizeof(minV));
-    logger.log("[Starter] attempt %u/%u method=%s stop=%s crank=%ums vmin=%s vend=%.2f maxgap=%ums\n",
+    logger.log(LogModule::Starter, "attempt %u/%u method=%s stop=%s crank=%ums vmin=%s vend=%.2f maxgap=%ums\n",
                (unsigned)a.number, (unsigned)_starter.params().attempts,
                vehicle_rules::startMethodToString(_starter.params().method),
                starter::stopReasonToString(a.reason), (unsigned)a.crankMs, minV, (double)a.finalVoltage,
@@ -117,7 +117,7 @@ void ProgramExecutor::updateStarter(uint32_t now) {
     s.voltage = sensors.getVoltage();
 
     if (_starter.phase() == starter::Phase::Cranking && !relays.getState((uint8_t)_starterRelayIdx)) {
-        failStart("starter relay cut by safety limit");
+        failStart("safety cut", ErrorCode::RELAY_TIMEOUT);
         return;
     }
 
@@ -125,7 +125,7 @@ void ProgramExecutor::updateStarter(uint32_t now) {
 
     if (t.relay == starter::RelayCmd::On) {
         if (!relays.on((uint8_t)_starterRelayIdx)) {
-            failStart("starter relay locked out");
+            failStart("safety cut", ErrorCode::RELAY_TIMEOUT);
             return;
         }
     } else if (t.relay == starter::RelayCmd::Off) {
@@ -136,11 +136,11 @@ void ProgramExecutor::updateStarter(uint32_t now) {
 
     switch (t.outcome) {
         case starter::Outcome::Success:
-            logger.log("[Starter] engine running\n");
+            logger.log(LogModule::Starter, "engine running\n");
             nextStep();
             return;
         case starter::Outcome::Failure:
-            failStart("no attempts left");
+            failStart("no attempts left", ErrorCode::START_FAILED);
             return;
         case starter::Outcome::Blocked:
             failStart("blocked by start_block_input", ErrorCode::START_BLOCKED);

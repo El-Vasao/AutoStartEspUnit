@@ -31,9 +31,7 @@
             }
           } catch (e3) {}
 
-          // Strict validation: config is safety-critical; allowUnionTypes is required for some fields
-          // that can be sent either as numeric index or as string id.
-          const ajv = new Ajv2020({ allErrors: true, strict: true, allowUnionTypes: true });
+          const ajv = APP.validation.createAjv();
           const validate = ajv.compile(schema);
 
           this._ajv = ajv;

@@ -1,6 +1,6 @@
 #include "config/Config.h"
 #include "common/EspHal.h"
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 #include "common/Logger.h"
 #include "common/Utils.h"
 #include "config/internal/ProgramJsonIo.h"
@@ -30,7 +30,7 @@ bool Config::loadProgramCompiled(uint8_t id, CompiledStep* outSteps, uint8_t max
 
     File f = fileSystem.openRead(path);
     if (!f) {
-        logger.log("[Config] Failed to read program %u\n", id);
+        logger.log(LogModule::Config, "Failed to read program %u\n", id);
         return false;
     }
 
@@ -49,11 +49,23 @@ bool Config::programExists(uint8_t id) {
 
 bool Config::isProgramUsed(uint8_t id) const {
     if (!loaded) return false;
-    for (uint8_t i = 0; i < baseCache.input_triggers_count; i++) {
+    const uint8_t nIn = (baseCache.input_triggers_count < Limits::MAX_TRIGGERS)
+                            ? baseCache.input_triggers_count
+                            : Limits::MAX_TRIGGERS;
+    for (uint8_t i = 0; i < nIn; i++) {
         if (baseCache.input_triggers[i].enabled && baseCache.input_triggers[i].program_id == id) return true;
     }
-    for (uint8_t i = 0; i < baseCache.temperature_triggers_count; i++) {
+    const uint8_t nTemp = (baseCache.temperature_triggers_count < Limits::MAX_TRIGGERS)
+                              ? baseCache.temperature_triggers_count
+                              : Limits::MAX_TRIGGERS;
+    for (uint8_t i = 0; i < nTemp; i++) {
         if (baseCache.temperature_triggers[i].enabled && baseCache.temperature_triggers[i].program_id == id) return true;
+    }
+    const uint8_t nSched = (baseCache.schedule_triggers_count < Limits::MAX_SCHEDULE_TRIGGERS)
+                               ? baseCache.schedule_triggers_count
+                               : Limits::MAX_SCHEDULE_TRIGGERS;
+    for (uint8_t i = 0; i < nSched; i++) {
+        if (baseCache.schedule_triggers[i].enabled && baseCache.schedule_triggers[i].program_id == id) return true;
     }
     if (baseCache.thermostat.enabled) {
         if (baseCache.thermostat.program_id_lower == id || baseCache.thermostat.program_id_upper == id) return true;
@@ -74,11 +86,11 @@ bool Config::writeProgramFile(const Program& prog) {
     espHalFeedWdt();
 
     if (!fileSystem.writeJsonAtomicStream(path, encodeProgramSave, const_cast<Program*>(&prog), Limits::CONFIG_JSON_SIZE)) {
-        logger.log("[Config] Failed to write program file\n");
+        logger.log(LogModule::Config, "Failed to write program file\n");
         return false;
     }
 
-    logger.log("[Config] Program %u file written\n", prog.id);
+    logger.log(LogModule::Config, "Program %u file written\n", prog.id);
     return true;
 }
 
@@ -87,16 +99,16 @@ bool Config::saveProgram(const Program& prog) {
     wdtPort_.feedNow();
     espHalFeedWdt();
     if (!rebuildProgramIndex()) {
-        logger.log("[Config] Program file saved but index rebuild failed!\n");
+        logger.log(LogModule::Config, "Program file saved but index rebuild failed!\n");
         return false;
     }
-    logger.log("[Config] Program %u saved\n", prog.id);
+    logger.log(LogModule::Config, "Program %u saved\n", prog.id);
     return true;
 }
 
 bool Config::deleteProgram(uint8_t id) {
     if (isProgramUsed(id)) {
-        logger.log("[Config] Program %u is in use, cannot delete\n", id);
+        logger.log(LogModule::Config, "Program %u is in use, cannot delete\n", id);
         return false;
     }
 
@@ -105,15 +117,15 @@ bool Config::deleteProgram(uint8_t id) {
     if (!fileSystem.deleteFile(path)) return false;
 
     if (!rebuildProgramIndex()) {
-        logger.log("[Config] Program %u file removed but index rebuild failed\n", id);
+        logger.log(LogModule::Config, "Program %u file removed but index rebuild failed\n", id);
         return false;
     }
-    logger.log("[Config] Program %u deleted\n", id);
+    logger.log(LogModule::Config, "Program %u deleted\n", id);
     return true;
 }
 
 bool Config::resetPrograms() {
-    logger.log("[Config] resetPrograms: start\n");
+    logger.log(LogModule::Config, "resetPrograms: start\n");
     if (!ensureProgramsDir()) return false;
 
     bool ok = true;
@@ -164,6 +176,6 @@ bool Config::resetPrograms() {
 
     if (!rebuildProgramIndex()) ok = false;
 
-    logger.log("[Config] resetPrograms: %s\n", ok ? "OK" : "FAILED");
+    logger.log(LogModule::Config, "resetPrograms: %s\n", ok ? "OK" : "FAILED");
     return ok;
 }

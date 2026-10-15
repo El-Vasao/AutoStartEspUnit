@@ -234,9 +234,15 @@
           if (errs.length) {
             this.validationErrors = errs.map(e => ({ ...e, source: 'client' }));
             this.loading = false;
+            Alpine.store('uiStatusBar')?.goToValidationField?.(errs[0]?.field);
+            Alpine.store('uiNotification')?.error?.(errs[0]?.message || 'Проверьте поля');
             return;
           }
-        } catch (e) {}
+        } catch (e) {
+          this.validationErrors = [{ field: '__schema__', message: 'Ошибка проверки', source: 'client' }];
+          this.loading = false;
+          return;
+        }
 
         Alpine.store('uiStatusBar').clearHardwareError();
         try {
@@ -289,7 +295,7 @@
       },
 
       getConfigForSave() {
-        // WYSIWYG: send only fields that UI actually shows (schema + showIf).
+        // Send every schema field. showIf only hides controls; hidden values must still persist.
         const schema = Alpine.store('settingsUiSchema')?.settings || null;
         if (!schema) {
           // Fallback to previous behavior if schema didn't load.
@@ -306,58 +312,8 @@
           return config;
         }
 
-        const getByPath = (obj, path) => {
-          try {
-            if (!obj) return undefined;
-            const parts = String(path || '').split('.').filter(Boolean);
-            let cur = obj;
-            for (const p of parts) {
-              if (cur == null) return undefined;
-              cur = cur[p];
-            }
-            return cur;
-          } catch (e) { return undefined; }
-        };
-        const setByPath = (obj, path, value) => {
-          try {
-            const parts = String(path || '').split('.').filter(Boolean);
-            if (!parts.length) return;
-            const isIndex = (s) => /^\d+$/.test(String(s));
-            let cur = obj;
-            for (let i = 0; i < parts.length - 1; i++) {
-              const p = parts[i];
-              const next = parts[i + 1];
-              if (isIndex(p)) {
-                const idx = Number(p);
-                if (!Array.isArray(cur)) return;
-                if (cur[idx] == null || typeof cur[idx] !== 'object') cur[idx] = (isIndex(next) ? [] : {});
-                cur = cur[idx];
-              } else {
-                if (cur[p] == null || typeof cur[p] !== 'object') cur[p] = (isIndex(next) ? [] : {});
-                cur = cur[p];
-              }
-            }
-            const last = parts[parts.length - 1];
-            if (isIndex(last)) {
-              const idx = Number(last);
-              if (!Array.isArray(cur)) return;
-              cur[idx] = value;
-            } else {
-              cur[last] = value;
-            }
-          } catch (e) {}
-        };
-
-        const isVisible = (field, i = undefined) => {
-          try {
-            if (!field || typeof field !== 'object') return false;
-            if (typeof field.showIf !== 'function') return true;
-            // compiled showIf expects (store,i) where store.settings is used
-            return !!field.showIf({ settings: this, programs: Alpine.store('programs') }, i);
-          } catch (e) {
-            return true;
-          }
-        };
+        const getByPath = (obj, path) => APP.path.get(obj, path);
+        const setByPath = (obj, path, value) => APP.path.set(obj, path, value);
 
         const out = {};
 
@@ -373,7 +329,6 @@
           for (const f of fields) {
             const path = String(f?.path || '');
             if (!path) continue;
-            if (!isVisible(f)) continue;
             const v = getByPath(this, path);
             // Do not fabricate missing values into the outgoing payload (prevents false diffs/highlights).
             if (v === undefined) continue;
@@ -404,7 +359,6 @@
             for (const f of fields) {
               const tmpl = String(f?.pathTmpl || '');
               if (!tmpl) continue;
-              if (!isVisible(f, i)) continue;
               const path = tmpl.replaceAll('{i}', String(i));
               const v = getByPath(this, path);
               if (v === undefined) continue;
@@ -429,7 +383,6 @@
             for (const f of fields) {
               const tmpl = String(f?.pathTmpl || '');
               if (!tmpl) continue;
-              if (!isVisible(f, i)) continue;
               const path = tmpl.replaceAll('{i}', String(i));
               const v = getByPath(this, path);
               if (v === undefined) continue;
@@ -501,9 +454,9 @@
       isPathInvalid(path) {
         const p = String(path || '');
         if (!p) return false;
-        // Include live client-side errors (Ajv) from uiForm.
+        // Include live client-side errors (Ajv) from settingsForm.
         try {
-          if (window.Alpine?.store?.('uiForm')?.isClientInvalid?.(p)) return true;
+          if (window.Alpine?.store?.('settingsForm')?.isClientInvalid?.(p)) return true;
         } catch (e) {}
         const errs = this.validationErrors;
         if (!errs || !Array.isArray(errs) || errs.length === 0) return false;
@@ -643,7 +596,6 @@
         this.recomputeDirty();
       },
       removeScheduleTrigger(index) { this.schedule_triggers.splice(index, 1); this.recomputeDirty(); },
-      updateInputType(index) {}
     });
   };
 })();

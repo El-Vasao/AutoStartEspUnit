@@ -86,11 +86,25 @@
     let res;
     try {
       res = await api.deviceFetch(url, { signal: controller.signal, deviceGapMs, ...rest });
+    } catch (e) {
+      return {
+        ok: false,
+        status: 0,
+        data: {},
+        text: '',
+        contentType: '',
+        timeout: e?.name === 'AbortError',
+        error: e
+      };
     } finally {
       clearTimeout(t);
     }
     const body = await readResponseBody(res);
-    return { ok: res.ok, status: res.status, data: body.data, text: body.text, contentType: body.contentType };
+    const ct = String(body.contentType || '');
+    if (res.status !== 204 && !ct.includes('json')) {
+      return { ok: false, status: res.status, data: {}, text: body.text, contentType: ct, parseError: true };
+    }
+    return { ok: !!res.ok, status: res.status, data: body.data, text: body.text, contentType: ct };
   };
 
   api.parseErrorMessage = function parseErrorMessage(res) {
@@ -119,11 +133,6 @@
     } catch (e) {
       return 'Ошибка';
     }
-  };
-
-  api.isLowMemoryResponse = function isLowMemoryResponse(/* res */) {
-    // ESP32-C3: firmware no longer returns LOW_MEMORY 503 gates; keep stub for callers.
-    return false;
   };
 
   api.apiJsonWithBusyRetry = async function apiJsonWithBusyRetry(url, options = {}, retry = {}) {
@@ -228,10 +237,6 @@
 
   api.handleBusy409 = function handleBusy409(status) {
     return status === 409;
-  };
-
-  api.isOtaInProgress = function isOtaInProgress() {
-    return LS?.get?.('otaInProgress') === '1';
   };
 
   api.endpoints = endpoints;

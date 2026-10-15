@@ -1,13 +1,13 @@
 /**
- * @file GSMController.Fsm.Registration.cpp
+ * @file GsmController.Fsm.Registration.cpp
  */
-#include "gsm/GSMController.h"
+#include "gsm/GsmController.h"
 
 #include "core/Core.h"
 #include "core/ErrorManager.h"
 #include "common/Logger.h"
 
-void GSMController::handleRegistering() {
+void GsmController::handleRegistering() {
     const uint32_t now = millis();
 
     // Если URC уже принёс регистрацию — не тормозим.
@@ -15,12 +15,12 @@ void GSMController::handleRegistering() {
         clearResponse();
         _retryCount = 0;
         core.getErrorManager().clear(ErrorCode::GSM_REG_FAIL);
-        changeState(GSMState::GPRS_SETUP);
+        changeState(GsmState::GPRS_SETUP);
         return;
     }
 
     if (_lastCommandTime == 0) {
-        (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, GSM::REG_POLL_INTERVAL_MS);
+        (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, Gsm::REG_POLL_INTERVAL_MS);
         return;
     }
 
@@ -28,14 +28,14 @@ void GSMController::handleRegistering() {
         _retryCount++;
         resetAwait();
         clearResponse();
-        if (_retryCount >= GSM::MAX_RETRIES) {
-            changeState(GSMState::ERROR);
+        if (_retryCount >= Gsm::MAX_RETRIES) {
+            changeState(GsmState::ERROR);
             core.getErrorManager().set(ErrorCode::GSM_REG_FAIL);
             logRxSnippet("CREG error");
-            logger.log("[GSMController] CREG returned ERROR\n");
+            logger.log(LogModule::GsmController, "CREG returned ERROR\n");
             return;
         }
-        (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, GSM::REG_POLL_INTERVAL_MS);
+        (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, Gsm::REG_POLL_INTERVAL_MS);
         return;
     }
 
@@ -45,7 +45,7 @@ void GSMController::handleRegistering() {
         clearResponse();
         _retryCount = 0;
         core.getErrorManager().clear(ErrorCode::GSM_REG_FAIL);
-        changeState(GSMState::GPRS_SETUP);
+        changeState(GsmState::GPRS_SETUP);
         return;
     }
 
@@ -55,13 +55,13 @@ void GSMController::handleRegistering() {
     if (searching) {
         resetAwait();
         clearResponse();
-        if (getStateAgeMs() > GSM::REG_TIMEOUT_MS) {
-            changeState(GSMState::ERROR);
+        if (getStateAgeMs() > Gsm::REG_TIMEOUT_MS) {
+            changeState(GsmState::ERROR);
             core.getErrorManager().set(ErrorCode::GSM_REG_FAIL);
             logRxSnippet("CREG timeout");
-            logger.log("[GSMController] Registration failed\n");
+            logger.log(LogModule::GsmController, "Registration failed\n");
             return;
         }
-        (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, GSM::REG_POLL_INTERVAL_MS);
+        (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, Gsm::REG_POLL_INTERVAL_MS);
     }
 }

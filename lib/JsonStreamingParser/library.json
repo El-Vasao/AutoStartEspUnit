@@ -1,0 +1,11 @@
+{
+  "name": "JsonStreamingParser",
+  "version": "1.0.5-no-string",
+  "description": "Squix JsonStreamingParser fork: JsonListener uses const char* (no heap String per token).",
+  "keywords": ["json", "streaming", "parser"],
+  "authors": { "name": "Daniel Eichhorn / project fork" },
+  "repository": { "type": "git", "url": "https://github.com/squix78/json-streaming-parser" },
+  "license": "MIT",
+  "frameworks": "arduino",
+  "platforms": ["espressif8266", "espressif32", "atmelavr"]
+}

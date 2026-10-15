@@ -1,9 +1,10 @@
 // src/core/Core.Diagnostics.cpp
 #include "core/Core.h"
 #include "core/internal/CorePrivate.h"
+#include "core/FlashCommitCoordinator.h"
 
 #include "config/Config.h"
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 #include "common/Logger.h"
 #include "common/Utils.h"
 #include "common/EspHal.h"
@@ -46,10 +47,10 @@ void Core::logHeapSnapshot(const char* tag) const {
     g_lastLoggedMaxBlk = maxBlock;
     g_heapEverLogged = true;
     if (tag && tag[0]) {
-        logger.log("[Core][%s] Heap: %u bytes, Max block: %u (since boot min free=%u min maxBlk=%u)\n", tag,
+        logger.log(LogModule::Core, "[%s] Heap: %u bytes, Max block: %u (since boot min free=%u min maxBlk=%u)\n", tag,
                    freeHeap, maxBlock, g_sessionMinFree, g_sessionMinMaxBlk);
     } else {
-        logger.log("[Core] Heap: %u bytes, Max block: %u (since boot min free=%u min maxBlk=%u)\n",
+        logger.log(LogModule::Core, "Heap: %u bytes, Max block: %u (since boot min free=%u min maxBlk=%u)\n",
                    freeHeap, maxBlock, g_sessionMinFree, g_sessionMinMaxBlk);
     }
 }
@@ -71,7 +72,7 @@ void Core::performPeriodicTasks(uint32_t now) {
     }
 
     if (every(Timing::ERROR_REPORT_INTERVAL_MS, impl.lastErrorReport) && impl.errorManager.get() != ErrorCode::NONE) {
-        logger.log("[Core] Active error: %s\n", impl.errorManager.getMessage());
+        logger.log(LogModule::Core, "Active error: %s\n", impl.errorManager.getMessage());
     }
 
     if (every(Timing::HEAP_SNAPSHOT_INTERVAL_MS, impl.lastStatsPrint)) {
@@ -102,23 +103,8 @@ const char* Core::getResetReason() const {
 }
 
 void Core::factoryReset() {
-    logger.log("[Core] Factory reset - erasing config\n");
-    if (fileSystem.isInitialized()) {
-        fileSystem.deleteFile("/config.json");
-    }
-    reboot();
-}
-
-void Core::printStats() {
-    const CorePrivate& impl = *_impl;
-    logger.log("[Core] === STATS ===\n");
-    logger.log("[Core] Mode: %s\n", getModeName());
-    logger.log("[Core] Uptime: %u\n", getUptime());
-    logger.log("[Core] Free Heap: %u\n", getFreeHeap());
-    logger.log("[Core] Version: %s\n", getVersionString());
-    logger.log("[Core] Last Error: %s\n", impl.errorManager.getMessage());
-    logger.log("[Core] Error Time: %u\n", impl.errorManager.getTime());
-    logger.log("[Core] ============\n");
+    logger.log(LogModule::Core, "Factory reset queued\n");
+    flashCommit.queueResetConfig();
 }
 
 bool Core::isRebootRequired() const {
@@ -194,16 +180,16 @@ void Core::suspendDomainManagersForOta() {
     for (uint8_t i = 0; i < Limits::MAX_SCHEDULE_TRIGGERS; i++) {
         impl.scheduleTriggerManager.setEnabled(i, false);
     }
-    logger.log("[Core] Domain managers suspended for OTA\n");
+    logger.log(LogModule::Core, "Domain managers suspended for OTA\n");
 }
 
 void Core::restoreDomainManagersAfterOta() {
     CorePrivate& impl = *_impl;
-    impl.triggerManager.begin();
-    impl.scheduleTriggerManager.begin();
+    impl.triggerManager.syncEnabledFromConfig();
+    impl.scheduleTriggerManager.syncEnabledFromConfig();
     impl.batterySaverManager.begin();
     impl.thermostatManager.begin();
-    logger.log("[Core] Domain managers restored after OTA\n");
+    logger.log(LogModule::Core, "Domain managers restored after OTA\n");
 }
 
 bool Core::wakeWifiApFromSilent() {
@@ -211,7 +197,7 @@ bool Core::wakeWifiApFromSilent() {
     if (impl.modeManager.getCurrentMode() != CoreMode::NORMAL_SILENT) {
         return false;
     }
-    logger.log("[Core] Wake SoftAP: NORMAL_SILENT -> NORMAL\n");
+    logger.log(LogModule::Core, "Wake SoftAP: NORMAL_SILENT -> NORMAL\n");
     impl.modeManager.switchMode(CoreMode::NORMAL);
     return true;
 }

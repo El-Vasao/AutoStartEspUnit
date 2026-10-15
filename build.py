@@ -143,26 +143,12 @@ def cleanup_gz_artifacts(files_dir: Path):
 JS_LIBS = [
     # Жесты (double-tap, long-press) для мобильного UI
     "js/hammer.min.js",
-    # Официальные плагины Alpine (небольшие, но сильно упрощают UI):
-    # - persist: проще работать с localStorage и восстановлением состояния
-    # - focus: доступность и нормальное управление фокусом в диалогах/модалках
-    "js/alpine.persist.min.js",
+    # Alpine plugins actually used by the markup (x-trap, x-collapse).
     "js/alpine.focus.min.js",
-    # - collapse: аккордеоны/раскрывающиеся секции (удобно для настроек)
-    # - intersect: дешёвая “ленивая” инициализация тяжёлых частей (логи/списки программ)
     "js/alpine.collapse.min.js",
-    "js/alpine.intersect.min.js",
-    # - morph: аккуратный DOM-morph для частичных обновлений (на будущее)
-    # - anchor: позиционирование тултипов/поповеров/меню без ручной математики
-    # - sort: drag-and-drop сортировка (можно заменить кнопки вверх/вниз в редакторе программ)
-    "js/alpine.morph.min.js",
-    "js/alpine.anchor.min.js",
-    "js/alpine.sort.min.js",
     # Валидатор JSON Schema (Draft 2020-12, browser bundle)
     "js/ajv2020.min.js",
-    # Важно: Alpine.start откладываем до регистрации stores/components
-    "js/app/alpine-defer.js",
-    # Важно: Alpine core должен идти ПОСЛЕ плагинов (в CDN-подобной загрузке)
+    # Alpine core after plugins. Start is queued as a microtask after this bundle continues.
     "js/alpine.min.js",
     # Модули приложения (без бандлера; склеиваем строго в этом порядке)
     "js/app/ns.js",
@@ -185,9 +171,7 @@ JS_LIBS = [
     "js/app/stores/program-form-ui-store.js",
     "js/app/stores/ui-toast-store.js",
     "js/app/stores/ui-busy-modal-store.js",
-    "js/app/stores/ui-statusbar-compat-store.js",
     "js/app/stores/ui-formatters-store.js",
-    "js/app/stores/ui-notification-compat-store.js",
     "js/app/stores/ui-state-store.js",
     "js/app/stores/ui-confirm-dialog-store.js",
     "js/app/stores/program-steps-ui-schema-store.js",
@@ -202,8 +186,7 @@ JS_LIBS = [
     "js/app/gestures.js",
     "js/app/sse.js",
     "js/app/core.js",
-    # Запускаем Alpine после регистрации приложения
-    "js/app/alpine-start.js",
+    "js/app/app.js",
 ]
 
 PRELOADED_JSON_FILES = [
@@ -218,13 +201,8 @@ LIB_URLS = {
     # Пинним версии, чтобы сборка была воспроизводимой.
     "js/hammer.min.js": "https://cdn.jsdelivr.net/npm/@egjs/hammerjs@2.0.17/dist/hammer.min.js",
     "js/alpine.min.js": "https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js",
-    "js/alpine.persist.min.js": "https://cdn.jsdelivr.net/npm/@alpinejs/persist@3.15.8/dist/cdn.min.js",
     "js/alpine.focus.min.js": "https://cdn.jsdelivr.net/npm/@alpinejs/focus@3.15.8/dist/cdn.min.js",
     "js/alpine.collapse.min.js": "https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.15.8/dist/cdn.min.js",
-    "js/alpine.intersect.min.js": "https://cdn.jsdelivr.net/npm/@alpinejs/intersect@3.15.8/dist/cdn.min.js",
-    "js/alpine.morph.min.js": "https://cdn.jsdelivr.net/npm/@alpinejs/morph@3.15.8/dist/cdn.min.js",
-    "js/alpine.anchor.min.js": "https://cdn.jsdelivr.net/npm/@alpinejs/anchor@3.15.8/dist/cdn.min.js",
-    "js/alpine.sort.min.js": "https://cdn.jsdelivr.net/npm/@alpinejs/sort@3.15.8/dist/cdn.min.js",
     # Ajv (browser bundle for JSON Schema draft 2020-12)
     "js/ajv2020.min.js": "https://cdn.jsdelivr.net/npm/ajv-dist@8.17.1/dist/ajv2020.min.js",
 }
@@ -297,7 +275,7 @@ def copy_index_html(files_dir: Path, out_path: Path) -> None:
 
 def build_script_bundle(files_dir: Path) -> bytes:
     """
-    bundle = data/script.js + (optional) downloaded/local libs.
+    bundle = JS_LIBS concatenated in order (vendored libs + data/js/app modules).
     """
     parts = []
     preload_bytes = build_preloaded_schemas_js(files_dir)
@@ -311,11 +289,6 @@ def build_script_bundle(files_dir: Path) -> bytes:
             if rel == "js/app/ns.js" and preload_bytes:
                 parts.append(b"\n;\n")
                 parts.append(preload_bytes)
-
-    base = files_dir / "script.js"
-    if base.exists():
-        parts.append(b"\n;\n")
-        parts.append(base.read_bytes())
     return b"".join(parts)
 
 def build_preloaded_schemas_js(files_dir: Path) -> bytes:
@@ -422,7 +395,7 @@ def patch_settings_schema_with_hw_limits(schema: dict, hw: dict) -> dict:
 def build_fs_tree(files_dir: Path, gzip_enabled: bool = True, include_config_json: bool = False) -> Path:
     """
     Готовим виртуальное дерево LittleFS из data/:
-    - bundling (libs + script.js) -> app.js(.gz)
+    - bundling (JS_LIBS) -> app.js(.gz)
     - index.html + style.css copied as-is (.gz) — 3-gzip SoftAP delivery
     - gzip выбранных расширений
     - по умолчанию исключаем config.json из обхода (чтобы не дублировать), затем:
@@ -439,7 +412,7 @@ def build_fs_tree(files_dir: Path, gzip_enabled: bool = True, include_config_jso
         bundle = build_script_bundle(files_dir)
         if not bundle:
             shutil.rmtree(temp_dir, ignore_errors=True)
-            raise RuntimeError("Пустой JS bundle — проверьте data/script.js и js/libs (build_script_bundle).")
+            raise RuntimeError("Пустой JS bundle — проверьте JS_LIBS и data/js (build_script_bundle).")
         copy_index_html(files_dir, temp_dir / "index.html")
         css_src = files_dir / "style.css"
         if not css_src.is_file():
@@ -459,8 +432,6 @@ def build_fs_tree(files_dir: Path, gzip_enabled: bool = True, include_config_jso
             # В gzip-режиме: сырой шелл/бандл не кладём — собираются выше.
             if gzip_enabled:
                 if rel_path in JS_LIBS:
-                    continue
-                if rel_path == "script.js":
                     continue
                 if rel_path == "style.css":
                     continue

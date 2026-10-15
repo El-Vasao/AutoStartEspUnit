@@ -1,10 +1,10 @@
-// src/core/Core.ModeManager.cpp
+// src/core/ModeManager.cpp
 #include "core/ModeManager.h"
 #include "web/WebServer.h"
-#include "gsm/GSMController.h"
-#include "mqtt/MQTTClient.h"
+#include "gsm/GsmController.h"
+#include "mqtt/MqttClient.h"
 #include "config/Config.h"
-#include "ota/OTAHandler.h"
+#include "ota/OtaHandler.h"
 #include "common/Pins.h"
 #include "core/Core.h"
 #include "io/RelayController.h"
@@ -13,7 +13,7 @@
 #include "common/Logger.h"
 
 /**
- * @file Core.ModeManager.cpp
+ * @file ModeManager.cpp
  * @brief Менеджер режимов ядра (BOOT/EMERGENCY_AP/SETUP_AP/NORMAL/NORMAL_SILENT/OTA_UPDATE).
  *
  * Ответственность:
@@ -29,7 +29,6 @@
 
 ModeManager::ModeManager() :
     _currentMode(CoreMode::BOOT),
-    _modeEnterTime(0),
     _webServer(nullptr),
     _gsm(nullptr),
     _mqtt(nullptr),
@@ -37,8 +36,8 @@ ModeManager::ModeManager() :
     _ota(nullptr)
 {}
 
-void ModeManager::init(WebServer& webServer, GSMController& gsm, MQTTClient& mqtt,
-                       Config& config, OTAHandler& ota) {
+void ModeManager::init(WebServer& webServer, GsmController& gsm, MqttClient& mqtt,
+                       Config& config, OtaHandler& ota) {
     _webServer = &webServer;
     _gsm = &gsm;
     _mqtt = &mqtt;
@@ -61,7 +60,7 @@ void ModeManager::switchMode(CoreMode newMode) {
         default: break;
     }
 
-    logger.log("[ModeManager] Switching mode: %s -> %s\n", oldModeName, newModeName);
+    logger.log(LogModule::ModeManager, "Switching mode: %s -> %s\n", oldModeName, newModeName);
 
     // Выходим из текущего режима.
     // Важно: exit/enter должны быть быстрыми и не делать тяжёлых блокирующих операций.
@@ -76,7 +75,6 @@ void ModeManager::switchMode(CoreMode newMode) {
     }
 
     _currentMode = newMode;
-    _modeEnterTime = millis();
 
     // Входим в новый режим.
     switch (_currentMode) {
@@ -111,41 +109,41 @@ const char* ModeManager::getModeName() const {
 // --- Методы входа/выхода ---
 
 void ModeManager::enterBoot() {
-    logger.log("[ModeManager] enterBoot\n");
+    logger.log(LogModule::ModeManager, "enterBoot\n");
 }
 
 void ModeManager::exitBoot() {}
 
 void ModeManager::enterEmergencyAP() {
-    logger.log("[ModeManager] enterEmergencyAP\n");
+    logger.log(LogModule::ModeManager, "enterEmergencyAP\n");
     if (_webServer) {
         _webServer->start(CoreMode::EMERGENCY_AP);
     }
 }
 
 void ModeManager::exitEmergencyAP() {
-    logger.log("[ModeManager] exitEmergencyAP\n");
+    logger.log(LogModule::ModeManager, "exitEmergencyAP\n");
     if (_webServer) {
         _webServer->stop();
     }
 }
 
 void ModeManager::enterSetupAP() {
-    logger.log("[ModeManager] enterSetupAP\n");
+    logger.log(LogModule::ModeManager, "enterSetupAP\n");
     if (_webServer) {
         _webServer->start(CoreMode::SETUP_AP);
     }
 }
 
 void ModeManager::exitSetupAP() {
-    logger.log("[ModeManager] exitSetupAP\n");
+    logger.log(LogModule::ModeManager, "exitSetupAP\n");
     if (_webServer) {
         _webServer->stop();
     }
 }
 
 void ModeManager::enterNormal() {
-    logger.log("[ModeManager] enterNormal\n");
+    logger.log(LogModule::ModeManager, "enterNormal\n");
     if (_webServer) {
         _webServer->start(CoreMode::NORMAL);
     }
@@ -153,22 +151,22 @@ void ModeManager::enterNormal() {
 }
 
 void ModeManager::exitNormal() {
-    logger.log("[ModeManager] exitNormal\n");
+    logger.log(LogModule::ModeManager, "exitNormal\n");
 }
 
 void ModeManager::enterNormalSilent() {
-    logger.log("[ModeManager] enterNormalSilent\n");
+    logger.log(LogModule::ModeManager, "enterNormalSilent\n");
     if (_webServer) {
         _webServer->stop();
     }
 }
 
 void ModeManager::exitNormalSilent() {
-    logger.log("[ModeManager] exitNormalSilent\n");
+    logger.log(LogModule::ModeManager, "exitNormalSilent\n");
 }
 
 void ModeManager::enterOTAUpdate() {
-    logger.log("[ModeManager] enterOTAUpdate\n");
+    logger.log(LogModule::ModeManager, "enterOTAUpdate\n");
     // Unload domain work; keep SSE open for UI progress/logs during stream flash.
     core.logHeapSnapshot("mode_enter_ota");
     if (core.getProgramExecutor().isRunning()) {
@@ -182,7 +180,7 @@ void ModeManager::enterOTAUpdate() {
 }
 
 void ModeManager::exitOTAUpdate() {
-    logger.log("[ModeManager] exitOTAUpdate\n");
+    logger.log(LogModule::ModeManager, "exitOTAUpdate\n");
     core.logHeapSnapshot("mode_exit_ota");
     if (_ota) {
         _ota->onModeExit();

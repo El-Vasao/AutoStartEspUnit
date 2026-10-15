@@ -1,6 +1,8 @@
 // src/config/VehicleRules.cpp
 #include "config/VehicleRules.h"
 
+#include "io/HwMap.h"
+
 #include <math.h>
 #include <string.h>
 
@@ -56,11 +58,10 @@ StartMethod startMethodFromString(const char* s, StartMethod def) {
 }
 
 int8_t findInput(const BaseConfig& cfg, uint16_t inputId) {
-    if (inputId == 0) return -1;
-    for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
-        if (cfg.inputs[i].id == inputId) return static_cast<int8_t>(i);
-    }
-    return -1;
+    const int8_t idx = HwMap::inputIndexById(inputId);
+    if (idx < 0) return -1;
+    if (cfg.inputs[static_cast<uint8_t>(idx)].id != inputId) return -1;
+    return idx;
 }
 
 const char* checkStartInput(const BaseConfig& cfg, StartMethod method, uint16_t inputId) {
@@ -83,6 +84,7 @@ const char* checkBlockInput(const BaseConfig& cfg) {
     if (v.start_block_input_id == 0) return nullptr;
     int8_t idx = findInput(cfg, v.start_block_input_id);
     if (idx < 0) return "start block input not found";
+    if (!cfg.inputs[idx].enabled) return "start block input disabled";
     if (cfg.inputs[idx].type != InputType::DIGITAL) return "start block input must be digital";
     if (usesStartInput(v.start_method) && v.start_block_input_id == v.start_input_id) {
         return "start block input equals start input";
@@ -148,6 +150,12 @@ uint8_t normalize(BaseConfig& cfg, NoteFn note, void* ctx) {
     if (checkStartInput(cfg, v.start_method, v.start_input_id) != nullptr) {
         v.start_method = StartMethod::Timed;
         report(note, ctx, "start input unusable -> start_method timed", fixes);
+    }
+    // Interlock stays fail-safe: a misconfigured block input keeps engine start blocked instead of
+    // being silently dropped. Only reported, not changed.
+    if (const char* r = checkBlockInput(cfg)) {
+        if (note) note(r, ctx);
+        if (note) note("engine start stays blocked until start_block_input_id is fixed", ctx);
     }
 
     BatterySaverConfig& bs = cfg.battery_saver;

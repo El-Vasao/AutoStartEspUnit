@@ -8,7 +8,8 @@
  *
  * Принцип:
  * - коды сгруппированы диапазонами (FS/GSM/ADC/MQTT/Program...), чтобы проще было расширять без конфликтов;
- * - строковое представление должно быть коротким (для UI/логов) и стабильным.
+ * - числовые значения — внешний контракт (MQTT `last_err`, SSE): существующие не перенумеровывать;
+ * - строковое представление короткое (< ErrorHistory::MSG_MAX, проверяет test_error_manager) и стабильное.
  */
 enum class ErrorCode : uint8_t {
     NONE = 0,               ///< Ошибок нет
@@ -33,9 +34,10 @@ enum class ErrorCode : uint8_t {
     RELAY_TIMEOUT = 64,     ///< Превышено время работы реле
     HW_MAP_INVALID = 72,    ///< Некорректная аппаратная карта (ID/пины)
 
-    PROGRAM_ABORTED = 80,   ///< Программа прервана из-за изменения конфигурации
-    PROGRAM_INVALID_REF,    ///< Программа прервана из-за неверного id канала в шаге
+    PROGRAM_ABORTED = 80,   ///< Программа прервана (аварийное завершение шага)
+    PROGRAM_INVALID_REF,    ///< Программа отклонена или прервана: неверный id канала или неизвестный шаг
     START_BLOCKED,          ///< Запуск двигателя запрещён входом блокировки
+    START_FAILED,           ///< Двигатель не завёлся за все попытки
 
     TIME_CCLK_FAIL = 88,    ///< Каскад времени: CCLK/NITZ не дал валидный clock
     TIME_CIPGSMLOC_FAIL,    ///< Каскад времени: CIPGSMLOC не дал валидный clock
@@ -69,9 +71,10 @@ inline const char* errorCodeToString(ErrorCode err) {
         case ErrorCode::MQTT_CONNECT_FAIL: return "MQTT connection failed";
         case ErrorCode::RELAY_TIMEOUT:     return "Relay timeout";
         case ErrorCode::HW_MAP_INVALID:    return "Hardware map invalid";
-        case ErrorCode::PROGRAM_ABORTED:   return "Program aborted due to config change";
-        case ErrorCode::PROGRAM_INVALID_REF:return "Program aborted due to invalid channel id";
-        case ErrorCode::START_BLOCKED:     return "Engine start blocked by interlock input";
+        case ErrorCode::PROGRAM_ABORTED:   return "Program aborted";
+        case ErrorCode::PROGRAM_INVALID_REF:return "Program has invalid step";
+        case ErrorCode::START_BLOCKED:     return "Engine start blocked by interlock";
+        case ErrorCode::START_FAILED:      return "Engine did not start";
         case ErrorCode::TIME_CCLK_FAIL:     return "Time CCLK failed";
         case ErrorCode::TIME_CIPGSMLOC_FAIL:return "Time CIPGSMLOC failed";
         case ErrorCode::TIME_CNTP_FAIL:     return "Time CNTP failed";

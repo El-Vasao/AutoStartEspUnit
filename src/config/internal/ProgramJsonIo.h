@@ -1,4 +1,4 @@
-// include/config/internal/ProgramJsonIo.h — реализация: src/config/Config.ProgramJsonIo.cpp
+// src/config/internal/ProgramJsonIo.h — реализация: src/config/Config.ProgramJsonIo.cpp
 #pragma once
 
 #include <Arduino.h>

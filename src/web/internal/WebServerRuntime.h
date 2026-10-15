@@ -49,9 +49,6 @@ public:
     /// UI-сессия есть, есть SSE-клиенты и avg очередь меньше порога.
     static bool sseSoftQueueAllowsSend(WebServer& ws, size_t maxAvgQueued);
 
-    /// SSE `log`-канал: клиенты + мягкая очередь; UI-сессия не обязательна (снимает гонку с EventSource vs /ui/session).
-    static bool sseLogChannelAllowsSend(WebServer& ws, size_t maxAvgQueued);
-
     /// Низкоуровневый доступ к SSE (инкрементальный модуль без `friend` к `events`).
     static bool sseActiveUiOk(const WebServer& ws);
     static bool sseQueueBackpressureAtLeast(WebServer& ws, size_t avgPacketsWaitingThreshold);
@@ -63,6 +60,5 @@ public:
     static void rebuildActiveUiSessionCount(WebServer& ws);
 
     static bool isSameAPConfig(const WebServer& ws, const char* ssid, const char* pass);
-    static void dumpAPConfig(const char* ssid, const char* pass, const char* context);
 };
 

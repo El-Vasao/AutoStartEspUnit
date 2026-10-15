@@ -3,6 +3,12 @@
   const APP = (window.APP = window.APP || {});
   APP.validation = APP.validation || {};
 
+  APP.validation.createAjv = function createAjv() {
+    const Ajv2020 = window.ajv2020;
+    if (!Ajv2020) throw new Error('Ajv2020 bundle missing (window.ajv2020)');
+    return new Ajv2020({ allErrors: true, strict: true, allowUnionTypes: true });
+  };
+
   APP.validation.pointerToDotted = function pointerToDotted(instancePath) {
     try {
       const p = String(instancePath || '');

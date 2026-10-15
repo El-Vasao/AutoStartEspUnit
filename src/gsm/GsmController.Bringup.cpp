@@ -1,8 +1,8 @@
 /**
- * @file GSMController.Bringup.cpp
+ * @file GsmController.Bringup.cpp
  * @brief Bring-up: `UART_BAUD` + post-boot quiet; без синхронного autobaud в `begin()`; NV UART через `AT+IPR?` в INIT.
  */
-#include "gsm/GSMController.h"
+#include "gsm/GsmController.h"
 
 #include "gsm/GsmInitPhase.h"
 #include "core/Core.h"
@@ -20,7 +20,7 @@ static void waitCooperative(uint32_t ms) {
 }
 } // namespace
 
-void GSMController::gsmResetSessionAfterStop() {
+void GsmController::gsmResetSessionAfterStop() {
     _verifiedModemContactSinceStop = false;
     _firstAtFallbackStartMs = 0;
     _hypNextAttemptMs = 0;
@@ -28,18 +28,17 @@ void GSMController::gsmResetSessionAfterStop() {
     _baudSearchActive = false;
     _baudSearchRound = 0;
     _baudSearchBaudIdx = 0;
-    _baudSearchSub = 0;
     _baudSearchDeadlineMs = 0;
     _baudCooldownUntilMs = 0;
     _didIprNvProbeThisCycle = false;
     _didPreBaudSearchCfun = false;
     _resumeSapbrHadIp = false;
-    _postResumeTarget = GSMState::REGISTERING;
+    _postResumeTarget = GsmState::REGISTERING;
     _initCgattBusyRetries = 0;
     clearAppliedApn_();
 }
 
-void GSMController::gsmNoteModemSoftReboot(bool cfunAlreadyDone) {
+void GsmController::gsmNoteModemSoftReboot(bool cfunAlreadyDone) {
     _verifiedModemContactSinceStop = false;
     _firstAtFallbackStartMs = 0;
     _hypNextAttemptMs = 0;
@@ -52,17 +51,17 @@ void GSMController::gsmNoteModemSoftReboot(bool cfunAlreadyDone) {
     _didPreBaudSearchCfun = cfunAlreadyDone;
 }
 
-void GSMController::gsmOpenUart(uint32_t baud) {
+void GsmController::gsmOpenUart(uint32_t baud) {
     _stack.uart.begin(baud);
     _baud = baud;
 }
 
-void GSMController::begin() {
-    waitCooperative(GSM::BOOT_DELAY_MS);
+void GsmController::begin() {
+    waitCooperative(Gsm::BOOT_DELAY_MS);
     const uint32_t now = millis();
-    const bool fromErrorRecovery = (_state == GSMState::ERROR);
+    const bool fromErrorRecovery = (_state == GsmState::ERROR);
 
-    if (_bringupStartMs == 0 || _state == GSMState::IDLE) {
+    if (_bringupStartMs == 0 || _state == GsmState::IDLE) {
         _bringupStartMs = now;
     }
     ev(1);
@@ -71,17 +70,16 @@ void GSMController::begin() {
         gsmResetSessionAfterStop();
     }
 
-    gsmOpenUart(GSM::UART_BAUD);
-    waitCooperative(GSM::UART_SETTLE_MS);
+    gsmOpenUart(Gsm::UART_BAUD);
+    waitCooperative(Gsm::UART_SETTLE_MS);
     flushInput();
 
     if (!fromErrorRecovery) {
-        _waitFirstStep = 0;
-        _waitFirstUntilMs = now + GSM::POST_BOOT_QUIET_MS;
+        _waitFirstUntilMs = now + Gsm::POST_BOOT_QUIET_MS;
     } else {
         _waitFirstUntilMs = 0;
     }
 
-    changeState(GSMState::INIT);
-    logger.log("[GSMController] begin() UART_BAUD=%lu\n", (unsigned long)GSM::UART_BAUD);
+    changeState(GsmState::INIT);
+    logger.log(LogModule::GsmController, "begin() UART_BAUD=%lu\n", (unsigned long)Gsm::UART_BAUD);
 }

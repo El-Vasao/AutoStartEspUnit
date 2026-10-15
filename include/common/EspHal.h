@@ -3,10 +3,12 @@
 
 #include <Arduino.h>
 #include <esp_system.h>
+#if defined(ESP_PLATFORM)
+#include <esp_task_wdt.h>
+#endif
 
 /**
- * Thin ESP32-C3 HAL shims replacing ESP8266-only APIs
- * (ESP.wdtFeed / getChipId / getMaxFreeBlockSize / heap fragmentation).
+ * Thin ESP32-C3 HAL shims (chip id, heap, task watchdog).
  */
 inline uint32_t espHalFreeHeap() {
     return ESP.getFreeHeap();
@@ -18,10 +20,13 @@ inline uint32_t espHalMaxBlock() {
 
 inline void espHalFeedWdt() {
     yield();
+#if defined(ESP_PLATFORM)
+    (void)esp_task_wdt_reset();
+#endif
 }
 
 inline void espHalWdtEnable() {
-    // ESP32 task WDT is configured by the framework; no WDTO_8S equivalent.
+    // Arduino-ESP32 enables the task WDT; feeding is espHalFeedWdt().
 }
 
 /** Lower 24 bits of eFuse MAC — stable MQTT client-id suffix (replaces ESP.getChipId()). */

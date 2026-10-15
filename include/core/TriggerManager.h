@@ -2,6 +2,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "core/TriggerRules.h"
 #include "io/DigitalInputs.h"
 #include "io/SensorsController.h"
 #include "program/ProgramExecutor.h"
@@ -13,8 +14,8 @@ class Config;
  * Отслеживает состояния и запускает программы при срабатывании.
  *
  * Модель срабатывания:
- * - триггер запускает программу только на фронте (inactive -> active), чтобы избежать повторного старта
- *   в каждом цикле, пока условие истинно.
+ * - вход — фронт (`trigger_rules::EdgeLatch`);
+ * - температура — фронт с гистерезисом отпускания (`ThresholdLatch`).
  *
  * Важно:
  * - если одновременно сработают несколько триггеров, они будут конкурировать за `ProgramExecutor`
@@ -26,6 +27,9 @@ public:
 
     void begin();
     void update();
+
+    /// Copy enabled flags from config without resetting latches (OTA restore).
+    void syncEnabledFromConfig();
 
     /// When true, use Timing::TRIGGER_CHECK_INTERVAL_IDLE_MS.
     void setPollIdle(bool idle) { _pollIdle = idle; }
@@ -43,11 +47,10 @@ private:
     ProgramExecutor& _executor;
 
     bool _inputEnabled[Limits::MAX_TRIGGERS];
-    bool _inputLastState[Limits::MAX_TRIGGERS];
+    trigger_rules::EdgeLatch _inputLatch[Limits::MAX_TRIGGERS];
     bool _tempEnabled[Limits::MAX_TRIGGERS];
-    bool _tempLastState[Limits::MAX_TRIGGERS];
+    trigger_rules::ThresholdLatch _tempLatch[Limits::MAX_TRIGGERS];
 
     uint32_t _lastCheck;
     bool _pollIdle{false};
 };
-

@@ -94,23 +94,9 @@
           for (const p of params) {
             if (p === 'relay_id') base.relay_id = (s.relay_id !== undefined) ? (Number(s.relay_id) || 0) : 0;
             else if (p === 'ms') base.ms = s.ms ? (s.ms / 1000) : 0;
-            else if (p === 'timeout_ms') base.timeout = s.timeout_ms ? (s.timeout_ms / 1000) : 0;
             else if (p === 'input_id') base.input_id = (s.input_id !== undefined) ? (Number(s.input_id) || 0) : 0;
-            else if (p === 'sensor_id') base.sensor_id = (s.sensor_id !== undefined) ? (Number(s.sensor_id) || 0) : 0;
-            else if (p === 'sensor_name') base.sensor_name = (s.sensor_name !== undefined) ? String(s.sensor_name || '') : '';
             else if (p === 'input_trigger_id') base.input_trigger_id = (s.input_trigger_id !== undefined) ? (Number(s.input_trigger_id) || 0) : 0;
             else if (p === 'temp_trigger_id') base.temp_trigger_id = (s.temp_trigger_id !== undefined) ? (Number(s.temp_trigger_id) || 0) : 0;
-            else if (p === 'program_id') base.program_id = (s.program_id || 0);
-            else if (p === 'expected_state') base.expected_state = (s.expected_state !== undefined) ? s.expected_state : 1;
-            else if (p === 'comparison') base.comparison = (s.comparison || 'above');
-            else if (p === 'threshold') base.threshold = (s.threshold || 0);
-            else if (p === 'engine_state') base.engine_state = (s.engine_state !== undefined) ? s.engine_state : 1;
-            else if (p === 'timeout_action') base.timeout_action = (s.timeout_action || 0);
-            else if (p === 'skip_count') {
-              // WYSIWYG: skip_count is shown only when timeout_action==1
-              const ta = (s.timeout_action || 0);
-              if (ta === 1) base.skip_count = (s.skip_count || 0);
-            }
             else if (p === 'message') base.message = (s.message !== undefined) ? String(s.message || '') : '';
           }
 
@@ -144,22 +130,9 @@
           for (const p of params) {
             if (p === 'relay_id') add('relay_id', toInt(step.relay_id, 0));
             else if (p === 'ms') add('ms', step.ms ? Math.round(step.ms * 1000) : 0);
-            else if (p === 'timeout_ms') add('timeout_ms', step.timeout ? Math.round(step.timeout * 1000) : 0);
             else if (p === 'input_id') add('input_id', toInt(step.input_id, 0));
-            else if (p === 'sensor_id') add('sensor_id', (step.sensor_id !== undefined) ? (Number(step.sensor_id) || 0) : 0);
-            else if (p === 'sensor_name') add('sensor_name', (step.sensor_name !== undefined) ? String(step.sensor_name || '') : '');
             else if (p === 'input_trigger_id') add('input_trigger_id', (step.input_trigger_id !== undefined) ? (Number(step.input_trigger_id) || 0) : 0);
             else if (p === 'temp_trigger_id') add('temp_trigger_id', (step.temp_trigger_id !== undefined) ? (Number(step.temp_trigger_id) || 0) : 0);
-            else if (p === 'program_id') add('program_id', toInt(step.program_id, 0));
-            else if (p === 'expected_state') add('expected_state', toInt(step.expected_state, 1));
-            else if (p === 'comparison') add('comparison', step.comparison);
-            else if (p === 'threshold') add('threshold', Number(step.threshold) || 0);
-            else if (p === 'engine_state') add('engine_state', toInt(step.engine_state, 1));
-            else if (p === 'timeout_action') add('timeout_action', toInt(step.timeout_action, 0));
-            else if (p === 'skip_count') {
-              // WYSIWYG: skip_count is shown only when timeout_action==1
-              if (toInt(step.timeout_action, 0) === 1) add('skip_count', toInt(step.skip_count, 0));
-            }
             else if (p === 'message') add('message', (step.message !== undefined) ? String(step.message || '') : '');
           }
 
@@ -192,8 +165,7 @@
 
           const params = foundAction.params || [];
           for (const key of params) {
-            if (key === 'timeout_ms') newStep.timeout = d('timeout_ms', 0);
-            else newStep[key] = d(key, undefined);
+            newStep[key] = d(key, undefined);
           }
 
           this.form.steps.push(newStep);
@@ -241,7 +213,7 @@
 
           // Lazy-load schema/ajv (best-effort). If it fails, we do not hard-block saving.
           pv.load?.();
-          const res = pv.validateProgramData?.(program) || { ok: true, errorsByPath: {} };
+          const res = pv.validateProgramDataHard?.(program) || pv.validateProgramData?.(program) || { ok: true, errorsByPath: {} };
           if (res.ok) return true;
 
           const errs = res.errorsByPath || {};
@@ -292,9 +264,9 @@
               return step;
             })
           };
-          await this.$store.programs.save(program);
+          const ok = await this.$store.programs.save(program);
           this.saving = false;
-          if (this.$store.programs.current == null) return;
+          if (!ok) return;
           this._baseline = window.APP.utils.stableStringify(this.form);
           try { this._baselineObj = JSON.parse(this._baseline); } catch (e) {}
           window.Alpine.store('deviceRuntime').programEditorDirty = false;
@@ -326,51 +298,24 @@
         paramUiField(paramKey) {
           try {
             const k = String(paramKey || '');
-            // Most fields come straight from schema.
-            const d = this.paramDef(k) || null;
-            if (d) return d;
-            // Fallbacks (should be rare if schema stays in sync).
-            if (k === 'timeout_ms') return { type: 'number', valueType: 'float', label: 'Таймаут (с)' };
-            return { type: 'text', valueType: 'string', label: k };
+            return this.paramDef(k) || { type: 'text', valueType: 'string', label: k };
           } catch (e) {
             return { type: 'text', valueType: 'string', label: String(paramKey || '') };
           }
         },
-        // Maps schema param key -> actual model path in step object
         paramUiPath(paramKey) {
-          const k = String(paramKey || '');
-          if (k === 'timeout_ms') return 'timeout'; // UI stores seconds in `step.timeout`
-          return k;
+          return String(paramKey || '');
         },
-        // Which key to use for change highlighting
         paramUiToneKey(paramKey) {
-          const k = String(paramKey || '');
-          if (k === 'timeout_ms') return 'timeout';
-          return k;
+          return String(paramKey || '');
         },
-        // Options for programForm.fieldRow (errors + special behaviors)
         paramUiOpts(step, index, paramKey) {
           const k = String(paramKey || '');
-          const opts = {
+          return {
             errors: this.errors,
             errorKey: `step_${index}_${k}`,
             onChange: () => { this.markDirty(); this.validateDebounced(); }
           };
-          if (k === 'timeout_ms') opts.errorKey = `step_${index}_timeout_ms`;
-          if (k === 'sensor_id') {
-            opts.onSelect = (v) => {
-              try {
-                const list = window.Alpine?.store?.('settings')?.sensors;
-                let name = '';
-                if (Array.isArray(list)) {
-                  const hit = list.find(x => x && String(x.id) === String(v));
-                  name = String(hit?.name || '').trim();
-                }
-                step.sensor_name = String(name || '');
-              } catch (e) {}
-            };
-          }
-          return opts;
         },
 
         coerceStepInPlace(step) {
@@ -378,11 +323,6 @@
             if (!step) return;
             const params = step?.actionDef?.params || [];
             for (const p of params) {
-              if (p === 'timeout_ms') {
-                const def = this.paramDef('timeout_ms');
-                step.timeout = (APP.coerce?.byValueType ? APP.coerce.byValueType(def?.valueType, step.timeout, def?.default ?? 0) : step.timeout);
-                continue;
-              }
               const def = this.paramDef(p);
               if (!def) continue;
               if (step[p] === undefined) continue;

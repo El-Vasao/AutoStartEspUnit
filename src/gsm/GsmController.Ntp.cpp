@@ -1,138 +1,34 @@
 /**
- * @file GSMController.Ntp.cpp
+ * @file GsmController.Ntp.cpp
  * @brief Non-blocking wall-clock cascade: CCLK/NITZ → CIPSHUT → CIPGSMLOC → CNTP → CCLK.
  */
-#include "gsm/GSMController.h"
+#include "gsm/GsmController.h"
 
 #include "common/Logger.h"
 #include "common/Constants.h"
+#include "gsm/GsmTimeParse.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 namespace {
 
-bool parseCclkToUtc(const char* line, time_t& utcOut, int8_t* tzHoursOut = nullptr,
-                    bool* tzWholeHoursOut = nullptr) {
-    // +CCLK: "yy/MM/dd,hh:mm:ss±zz"  zz = quarters of an hour from GMT
-    if (tzHoursOut) *tzHoursOut = 0;
-    if (tzWholeHoursOut) *tzWholeHoursOut = false;
-
-    const char* p = strstr(line, "+CCLK:");
-    if (!p) return false;
-    p = strchr(p, '"');
-    if (!p) return false;
-    p++;
-
-    int yy = 0, MM = 0, dd = 0, hh = 0, mm = 0, ss = 0, tzq = 0;
-    char sign = '+';
-    if (sscanf(p, "%2d/%2d/%2d,%2d:%2d:%2d%c%d", &yy, &MM, &dd, &hh, &mm, &ss, &sign, &tzq) < 8) {
-        return false;
+/// Usable modem clock from a +CCLK snapshot. Fractional NITZ zones are logged and kept out of
+/// tz_offset_hours (config/UI store whole hours only).
+bool readCclkSnapshot(const char* snap, gsm_time::CclkTime& out) {
+    if (!snap[0] || !gsm_time::parseCclk(snap, out)) return false;
+    if (!out.tzWholeHours) {
+        logger.log(LogModule::GsmController, "CCLK tzq=%d not whole hours; skip config TZ\n", (int)out.tzQuarters);
     }
-    if (sign == '-') tzq = -tzq;
-    else if (sign != '+') return false;
-
-    if (MM < 1 || MM > 12 || dd < 1 || dd > 31) return false;
-    if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 60) return false;
-
-    struct tm t {};
-    t.tm_year = yy + 100; // 2000+yy as years since 1900
-    t.tm_mon = MM - 1;
-    t.tm_mday = dd;
-    t.tm_hour = hh;
-    t.tm_min = mm;
-    t.tm_sec = ss;
-    t.tm_isdst = 0;
-
-    char* oldTz = getenv("TZ");
-    char oldBuf[32]{};
-    if (oldTz) strlcpy(oldBuf, oldTz, sizeof(oldBuf));
-    setenv("TZ", "UTC0", 1);
-    tzset();
-    time_t asUtc = mktime(&t);
-    if (oldBuf[0]) setenv("TZ", oldBuf, 1);
-    else unsetenv("TZ");
-    tzset();
-
-    if (asUtc == (time_t)-1) return false;
-
-    const int32_t offsetSec = (int32_t)tzq * 15 * 60;
-    utcOut = asUtc - (time_t)offsetSec;
-    if (utcOut <= 0) return false;
-
-    // Config / UI store whole hours only; fractional NITZ zones stay out of tz_offset_hours.
-    if ((tzq % 4) == 0) {
-        const int hours = tzq / 4;
-        if (hours >= -12 && hours <= 14) {
-            if (tzHoursOut) *tzHoursOut = static_cast<int8_t>(hours);
-            if (tzWholeHoursOut) *tzWholeHoursOut = true;
-        }
-    } else {
-        logger.log("[GSMController] CCLK tzq=%d not whole hours; skip config TZ\n", tzq);
-    }
-    return true;
-}
-
-/// Reject factory/NITZ-missing clocks (e.g. 04/01/01) — same floor as TimeSyncManager.
-bool cclkEpochSane(time_t utc) {
-    return utc >= TimeSync::MIN_SANE_EPOCH_UTC; // ~2023-11
-}
-
-bool parseCipgsmlocToUtc(const char* line, time_t& utcOut) {
-    // +CIPGSMLOC: 0,yyyy/MM/dd,hh:mm:ss   (UTC per SIMCom / EasyElectronics)
-    // +CIPGSMLOC: <err> on failure
-    const char* p = strstr(line, "+CIPGSMLOC:");
-    if (!p) return false;
-    p += 11;
-    while (*p == ' ') p++;
-
-    int code = -1;
-    int yyyy = 0, MM = 0, dd = 0, hh = 0, mm = 0, ss = 0;
-    if (sscanf(p, "%d,%d/%d/%d,%d:%d:%d", &code, &yyyy, &MM, &dd, &hh, &mm, &ss) < 7) {
-        return false;
-    }
-    if (code != 0) return false;
-    if (yyyy < TimeSync::MIN_SANE_YEAR || MM < 1 || MM > 12 || dd < 1 || dd > 31) return false;
-    if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 60) return false;
-
-    struct tm t {};
-    t.tm_year = yyyy - 1900;
-    t.tm_mon = MM - 1;
-    t.tm_mday = dd;
-    t.tm_hour = hh;
-    t.tm_min = mm;
-    t.tm_sec = ss;
-    t.tm_isdst = 0;
-
-    char* oldTz = getenv("TZ");
-    char oldBuf[32]{};
-    if (oldTz) strlcpy(oldBuf, oldTz, sizeof(oldBuf));
-    setenv("TZ", "UTC0", 1);
-    tzset();
-    time_t asUtc = mktime(&t);
-    if (oldBuf[0]) setenv("TZ", oldBuf, 1);
-    else unsetenv("TZ");
-    tzset();
-
-    if (asUtc == (time_t)-1) return false;
-    utcOut = asUtc;
-    return utcOut >= TimeSync::MIN_SANE_EPOCH_UTC;
-}
-
-int8_t tzHoursToQuarters(int8_t tzOffsetHours) {
-    int q = static_cast<int>(tzOffsetHours) * 4;
-    if (q > 48) q = 48;
-    if (q < -48) q = -48;
-    return (int8_t)q;
+    return gsm_time::epochSane(out.utc);
 }
 
 } // namespace
 
-bool GSMController::requestTimeSync(const char* ntpServer, int8_t tzOffsetHours) {
+bool GsmController::requestTimeSync(const char* ntpServer, int8_t tzOffsetHours) {
     if (_timeStep != TimeStep::Idle) return false;
-    if (_state != GSMState::READY) return false;
+    if (_state != GsmState::READY) return false;
     if (modemServiceEpochBusy()) return false;
     if (tcpSocketActive() || _stack.tcp.isBusBusy()) return false;
     if (_await != AwaitKind::NONE) return false;
@@ -142,7 +38,7 @@ bool GSMController::requestTimeSync(const char* ntpServer, int8_t tzOffsetHours)
     } else {
         _ntpServer[0] = '\0';
     }
-    _ntpTzQuarters = tzHoursToQuarters(tzOffsetHours);
+    _ntpTzQuarters = gsm_time::tzHoursToQuarters(tzOffsetHours);
     _ntpUrcOk = false;
     _ntpUrcFail = false;
     _timeResultReady = false;
@@ -157,22 +53,22 @@ bool GSMController::requestTimeSync(const char* ntpServer, int8_t tzOffsetHours)
     _cclkSnap[0] = '\0';
     _cipgsmlocSnap[0] = '\0';
     _timeStep = TimeStep::CclkProbe;
-    _timeDeadlineMs = millis() + GSM::CCLK_TIMEOUT_MS;
-    logger.log("[GSMController] time cascade start server=%s tzq=%d\n",
+    _timeDeadlineMs = millis() + Gsm::CCLK_TIMEOUT_MS;
+    logger.log(LogModule::GsmController, "time cascade start server=%s tzq=%d\n",
                _ntpServer[0] ? _ntpServer : "(none)", (int)_ntpTzQuarters);
     return true;
 }
 
-bool GSMController::requestCclkProbe(int8_t tzOffsetHours) {
+bool GsmController::requestCclkProbe(int8_t tzOffsetHours) {
     if (_timeStep != TimeStep::Idle) return false;
-    if (_state != GSMState::READY) return false;
+    if (_state != GsmState::READY) return false;
     if (modemServiceEpochBusy()) return false;
     // Refuse during CIPSEND/connect — handleReady would skip serviceTimeSync and timeout.
     if (_stack.tcp.isTcpEpochBusy() || _stack.tcp.isBusBusy()) return false;
     if (_await != AwaitKind::NONE) return false;
 
     _ntpServer[0] = '\0';
-    _ntpTzQuarters = tzHoursToQuarters(tzOffsetHours);
+    _ntpTzQuarters = gsm_time::tzHoursToQuarters(tzOffsetHours);
     _ntpUrcOk = false;
     _ntpUrcFail = false;
     _timeResultReady = false;
@@ -187,12 +83,12 @@ bool GSMController::requestCclkProbe(int8_t tzOffsetHours) {
     _cclkSnap[0] = '\0';
     _cipgsmlocSnap[0] = '\0';
     _timeStep = TimeStep::CclkProbe;
-    _timeDeadlineMs = millis() + GSM::CCLK_TIMEOUT_MS;
-    logger.log("[GSMController] time CCLK-lite probe start tzq=%d\n", (int)_ntpTzQuarters);
+    _timeDeadlineMs = millis() + Gsm::CCLK_TIMEOUT_MS;
+    logger.log(LogModule::GsmController, "time CCLK-lite probe start tzq=%d\n", (int)_ntpTzQuarters);
     return true;
 }
 
-bool GSMController::takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut, int8_t* tzHoursOut,
+bool GsmController::takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut, int8_t* tzHoursOut,
                                      bool* tzValidOut) {
     if (!_timeResultReady) return false;
     epochUtcOut = _timeEpochUtc;
@@ -206,7 +102,7 @@ bool GSMController::takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut,
     return true;
 }
 
-bool GSMController::takeTimeSyncFail(uint8_t& failMaskOut) {
+bool GsmController::takeTimeSyncFail(uint8_t& failMaskOut) {
     if (!_timeFailReady) return false;
     failMaskOut = _timeFailMask;
     _timeFailReady = false;
@@ -214,11 +110,11 @@ bool GSMController::takeTimeSyncFail(uint8_t& failMaskOut) {
     return true;
 }
 
-void GSMController::timeMarkMethodFail_(uint8_t bit) {
+void GsmController::timeMarkMethodFail_(uint8_t bit) {
     _timeFailMask = static_cast<uint8_t>(_timeFailMask | bit);
 }
 
-void GSMController::timeFailStep_(const char* why) {
+void GsmController::timeFailStep_(const char* why) {
     if (_timeStep == TimeStep::Idle) return;
     if (_timeStep == TimeStep::CclkProbe) {
         timeMarkMethodFail_(TimeFailCclk);
@@ -231,8 +127,8 @@ void GSMController::timeFailStep_(const char* why) {
     timeFailTerminal_(why);
 }
 
-void GSMController::timeFailTerminal_(const char* why) {
-    logger.log("[GSMController] time cascade fail: %s mask=0x%02X\n", why ? why : "?",
+void GsmController::timeFailTerminal_(const char* why) {
+    logger.log(LogModule::GsmController, "time cascade fail: %s mask=0x%02X\n", why ? why : "?",
                (unsigned)_timeFailMask);
     _timeFailReady = true;
     _timeResultReady = false;
@@ -244,7 +140,7 @@ void GSMController::timeFailTerminal_(const char* why) {
     _ntpUrcFail = false;
 }
 
-void GSMController::timeFinishOk_(time_t epochUtc, TimeSource src, bool tzValid, int8_t tzHours) {
+void GsmController::timeFinishOk_(time_t epochUtc, TimeSource src, bool tzValid, int8_t tzHours) {
     _timeEpochUtc = epochUtc;
     _timeSource = src;
     _timeTzValid = tzValid;
@@ -264,14 +160,14 @@ void GSMController::timeFinishOk_(time_t epochUtc, TimeSource src, bool tzValid,
         default: break;
     }
     if (tzValid) {
-        logger.log("[GSMController] time ok source=%s epoch=%ld tz=%+dh\n", name, (long)epochUtc,
+        logger.log(LogModule::GsmController, "time ok source=%s epoch=%ld tz=%+dh\n", name, (long)epochUtc,
                    (int)tzHours);
     } else {
-        logger.log("[GSMController] time ok source=%s epoch=%ld\n", name, (long)epochUtc);
+        logger.log(LogModule::GsmController, "time ok source=%s epoch=%ld\n", name, (long)epochUtc);
     }
 }
 
-void GSMController::timeAdvanceToCipgsmloc_(uint32_t now) {
+void GsmController::timeAdvanceToCipgsmloc_(uint32_t now) {
     // Reset CIP stack after MQTT CIPCLOSE so CIPGSMLOC/CNTP see a clean IP session.
     resetAwait();
     clearResponse();
@@ -279,21 +175,21 @@ void GSMController::timeAdvanceToCipgsmloc_(uint32_t now) {
     _cipgsmlocSnap[0] = '\0';
     _timeStep = TimeStep::Cipshut;
     _timeDeadlineMs = now + Sim800Tcp::CIPSHUT_TIMEOUT_MS;
-    logger.log("[GSMController] time → CIPSHUT then CIPGSMLOC\n");
+    logger.log(LogModule::GsmController, "time → CIPSHUT then CIPGSMLOC\n");
 }
 
-void GSMController::timeEnterCipgsmlocCmd_(uint32_t now) {
+void GsmController::timeEnterCipgsmlocCmd_(uint32_t now) {
     _stack.tcp.noteExternalCipShut();
     resetAwait();
     clearResponse();
     _timeCmdSent = false;
     _cipgsmlocSnap[0] = '\0';
     _timeStep = TimeStep::Cipgsmloc;
-    _timeDeadlineMs = now + GSM::CIPGSMLOC_TIMEOUT_MS;
-    logger.log("[GSMController] time → CIPGSMLOC\n");
+    _timeDeadlineMs = now + Gsm::CIPGSMLOC_TIMEOUT_MS;
+    logger.log(LogModule::GsmController, "time → CIPGSMLOC\n");
 }
 
-void GSMController::timeAdvanceToCntpOrFail_(uint32_t now, const char* why) {
+void GsmController::timeAdvanceToCntpOrFail_(uint32_t now, const char* why) {
     if (!_ntpServer[0]) {
         timeFailTerminal_(why ? why : "no_ntp_server");
         return;
@@ -304,12 +200,12 @@ void GSMController::timeAdvanceToCntpOrFail_(uint32_t now, const char* why) {
     _ntpUrcOk = false;
     _ntpUrcFail = false;
     _timeStep = TimeStep::Cntpcid;
-    _timeDeadlineMs = now + GSM::CNTP_AT_TIMEOUT_MS;
-    logger.log("[GSMController] time → CNTP (%s)\n", why ? why : "?");
+    _timeDeadlineMs = now + Gsm::CNTP_AT_TIMEOUT_MS;
+    logger.log(LogModule::GsmController, "time → CNTP (%s)\n", why ? why : "?");
 }
 
-void GSMController::timeSoftMissCclkLite_(const char* why) {
-    logger.log("[GSMController] time CCLK-lite miss: %s\n", why ? why : "?");
+void GsmController::timeSoftMissCclkLite_(const char* why) {
+    logger.log(LogModule::GsmController, "time CCLK-lite miss: %s\n", why ? why : "?");
     resetAwait();
     _timeStep = TimeStep::Idle;
     _timeCmdSent = false;
@@ -318,7 +214,7 @@ void GSMController::timeSoftMissCclkLite_(const char* why) {
     _timeResultReady = false;
 }
 
-void GSMController::serviceTimeSync(uint32_t now) {
+void GsmController::serviceTimeSync(uint32_t now) {
     if (_timeStep == TimeStep::Idle) return;
 
     // Hard rule: never share the modem IP stack with CIP TCP (CIPGSMLOC/CNTP).
@@ -350,7 +246,7 @@ void GSMController::serviceTimeSync(uint32_t now) {
 
     auto finishCipgsmlocSnap_ = [&]() {
         time_t utc = 0;
-        if (_cipgsmlocSnap[0] && parseCipgsmlocToUtc(_cipgsmlocSnap, utc)) {
+        if (_cipgsmlocSnap[0] && gsm_time::parseCipgsmloc(_cipgsmlocSnap, utc)) {
             timeFinishOk_(utc, TimeSource::Cipgsmloc);
             return;
         }
@@ -362,9 +258,9 @@ void GSMController::serviceTimeSync(uint32_t now) {
     case TimeStep::CclkProbe:
         if (!_timeCmdSent) {
             _cclkSnap[0] = '\0';
-            sendAt("AT+CCLK?", "CCLK", AwaitKind::OK, GSM::CCLK_TIMEOUT_MS);
+            sendAt("AT+CCLK?", "CCLK", AwaitKind::OK, Gsm::CCLK_TIMEOUT_MS);
             _timeCmdSent = true;
-            _timeDeadlineMs = now + GSM::CCLK_TIMEOUT_MS;
+            _timeDeadlineMs = now + Gsm::CCLK_TIMEOUT_MS;
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -380,11 +276,9 @@ void GSMController::serviceTimeSync(uint32_t now) {
         }
         if (!_awaitOk) return;
         {
-            time_t utc = 0;
-            int8_t tzH = 0;
-            bool tzOk = false;
-            if (_cclkSnap[0] && parseCclkToUtc(_cclkSnap, utc, &tzH, &tzOk) && cclkEpochSane(utc)) {
-                timeFinishOk_(utc, TimeSource::Cclk, tzOk, tzH);
+            gsm_time::CclkTime ct;
+            if (readCclkSnapshot(_cclkSnap, ct)) {
+                timeFinishOk_(ct.utc, TimeSource::Cclk, ct.tzWholeHours, ct.tzHours);
                 return;
             }
             if (_timeCclkOnly) {
@@ -392,7 +286,7 @@ void GSMController::serviceTimeSync(uint32_t now) {
                 return;
             }
             // Expected path until NITZ fills the modem clock — do not set TIME_CCLK_FAIL.
-            logger.log("[GSMController] CCLK probe stale/unusable, next\n");
+            logger.log(LogModule::GsmController, "CCLK probe stale/unusable, next\n");
             timeAdvanceToCipgsmloc_(now);
         }
         return;
@@ -406,7 +300,7 @@ void GSMController::serviceTimeSync(uint32_t now) {
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
-            logger.log("[GSMController] time CIPSHUT fail/timeout — continue CIPGSMLOC\n");
+            logger.log(LogModule::GsmController, "time CIPSHUT fail/timeout — continue CIPGSMLOC\n");
             timeEnterCipgsmlocCmd_(now);
             return;
         }
@@ -417,9 +311,9 @@ void GSMController::serviceTimeSync(uint32_t now) {
     case TimeStep::Cipgsmloc:
         if (!_timeCmdSent) {
             _cipgsmlocSnap[0] = '\0';
-            sendAt("AT+CIPGSMLOC=2,1", "LOC", AwaitKind::OK, GSM::CIPGSMLOC_TIMEOUT_MS);
+            sendAt("AT+CIPGSMLOC=2,1", "LOC", AwaitKind::OK, Gsm::CIPGSMLOC_TIMEOUT_MS);
             _timeCmdSent = true;
-            _timeDeadlineMs = now + GSM::CIPGSMLOC_TIMEOUT_MS;
+            _timeDeadlineMs = now + Gsm::CIPGSMLOC_TIMEOUT_MS;
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -434,7 +328,7 @@ void GSMController::serviceTimeSync(uint32_t now) {
         _timeCmdSent = false;
         _timeStep = TimeStep::WaitCipgsmlocUrc;
         // Always grant a full URC grace after OK (do not inherit a near-zero accept deadline).
-        _timeDeadlineMs = now + GSM::CIPGSMLOC_URC_GRACE_MS;
+        _timeDeadlineMs = now + Gsm::CIPGSMLOC_URC_GRACE_MS;
         return;
 
     case TimeStep::WaitCipgsmlocUrc:
@@ -451,9 +345,9 @@ void GSMController::serviceTimeSync(uint32_t now) {
 
     case TimeStep::Cntpcid:
         if (!_timeCmdSent) {
-            sendAt("AT+CNTPCID=1", "CNTP", AwaitKind::OK, GSM::CNTP_AT_TIMEOUT_MS);
+            sendAt("AT+CNTPCID=1", "CNTP", AwaitKind::OK, Gsm::CNTP_AT_TIMEOUT_MS);
             _timeCmdSent = true;
-            _timeDeadlineMs = now + GSM::CNTP_AT_TIMEOUT_MS;
+            _timeDeadlineMs = now + Gsm::CNTP_AT_TIMEOUT_MS;
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -461,16 +355,16 @@ void GSMController::serviceTimeSync(uint32_t now) {
             return;
         }
         if (!_awaitOk) return;
-        advanceAfterOk(TimeStep::CntpSet, GSM::CNTP_AT_TIMEOUT_MS);
+        advanceAfterOk(TimeStep::CntpSet, Gsm::CNTP_AT_TIMEOUT_MS);
         return;
 
     case TimeStep::CntpSet: {
         if (!_timeCmdSent) {
             char cmd[TextBytes::TimeCfg::NTP_SERVER + 24];
             snprintf(cmd, sizeof(cmd), "AT+CNTP=\"%s\",%d", _ntpServer, (int)_ntpTzQuarters);
-            sendAt(cmd, "CNTP", AwaitKind::OK, GSM::CNTP_AT_TIMEOUT_MS);
+            sendAt(cmd, "CNTP", AwaitKind::OK, Gsm::CNTP_AT_TIMEOUT_MS);
             _timeCmdSent = true;
-            _timeDeadlineMs = now + GSM::CNTP_AT_TIMEOUT_MS;
+            _timeDeadlineMs = now + Gsm::CNTP_AT_TIMEOUT_MS;
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -478,7 +372,7 @@ void GSMController::serviceTimeSync(uint32_t now) {
             return;
         }
         if (!_awaitOk) return;
-        advanceAfterOk(TimeStep::CntpRun, GSM::CNTP_AT_TIMEOUT_MS);
+        advanceAfterOk(TimeStep::CntpRun, Gsm::CNTP_AT_TIMEOUT_MS);
         return;
     }
 
@@ -486,9 +380,9 @@ void GSMController::serviceTimeSync(uint32_t now) {
         if (!_timeCmdSent) {
             _ntpUrcOk = false;
             _ntpUrcFail = false;
-            sendAt("AT+CNTP", "CNTP", AwaitKind::OK, GSM::CNTP_AT_TIMEOUT_MS);
+            sendAt("AT+CNTP", "CNTP", AwaitKind::OK, Gsm::CNTP_AT_TIMEOUT_MS);
             _timeCmdSent = true;
-            _timeDeadlineMs = now + GSM::CNTP_AT_TIMEOUT_MS;
+            _timeDeadlineMs = now + Gsm::CNTP_AT_TIMEOUT_MS;
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -500,7 +394,7 @@ void GSMController::serviceTimeSync(uint32_t now) {
         clearResponse();
         _timeCmdSent = false;
         _timeStep = TimeStep::WaitCntpUrc;
-        _timeDeadlineMs = now + GSM::CNTP_SYNC_TIMEOUT_MS;
+        _timeDeadlineMs = now + Gsm::CNTP_SYNC_TIMEOUT_MS;
         return;
 
     case TimeStep::WaitCntpUrc:
@@ -509,7 +403,7 @@ void GSMController::serviceTimeSync(uint32_t now) {
             return;
         }
         if (_ntpUrcOk) {
-            advanceAfterOk(TimeStep::CclkAfterCntp, GSM::CCLK_TIMEOUT_MS);
+            advanceAfterOk(TimeStep::CclkAfterCntp, Gsm::CCLK_TIMEOUT_MS);
             return;
         }
         if ((int32_t)(now - _timeDeadlineMs) >= 0) {
@@ -521,9 +415,9 @@ void GSMController::serviceTimeSync(uint32_t now) {
     case TimeStep::CclkAfterCntp:
         if (!_timeCmdSent) {
             _cclkSnap[0] = '\0';
-            sendAt("AT+CCLK?", "CCLK", AwaitKind::OK, GSM::CCLK_TIMEOUT_MS);
+            sendAt("AT+CCLK?", "CCLK", AwaitKind::OK, Gsm::CCLK_TIMEOUT_MS);
             _timeCmdSent = true;
-            _timeDeadlineMs = now + GSM::CCLK_TIMEOUT_MS;
+            _timeDeadlineMs = now + Gsm::CCLK_TIMEOUT_MS;
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -532,15 +426,12 @@ void GSMController::serviceTimeSync(uint32_t now) {
         }
         if (!_awaitOk) return;
         {
-            time_t utc = 0;
-            int8_t tzH = 0;
-            bool tzOk = false;
-            if (_cclkSnap[0] == '\0' || !parseCclkToUtc(_cclkSnap, utc, &tzH, &tzOk) ||
-                !cclkEpochSane(utc)) {
+            gsm_time::CclkTime ct;
+            if (!readCclkSnapshot(_cclkSnap, ct)) {
                 failCntp("CCLK parse");
                 return;
             }
-            timeFinishOk_(utc, TimeSource::Cntp, tzOk, tzH);
+            timeFinishOk_(ct.utc, TimeSource::Cntp, ct.tzWholeHours, ct.tzHours);
         }
         return;
 

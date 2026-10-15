@@ -37,9 +37,15 @@
       add(line) {
         const el = this._getEl();
         const wasNearBottom = !!el && (el.scrollHeight - (el.scrollTop + el.clientHeight) < 40);
+        const maxLines = 300;
 
         this.entries.push(line);
-        this.text = this.text ? (this.text + '\n' + line) : String(line);
+        if (this.entries.length > maxLines) {
+          this.entries.splice(0, this.entries.length - maxLines);
+          this.text = this.entries.join('\n');
+        } else {
+          this.text = this.text ? (this.text + '\n' + line) : String(line);
+        }
 
         if (this.visible && el && wasNearBottom) {
           requestAnimationFrame(() => {

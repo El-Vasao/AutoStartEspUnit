@@ -252,6 +252,17 @@
         ctx.lastEventAt = Date.now();
         resetPanelFlags();
         setState('connected');
+        const bootstrapUrl = endpoints.bootstrap || '/bootstrap';
+        const apiJson = APP.api?.apiJson;
+        if (typeof apiJson === 'function') {
+          apiJson(bootstrapUrl, { timeoutMs: 4000 }).then((res) => {
+            if (res?.ok) {
+              try { Alpine.store('deviceStatus')?.applyBootstrap?.(res.data); } catch (e) {}
+              seedPanelFlagsFromStore();
+              notifyPanelReady();
+            }
+          }).catch(() => {});
+        }
       });
 
       const sseKinds = ['clocks', 'hardware', 'runtime', 'program', 'flash', 'mode', 'gsm', 'error', 'status'];
@@ -343,10 +354,12 @@
       ctx.staleTimer = setInterval(() => {
         try {
           if (!ctx.eventsStarted) return;
-          const silentMs = Date.now() - (ctx.lastEventAt || 0);
+          const silentMs = Date.now() - (ctx.lastEventAt || ctx.connectingSince || 0);
           const net = Alpine?.store?.('net');
           if (net) net.staleMs = Math.max(0, silentMs);
-          if (ctx.state === 'connected' && ctx.lastEventAt && silentMs > maxSilentMs) {
+          const hungConnecting = ctx.state === 'connecting' && silentMs > maxSilentMs;
+          const hungConnected = ctx.state === 'connected' && silentMs > maxSilentMs;
+          if ((hungConnecting || hungConnected) && silentMs > maxSilentMs) {
             setState('stale');
             try { ctx.source?.close?.(); } catch (e) {}
             ctx.source = null;
@@ -359,8 +372,17 @@
 
     document.addEventListener('visibilitychange', () => {
       try {
-        if (!document.hidden && ctx.eventsStarted && !ctx.source && !ctx.reconnectTimer) {
-          scheduleReconnect();
+        if (document.hidden) {
+          try { Alpine.store('deviceStatus')?._stopClockExtrapolation?.(); } catch (e) {}
+          return;
+        }
+        try { Alpine.store('deviceStatus')?.startClockExtrapolation?.(); } catch (e) {}
+        if (!ctx.eventsStarted) return;
+        const rs = ctx.source?.readyState;
+        if (!ctx.source || rs === EventSource.CLOSED || rs === EventSource.CONNECTING) {
+          try { ctx.source?.close?.(); } catch (e) {}
+          ctx.source = null;
+          if (!ctx.reconnectTimer) scheduleReconnect();
         }
       } catch (e) {}
     }, { passive: true });

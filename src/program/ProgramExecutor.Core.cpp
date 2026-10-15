@@ -2,11 +2,13 @@
 #include "program/ProgramExecutor.h"
 
 #include "core/Core.h"
-#include "gsm/GSMController.h"
+#include "gsm/GsmController.h"
 #include "io/RelayController.h"
 #include "core/ErrorManager.h"
 #include "io/HwMap.h"
 #include "common/Logger.h"
+#include "config/Config.h"
+#include "program/ProgramValidate.h"
 #include "program/internal/ProgramExecutorInternal.h"
 
 using namespace program_executor_internal;
@@ -61,7 +63,7 @@ uint32_t ProgramExecutor::getTimerRemainingMs() const {
 
 bool ProgramExecutor::start(uint8_t programId) {
     if (isInStarterStep()) {
-        logger.log("[ProgramExecutor] Start of program %u rejected: engine start in progress (program %u)\n",
+        logger.log(LogModule::ProgramExecutor, "Start of program %u rejected: engine start in progress (program %u)\n",
                    (unsigned)programId, (unsigned)_programId);
         return false;
     }
@@ -73,23 +75,26 @@ bool ProgramExecutor::start(uint8_t programId) {
     _localStepCount = 0;
     if (!config.loadProgramCompiled(programId, _localSteps, Limits::MAX_STEPS_PER_PROGRAM,
                                     &_localStepCount, _currentProgramName, sizeof(_currentProgramName))) {
-        logger.log("[ProgramExecutor] Program %u not found or invalid\n", programId);
+        logger.log(LogModule::ProgramExecutor, "Program %u not found or invalid\n", programId);
         _localActions = nullptr;
         _localSteps = nullptr;
         _localStepCount = 0;
         return false;
     }
     if (_localStepCount == 0) {
-        logger.log("[ProgramExecutor] Program %u is empty\n", programId);
+        logger.log(LogModule::ProgramExecutor, "Program %u is empty\n", programId);
         _localActions = nullptr;
         _localSteps = nullptr;
         return false;
     }
+    const uint16_t starterRelayId = config.getBase().vehicle.starter_relay_id;
     for (uint8_t i = 0; i < _localStepCount; i++) {
         _localActions[i] = _localSteps[i].action;
-        if (stepDrivesStarter(_localSteps[i], _localActions[i])) {
-            logger.log("[ProgramExecutor] Program %u rejected: step %u drives the starter relay\n",
-                       (unsigned)programId, (unsigned)(i + 1));
+        const program_validate::Issue issue =
+            program_validate::checkStep(_localActions[i], _localSteps[i].relay_id, starterRelayId);
+        if (issue != program_validate::Issue::None) {
+            logger.log(LogModule::ProgramExecutor, "Program %u rejected: step %u %s\n", (unsigned)programId,
+                       (unsigned)(i + 1), program_validate::issueToString(issue));
             _localActions = nullptr;
             _localSteps = nullptr;
             _localStepCount = 0;
@@ -104,7 +109,7 @@ bool ProgramExecutor::start(uint8_t programId) {
     _rt.phase = 0;
     _rt.startedAtMs = 0;
 
-    logger.log("[ProgramExecutor] Starting program %u: %s (steps=%u)\n",
+    logger.log(LogModule::ProgramExecutor, "Starting program %u: %s (steps=%u)\n",
                programId, _currentProgramName, (unsigned)_localStepCount);
 
     const CompiledStep& firstStep = _localSteps[0];
@@ -118,10 +123,10 @@ void ProgramExecutor::stop() {
         core.getGSM().abortModemServiceEpoch();
     }
     if (_running) {
-        logger.log("[ProgramExecutor] Stopping program id=%u name=%s at step=%u/%u\n",
+        logger.log(LogModule::ProgramExecutor, "Stopping program id=%u name=%s at step=%u/%u\n",
                    (unsigned)_programId, _currentProgramName, (unsigned)_currentStep, (unsigned)_localStepCount);
         if (isInStarterStep()) {
-            logger.log("[ProgramExecutor] Engine start interrupted, all relays OFF\n");
+            logger.log(LogModule::ProgramExecutor, "Engine start interrupted, all relays OFF\n");
             core.getRelay().allOff();
         }
         finish(false);
@@ -141,7 +146,7 @@ void ProgramExecutor::nextStep() {
 }
 
 void ProgramExecutor::finish(bool ok) {
-    logger.log("[ProgramExecutor] Program %s id=%u name=%s\n", ok ? "finished" : "stopped/failed",
+    logger.log(LogModule::ProgramExecutor, "Program %s id=%u name=%s\n", ok ? "finished" : "stopped/failed",
                (unsigned)_programId, _currentProgramName);
 
     const uint8_t pid = _programId;
@@ -157,25 +162,27 @@ void ProgramExecutor::finish(bool ok) {
     _localStepCount = 0;
 
     if (_lifecycleCb && pid != 0) {
-        _lifecycleCb(_lifecycleCtx, pid, ok);
+        _pendingLifecycle = true;
+        _pendingLifecycleId = pid;
+        _pendingLifecycleOk = ok;
     }
 }
 
+void ProgramExecutor::firePendingLifecycle() {
+    if (!_pendingLifecycle) return;
+    _pendingLifecycle = false;
+    if (_lifecycleCb) _lifecycleCb(_lifecycleCtx, _pendingLifecycleId, _pendingLifecycleOk);
+}
+
 void ProgramExecutor::abortWithError(const char* reason, ErrorCode code) {
-    logger.log("[ProgramExecutor] ⚠️ Program aborted: %s\n", reason ? reason : "-");
+    logger.log(LogModule::ProgramExecutor, "⚠️ Program aborted: %s\n", reason ? reason : "-");
     core.getRelay().allOff();
     finish(false);
     core.getErrorManager().set(code);
 }
 
 void ProgramExecutor::abortInvalidRef(const char* what, unsigned id) {
-    logger.log("[ProgramExecutor] Invalid %s %u\n", what, id);
+    logger.log(LogModule::ProgramExecutor, "Invalid %s %u\n", what, id);
     abortWithError("invalid channel reference", ErrorCode::PROGRAM_INVALID_REF);
-}
-
-bool ProgramExecutor::stepDrivesStarter(const CompiledStep& step, ActionId actionId) const {
-    if (!isRelayAction(actionId)) return false;
-    const uint16_t starterRelayId = config.getBase().vehicle.starter_relay_id;
-    return starterRelayId != 0 && step.relay_id == starterRelayId;
 }
 

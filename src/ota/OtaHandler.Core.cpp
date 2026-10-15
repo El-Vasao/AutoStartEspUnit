@@ -1,16 +1,16 @@
-// src/ota/OTAHandler.Core.cpp
-#include "ota/OTAHandler.h"
+// src/ota/OtaHandler.Core.cpp
+#include "ota/OtaHandler.h"
 
 #include "core/Core.h"
 #include "common/Logger.h"
 #include "common/Constants.h"
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 
 #include <Update.h>
 
-OTAHandler::OTAHandler() = default;
+OtaHandler::OtaHandler() = default;
 
-void OTAHandler::resetStreamState() {
+void OtaHandler::resetStreamState() {
     closeOutFile(false);
     _phase = Phase::Idle;
     _updateBegun = false;
@@ -28,7 +28,7 @@ void OTAHandler::resetStreamState() {
     _fileRemaining = 0;
 }
 
-bool OTAHandler::closeOutFile(bool commit) {
+bool OtaHandler::closeOutFile(bool commit) {
     if (!_outOpen) return true;
     bool ok = true;
     if (_outFile) {
@@ -38,9 +38,9 @@ bool OTAHandler::closeOutFile(bool commit) {
     return ok;
 }
 
-void OTAHandler::failStream(const char* why) {
+void OtaHandler::failStream(const char* why) {
     if (why && why[0]) {
-        logger.log("[OTAHandler] stream fail: %s\n", why);
+        logger.log(LogModule::OtaHandler, "stream fail: %s\n", why);
     }
     closeOutFile(false);
     if (_updateBegun) {
@@ -51,7 +51,7 @@ void OTAHandler::failStream(const char* why) {
     _streamDoneOk = false;
 }
 
-void OTAHandler::prepareHttpUploadSession() {
+void OtaHandler::prepareHttpUploadSession() {
     core.logHeapSnapshot("ota_wait_upload");
     resetStreamState();
     _phase = Phase::Header;
@@ -61,13 +61,13 @@ void OTAHandler::prepareHttpUploadSession() {
     _httpSessionStartMs = millis();
 }
 
-void OTAHandler::notifyHttpUploadComplete(bool ok) {
+void OtaHandler::notifyHttpUploadComplete(bool ok) {
     _httpUploadDone = true;
     _httpUploadOk = ok;
     core.logHeapSnapshot(ok ? "ota_upload_complete_ok" : "ota_upload_complete_fail");
 }
 
-void OTAHandler::onModeExit() {
+void OtaHandler::onModeExit() {
     if (_phase != Phase::Done && _phase != Phase::Idle) {
         streamAbort();
     }
@@ -79,32 +79,32 @@ void OTAHandler::onModeExit() {
     resetStreamState();
 }
 
-void OTAHandler::begin() {
-    logger.log("[OTAHandler] OTA update started (stream)\n");
+void OtaHandler::begin() {
+    logger.log(LogModule::OtaHandler, "OTA update started (stream)\n");
     core.logHeapSnapshot("ota_mode_begin");
     _ongoing = true;
     _lastLogTime = 0;
 }
 
-void OTAHandler::streamAbort() {
+void OtaHandler::streamAbort() {
     failStream("abort");
 }
 
-void OTAHandler::update() {
+void OtaHandler::update() {
     if (!_ongoing) return;
 
     const uint32_t now = millis();
 
     if (_awaitHttpUploadSession && !_httpUploadDone) {
         if ((uint32_t)(now - _httpSessionStartMs) >= Timing::OTA_HTTP_UPLOAD_IDLE_MS) {
-            logger.log("[OTAHandler] HTTP upload idle timeout (no final within %u ms), leaving OTA\n",
+            logger.log(LogModule::OtaHandler, "HTTP upload idle timeout (no final within %u ms), leaving OTA\n",
                        (unsigned)Timing::OTA_HTTP_UPLOAD_IDLE_MS);
             streamAbort();
             core.onOtaHttpUploadAwaitTimedOut();
             return;
         }
         if (now - _lastLogTime > Timing::OTA_WAIT_LOG_INTERVAL_MS) {
-            logger.log("[OTAHandler] Receiving firmware stream… (%u bytes so far)\n",
+            logger.log(LogModule::OtaHandler, "Receiving firmware stream… (%u bytes so far)\n",
                        (unsigned)_totalAccepted);
             _lastLogTime = now;
         }
@@ -112,7 +112,7 @@ void OTAHandler::update() {
     }
 
     if (_awaitHttpUploadSession && _httpUploadDone && !_httpUploadOk) {
-        logger.log("[OTAHandler] HTTP upload/stream failed, leaving OTA mode\n");
+        logger.log(LogModule::OtaHandler, "HTTP upload/stream failed, leaving OTA mode\n");
         core.logHeapSnapshot("ota_mode_upload_failed");
         streamAbort();
         core.exitOtaToNormalMode();
@@ -121,16 +121,15 @@ void OTAHandler::update() {
 
     if (_awaitHttpUploadSession && _httpUploadDone && _httpUploadOk) {
         if (_streamDoneOk || _phase == Phase::Done) {
-            logger.log("[OTAHandler] Stream OTA successful, rebooting…\n");
+            logger.log(LogModule::OtaHandler, "Stream OTA successful, rebooting…\n");
             core.logHeapSnapshot("ota_update_success");
             delay(Delays::REBOOT_HTTP_REPLY_MS);
             core.reboot();
         } else {
-            logger.log("[OTAHandler] Upload OK but stream not Done, rebooting…\n");
+            logger.log(LogModule::OtaHandler, "Upload OK but stream not Done, leaving OTA mode\n");
             core.logHeapSnapshot("ota_update_failed");
             streamAbort();
-            delay(Delays::REBOOT_HTTP_REPLY_MS);
-            core.reboot();
+            core.exitOtaToNormalMode();
         }
         _ongoing = false;
     }

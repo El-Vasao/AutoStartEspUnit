@@ -1,4 +1,4 @@
-// src/core/Core.BatterySaverManager.cpp
+// src/core/BatterySaverManager.cpp
 #include "core/BatterySaverManager.h"
 #include "core/TimeSyncManager.h"
 #include "config/Config.h"
@@ -8,7 +8,7 @@
 #include <time.h>
 
 /**
- * @file Core.BatterySaverManager.cpp
+ * @file BatterySaverManager.cpp
  * @brief Логика battery-saver (реакция на низкое напряжение, лимиты попыток/сутки).
  */
 
@@ -26,9 +26,9 @@ BatterySaverManager::BatterySaverManager(Config& config, SensorsController& sens
       _lowStartTime(0) {}
 
 void BatterySaverManager::begin() {
-    logger.log("[BatterySaverManager] begin\n");
+    logger.log(LogModule::BatterySaverManager, "begin\n");
     _runtimeEnabled = _config.getBase().battery_saver.enabled;
-    logger.log("[BatterySaverManager] Runtime enabled: %d\n", _runtimeEnabled);
+    logger.log(LogModule::BatterySaverManager, "Runtime enabled: %d\n", _runtimeEnabled);
 }
 
 void BatterySaverManager::update() {
@@ -75,7 +75,7 @@ void BatterySaverManager::update() {
         // Cranking itself sags the battery below the abort threshold — never abort the start step.
         if (bs.program_id != 0 && _executor.isRunning() &&
             _executor.getCurrentProgramId() == bs.program_id && !_executor.isInStarterStep()) {
-            logger.log("[BatterySaverManager] Abort program %u: voltage %.2f < abort %.2f\n",
+            logger.log(LogModule::BatterySaverManager, "Abort program %u: voltage %.2f < abort %.2f\n",
                        bs.program_id, voltage, abortThreshold);
             _executor.stop();
         }
@@ -101,7 +101,7 @@ void BatterySaverManager::update() {
             if (now - _lastAttempt < secToMs(bs.min_time_between_attempts_sec)) return;
 
             if (bs.program_id != 0) {
-                logger.log("[BatterySaverManager] Starting program %u due to low voltage\n", bs.program_id);
+                logger.log(LogModule::BatterySaverManager, "Starting program %u due to low voltage\n", bs.program_id);
                 if (_executor.start(bs.program_id)) _attemptsToday++;
                 _lastAttempt = now;
             }

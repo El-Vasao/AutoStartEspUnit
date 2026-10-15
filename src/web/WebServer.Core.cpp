@@ -112,10 +112,6 @@ bool WebServer::isSameAPConfig(const char* ssid, const char* pass) const {
     return WebServerRuntime::isSameAPConfig(*this, ssid, pass);
 }
 
-void WebServer::dumpAPConfig(const char* ssid, const char* pass, const char* context) const {
-    WebServerRuntime::dumpAPConfig(ssid, pass, context);
-}
-
 uint16_t WebServer::refreshSseClientCount() {
     return WebServerRuntime::refreshSseClientCount(*this);
 }
@@ -151,11 +147,6 @@ void WebServer::broadcastStatus() {
 void WebServer::broadcastStatusForce() {
     if (sseMutedDuringBoot()) return;
     WebServerRuntime::broadcastStatusForce(*this);
-}
-
-void WebServer::sendStatus_(size_t maxQueueDepth) {
-    if (sseMutedDuringBoot()) return;
-    WebServerRuntime::sendStatus(*this, maxQueueDepth);
 }
 
 void sseBroadcastLog(const char* message) {

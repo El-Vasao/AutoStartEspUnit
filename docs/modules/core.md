@@ -1,5 +1,17 @@
 # `core`: orchestration, режимы, периодика
 
+```mermaid
+stateDiagram-v2
+  [*] --> BOOT
+  BOOT --> NORMAL
+  BOOT --> SETUP_AP
+  BOOT --> EMERGENCY_AP
+  NORMAL --> NORMAL_SILENT
+  NORMAL_SILENT --> NORMAL
+  NORMAL --> OTA_UPDATE
+  OTA_UPDATE --> NORMAL
+```
+
 ## Роль
 `core` — единственная подсистема, которая “видит всю картину” и управляет жизненным циклом устройства.
 
@@ -10,7 +22,7 @@
 Основные файлы:
 - `include/core/Core.h`
 - `src/core/Core.Core.cpp`, `src/core/Core.Modes.cpp`, `src/core/Core.Timing.cpp`, `src/core/Core.Diagnostics.cpp`
-- `include/core/ModeManager.h`, `src/core/Core.ModeManager.cpp`
+- `include/core/ModeManager.h`, `src/core/ModeManager.cpp`
 - internal хранилище: `src/core/internal/CorePrivate.h`
 
 ## Обязанности `Core`

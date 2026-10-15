@@ -50,8 +50,6 @@ public:
     FlashCommitOp getLastFlashOp() const { return lastFlashOp_; }
     bool getLastFlashOk() const { return lastFlashOk_; }
     uint32_t getLastFlashMillis() const { return lastFlashMillis_; }
-    bool getLastFlashChanged() const { return lastFlashChanged_; }
-    uint16_t getLastFlashCrc() const { return lastFlashCrc_; }
 
     /// Perform at most one step; designed to be called from `Core::update()`.
     void tick(Core& core);

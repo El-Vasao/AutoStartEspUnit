@@ -81,6 +81,15 @@
         }
       },
 
+      _syncHardwareError() {
+        try {
+          const msg = this.activeErrorsText;
+          const toast = Alpine.store('uiToast');
+          if (msg && msg !== '—') toast?.setHardwareError?.(msg);
+          else toast?.clearHardwareError?.();
+        } catch (e) {}
+      },
+
       get gsmBadge() {
         try {
           return APP.uiMaps?.badges?.gsmState?.(this.gsmState) || { text: 'GSM: —', class: 'tone-neutral' };
@@ -202,7 +211,7 @@
             if (data.freeHeap !== undefined) this.freeHeap = data.freeHeap;
             {
               const next = normalizeActiveErrors(data.activeErrors);
-              if (next) this.activeErrors = next;
+              if (next) { this.activeErrors = next; this._syncHardwareError(); }
             }
             if (typeof data.epoch === 'number') this.epoch = data.epoch;
             if (data.synced !== undefined) this.timeSynced = !!data.synced;
@@ -247,7 +256,7 @@
             break;
           case 'error': {
             const next = normalizeActiveErrors(data.activeErrors);
-            if (next) this.activeErrors = next;
+            if (next) { this.activeErrors = next; this._syncHardwareError(); }
             break;
           }
           default:
@@ -326,7 +335,7 @@
         if (data.freeHeap !== undefined) this.freeHeap = data.freeHeap;
         {
           const next = normalizeActiveErrors(data.activeErrors);
-          if (next) this.activeErrors = next;
+          if (next) { this.activeErrors = next; this._syncHardwareError(); }
         }
         if (data && Object.prototype.hasOwnProperty.call(data, 'gsmState')) this.gsmState = data.gsmState || '—';
         if (data.flashCommit) this.flashCommit = data.flashCommit;

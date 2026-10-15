@@ -1,9 +1,8 @@
 /**
- * @file GsmInitFsm.cpp
+ * @file GsmController.Fsm.Init.cpp
  * @brief INIT под-FSM: PreCfun @ UART_BAUD, baud search, NV IPR, resume CREG/CGATT/SAPBR, modem policy.
  */
-#include "gsm/GSMController.h"
-#include "gsm/GsmInitFsm.h"
+#include "gsm/GsmController.h"
 
 #include "gsm/GsmInitPhase.h"
 #include "config/Config.h"
@@ -16,24 +15,16 @@
 
 namespace {
 inline const uint32_t* baudCandidates() {
-    return GSM::UART_BAUD_CANDIDATES;
+    return Gsm::UART_BAUD_CANDIDATES;
 }
 
 /// Порог эскалации hypothesis: PreCfun или baud search.
 inline uint32_t hypEscalateAfterMs(bool didPreCfun) {
-    return didPreCfun ? GSM::POST_CFUN_RETRY_MS : GSM::PRE_CFUN_AFTER_MS;
+    return didPreCfun ? Gsm::POST_CFUN_RETRY_MS : Gsm::PRE_CFUN_AFTER_MS;
 }
 } // namespace
 
-/// Public INIT entry used by GSMController::update (friend can call private handleInit).
-void GsmInitFsm::tick(GSMController& gsm) {
-    gsm.handleInit();
-}
-
-/**
- * INIT body — kept as GSMController method for private-field access; defined in GsmInitFsm TU.
- */
-void GSMController::handleInit() {
+void GsmController::handleInit() {
     const uint32_t now = millis();
 
     if (_waitFirstUntilMs != 0 && (int32_t)(now - _waitFirstUntilMs) < 0) return;
@@ -48,7 +39,7 @@ void GSMController::handleInit() {
 
     if (HypothesisWindow && !_verifiedModemContactSinceStop && _firstAtFallbackStartMs != 0) {
         const uint32_t elapsed = now - _firstAtFallbackStartMs;
-        if (!_didPreBaudSearchCfun && elapsed >= GSM::PRE_CFUN_AFTER_MS) {
+        if (!_didPreBaudSearchCfun && elapsed >= Gsm::PRE_CFUN_AFTER_MS) {
             _stack.at.reset();
             resetAwait();
             _lastCommandTime = 0;
@@ -56,27 +47,27 @@ void GSMController::handleInit() {
             _initPhase = GsmInitPhase::PreCfunSend;
             return;
         }
-        if (_didPreBaudSearchCfun && elapsed >= GSM::POST_CFUN_RETRY_MS) {
+        if (_didPreBaudSearchCfun && elapsed >= Gsm::POST_CFUN_RETRY_MS) {
             _stack.at.reset();
             resetAwait();
             _lastCommandTime = 0;
             _retryCount = 0;
             _baudSearchActive = true;
             _baudSearchRound = 1;
-            if (GSM::BAUD_SEARCH_MAX_PASSES > 0 &&
-                _baudSearchRound > GSM::BAUD_SEARCH_MAX_PASSES) {
-                changeState(GSMState::ERROR);
+            if (Gsm::BAUD_SEARCH_MAX_PASSES > 0 &&
+                _baudSearchRound > Gsm::BAUD_SEARCH_MAX_PASSES) {
+                changeState(GsmState::ERROR);
                 core.getErrorManager().set(ErrorCode::GSM_NO_RESPONSE);
-                logger.log("[GSMController] baud search: max rounds exceeded\n");
+                logger.log(LogModule::GsmController, "baud search: max rounds exceeded\n");
                 return;
             }
             // UART_BAUD уже пробовали в hypothesis — начинаем со следующего кандидата.
-            _baudSearchBaudIdx = (GsmInitFsm::kBaudCandidateCount > 1) ? 1 : 0;
-            logger.log("[GSMController] baud search round %u start (from %lu)\n",
+            _baudSearchBaudIdx = (Gsm::UART_BAUD_CANDIDATE_COUNT > 1) ? 1 : 0;
+            logger.log(LogModule::GsmController, "baud search round %u start (from %lu)\n",
                        (unsigned)_baudSearchRound,
                        (unsigned long)baudCandidates()[_baudSearchBaudIdx]);
             gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
-            _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
+            _baudSearchDeadlineMs = now + Gsm::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
             _initPhase = GsmInitPhase::BsSettle;
             return;
         }
@@ -87,17 +78,17 @@ void GSMController::handleInit() {
         case GsmInitPhase::BsCooldown: {
             if ((int32_t)(now - _baudCooldownUntilMs) < 0) return;
             _baudSearchRound++;
-            if (GSM::BAUD_SEARCH_MAX_PASSES > 0 &&
-                _baudSearchRound > GSM::BAUD_SEARCH_MAX_PASSES) {
-                changeState(GSMState::ERROR);
+            if (Gsm::BAUD_SEARCH_MAX_PASSES > 0 &&
+                _baudSearchRound > Gsm::BAUD_SEARCH_MAX_PASSES) {
+                changeState(GsmState::ERROR);
                 core.getErrorManager().set(ErrorCode::GSM_NO_RESPONSE);
-                logger.log("[GSMController] baud search: max rounds exceeded\n");
+                logger.log(LogModule::GsmController, "baud search: max rounds exceeded\n");
                 return;
             }
-            logger.log("[GSMController] baud search round %u start\n", (unsigned)_baudSearchRound);
+            logger.log(LogModule::GsmController, "baud search round %u start\n", (unsigned)_baudSearchRound);
             _baudSearchBaudIdx = 0;
-            gsmOpenUart(GSM::UART_BAUD);
-            _baudSearchDeadlineMs = now + GSM::UART_SETTLE_MS;
+            gsmOpenUart(Gsm::UART_BAUD);
+            _baudSearchDeadlineMs = now + Gsm::UART_SETTLE_MS;
             _initPhase = GsmInitPhase::BsSettle;
             return;
         }
@@ -108,7 +99,7 @@ void GSMController::handleInit() {
             return;
         case GsmInitPhase::BsSendAt:
             if (_lastCommandTime == 0) {
-                sendAt("AT", nullptr, AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+                if (!sendAt("AT", nullptr, AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS)) return;
                 _initPhase = GsmInitPhase::BsAwaitAt;
             }
             return;
@@ -117,15 +108,15 @@ void GSMController::handleInit() {
                 resetAwait();
                 clearResponse();
                 _baudSearchBaudIdx++;
-                if (_baudSearchBaudIdx >= GsmInitFsm::kBaudCandidateCount) {
-                    gsmOpenUart(GSM::UART_BAUD);
-                    _baudCooldownUntilMs = now + GSM::BAUD_SEARCH_ROUND_COOLDOWN_MS;
+                if (_baudSearchBaudIdx >= Gsm::UART_BAUD_CANDIDATE_COUNT) {
+                    gsmOpenUart(Gsm::UART_BAUD);
+                    _baudCooldownUntilMs = now + Gsm::BAUD_SEARCH_ROUND_COOLDOWN_MS;
                     _initPhase = GsmInitPhase::BsCooldown;
                     _lastCommandTime = 0;
                     return;
                 }
                 gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
-                _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
+                _baudSearchDeadlineMs = now + Gsm::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
                 _initPhase = GsmInitPhase::BsSettle;
                 _lastCommandTime = 0;
                 return;
@@ -133,7 +124,7 @@ void GSMController::handleInit() {
             if (_awaitOk) {
                 resetAwait();
                 clearResponse();
-                sendAt("AT+CGMI", "CGMI", AwaitKind::OK, GSM::MODEM_ID_VERIFY_TIMEOUT_MS);
+                sendAt("AT+CGMI", "CGMI", AwaitKind::OK, Gsm::MODEM_ID_VERIFY_TIMEOUT_MS);
                 _initPhase = GsmInitPhase::BsAwaitCgmi;
                 return;
             }
@@ -141,15 +132,15 @@ void GSMController::handleInit() {
                 resetAwait();
                 clearResponse();
                 _baudSearchBaudIdx++;
-                if (_baudSearchBaudIdx >= GsmInitFsm::kBaudCandidateCount) {
-                    gsmOpenUart(GSM::UART_BAUD);
-                    _baudCooldownUntilMs = now + GSM::BAUD_SEARCH_ROUND_COOLDOWN_MS;
+                if (_baudSearchBaudIdx >= Gsm::UART_BAUD_CANDIDATE_COUNT) {
+                    gsmOpenUart(Gsm::UART_BAUD);
+                    _baudCooldownUntilMs = now + Gsm::BAUD_SEARCH_ROUND_COOLDOWN_MS;
                     _initPhase = GsmInitPhase::BsCooldown;
                     _lastCommandTime = 0;
                     return;
                 }
                 gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
-                _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
+                _baudSearchDeadlineMs = now + Gsm::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
                 _initPhase = GsmInitPhase::BsSettle;
                 _lastCommandTime = 0;
             }
@@ -159,15 +150,15 @@ void GSMController::handleInit() {
                 resetAwait();
                 clearResponse();
                 _baudSearchBaudIdx++;
-                if (_baudSearchBaudIdx >= GsmInitFsm::kBaudCandidateCount) {
-                    gsmOpenUart(GSM::UART_BAUD);
-                    _baudCooldownUntilMs = now + GSM::BAUD_SEARCH_ROUND_COOLDOWN_MS;
+                if (_baudSearchBaudIdx >= Gsm::UART_BAUD_CANDIDATE_COUNT) {
+                    gsmOpenUart(Gsm::UART_BAUD);
+                    _baudCooldownUntilMs = now + Gsm::BAUD_SEARCH_ROUND_COOLDOWN_MS;
                     _initPhase = GsmInitPhase::BsCooldown;
                     _lastCommandTime = 0;
                     return;
                 }
                 gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
-                _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
+                _baudSearchDeadlineMs = now + Gsm::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
                 _initPhase = GsmInitPhase::BsSettle;
                 _lastCommandTime = 0;
                 return;
@@ -177,15 +168,15 @@ void GSMController::handleInit() {
                     resetAwait();
                     clearResponse();
                     _baudSearchBaudIdx++;
-                    if (_baudSearchBaudIdx >= GsmInitFsm::kBaudCandidateCount) {
-                        gsmOpenUart(GSM::UART_BAUD);
-                        _baudCooldownUntilMs = now + GSM::BAUD_SEARCH_ROUND_COOLDOWN_MS;
+                    if (_baudSearchBaudIdx >= Gsm::UART_BAUD_CANDIDATE_COUNT) {
+                        gsmOpenUart(Gsm::UART_BAUD);
+                        _baudCooldownUntilMs = now + Gsm::BAUD_SEARCH_ROUND_COOLDOWN_MS;
                         _initPhase = GsmInitPhase::BsCooldown;
                         _lastCommandTime = 0;
                         return;
                     }
                     gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
-                    _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
+                    _baudSearchDeadlineMs = now + Gsm::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
                     _initPhase = GsmInitPhase::BsSettle;
                     _lastCommandTime = 0;
                     return;
@@ -207,15 +198,15 @@ void GSMController::handleInit() {
                 resetAwait();
                 clearResponse();
                 _baudSearchBaudIdx++;
-                if (_baudSearchBaudIdx >= GsmInitFsm::kBaudCandidateCount) {
-                    gsmOpenUart(GSM::UART_BAUD);
-                    _baudCooldownUntilMs = now + GSM::BAUD_SEARCH_ROUND_COOLDOWN_MS;
+                if (_baudSearchBaudIdx >= Gsm::UART_BAUD_CANDIDATE_COUNT) {
+                    gsmOpenUart(Gsm::UART_BAUD);
+                    _baudCooldownUntilMs = now + Gsm::BAUD_SEARCH_ROUND_COOLDOWN_MS;
                     _initPhase = GsmInitPhase::BsCooldown;
                     _lastCommandTime = 0;
                     return;
                 }
                 gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
-                _baudSearchDeadlineMs = now + GSM::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
+                _baudSearchDeadlineMs = now + Gsm::BAUD_SEARCH_SETTLE_PER_BAUD_MS;
                 _initPhase = GsmInitPhase::BsSettle;
                 _lastCommandTime = 0;
             }
@@ -231,11 +222,11 @@ void GSMController::handleInit() {
     switch (_initPhase) {
     case GsmInitPhase::PreCfunSend:
         gsmNoteModemSoftReboot(true);
-        gsmOpenUart(GSM::UART_BAUD);
+        gsmOpenUart(Gsm::UART_BAUD);
         flushInput();
-        logger.log("[GSMController] PreCfun: AT+CFUN=1,1 @ %lu\n", (unsigned long)GSM::UART_BAUD);
-        sendAt("AT+CFUN=1,1", "CFUN", AwaitKind::NONE, 0);
-        _baudSearchDeadlineMs = now + GSM::POST_CFUN_QUIET_MS;
+        logger.log(LogModule::GsmController, "PreCfun: AT+CFUN=1,1 @ %lu\n", (unsigned long)Gsm::UART_BAUD);
+        (void)sendAt("AT+CFUN=1,1", "CFUN", AwaitKind::OK, Gsm::CFUN_ACCEPT_TIMEOUT_MS);
+        _baudSearchDeadlineMs = now + Gsm::POST_CFUN_QUIET_MS;
         _initPhase = GsmInitPhase::PreCfunQuiet;
         return;
     case GsmInitPhase::PreCfunQuiet:
@@ -254,7 +245,7 @@ void GSMController::handleInit() {
         if ((int32_t)(now - _hypNextAttemptMs) < 0) return;
         if (_lastCommandTime == 0) {
             if (_firstAtFallbackStartMs == 0) _firstAtFallbackStartMs = now;
-            sendAt("AT", nullptr, AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT", nullptr, AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             _initPhase = GsmInitPhase::HypAwaitAt;
         }
         return;
@@ -267,8 +258,8 @@ void GSMController::handleInit() {
                 (now - _firstAtFallbackStartMs) >= hypEscalateAfterMs(_didPreBaudSearchCfun)) {
                 return;
             }
-            if (_retryCount >= GSM::MAX_RETRIES) _retryCount = 0;
-            _hypNextAttemptMs = now + GSM::HYP_RETRY_GAP_MS;
+            if (_retryCount >= Gsm::MAX_RETRIES) _retryCount = 0;
+            _hypNextAttemptMs = now + Gsm::HYP_RETRY_GAP_MS;
             _lastCommandTime = 0;
             _initPhase = GsmInitPhase::HypSendAt;
             return;
@@ -276,7 +267,7 @@ void GSMController::handleInit() {
         if (_awaitOk) {
             resetAwait();
             clearResponse();
-            sendAt("AT+CGMI", "CGMI", AwaitKind::OK, GSM::MODEM_ID_VERIFY_TIMEOUT_MS);
+            sendAt("AT+CGMI", "CGMI", AwaitKind::OK, Gsm::MODEM_ID_VERIFY_TIMEOUT_MS);
             _initPhase = GsmInitPhase::HypAwaitCgmi;
             return;
         }
@@ -288,8 +279,8 @@ void GSMController::handleInit() {
                 (now - _firstAtFallbackStartMs) >= hypEscalateAfterMs(_didPreBaudSearchCfun)) {
                 return;
             }
-            if (_retryCount >= GSM::MAX_RETRIES) _retryCount = 0;
-            _hypNextAttemptMs = now + GSM::HYP_RETRY_GAP_MS;
+            if (_retryCount >= Gsm::MAX_RETRIES) _retryCount = 0;
+            _hypNextAttemptMs = now + Gsm::HYP_RETRY_GAP_MS;
             _lastCommandTime = 0;
             _initPhase = GsmInitPhase::HypSendAt;
         }
@@ -303,8 +294,8 @@ void GSMController::handleInit() {
                 (now - _firstAtFallbackStartMs) >= hypEscalateAfterMs(_didPreBaudSearchCfun)) {
                 return;
             }
-            if (_retryCount >= GSM::MAX_RETRIES) _retryCount = 0;
-            _hypNextAttemptMs = now + GSM::HYP_RETRY_GAP_MS;
+            if (_retryCount >= Gsm::MAX_RETRIES) _retryCount = 0;
+            _hypNextAttemptMs = now + Gsm::HYP_RETRY_GAP_MS;
             _lastCommandTime = 0;
             _initPhase = GsmInitPhase::HypSendAt;
             return;
@@ -318,8 +309,8 @@ void GSMController::handleInit() {
                     (now - _firstAtFallbackStartMs) >= hypEscalateAfterMs(_didPreBaudSearchCfun)) {
                     return;
                 }
-                if (_retryCount >= GSM::MAX_RETRIES) _retryCount = 0;
-                _hypNextAttemptMs = now + GSM::HYP_RETRY_GAP_MS;
+                if (_retryCount >= Gsm::MAX_RETRIES) _retryCount = 0;
+                _hypNextAttemptMs = now + Gsm::HYP_RETRY_GAP_MS;
                 _lastCommandTime = 0;
                 _initPhase = GsmInitPhase::HypSendAt;
                 return;
@@ -345,15 +336,15 @@ void GSMController::handleInit() {
                 (now - _firstAtFallbackStartMs) >= hypEscalateAfterMs(_didPreBaudSearchCfun)) {
                 return;
             }
-            if (_retryCount >= GSM::MAX_RETRIES) _retryCount = 0;
-            _hypNextAttemptMs = now + GSM::HYP_RETRY_GAP_MS;
+            if (_retryCount >= Gsm::MAX_RETRIES) _retryCount = 0;
+            _hypNextAttemptMs = now + Gsm::HYP_RETRY_GAP_MS;
             _lastCommandTime = 0;
             _initPhase = GsmInitPhase::HypSendAt;
         }
         return;
     case GsmInitPhase::EarlyAteSend:
         if (_lastCommandTime == 0) {
-            sendAt("ATE1", "ECHO", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("ATE1", "ECHO", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             _initPhase = GsmInitPhase::EarlyAteWait;
         }
         return;
@@ -374,7 +365,7 @@ void GSMController::handleInit() {
         return;
     case GsmInitPhase::DIprQ:
         if (!_didIprNvProbeThisCycle && _lastCommandTime == 0) {
-            sendAt("AT+IPR?", "IPRQ", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT+IPR?", "IPRQ", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             _initPhase = GsmInitPhase::DIprWait;
             return;
         }
@@ -397,10 +388,10 @@ void GSMController::handleInit() {
             resetAwait();
             clearResponse();
             _didIprNvProbeThisCycle = true;
-            if (!parsed || iprNv != GSM::UART_BAUD) {
+            if (!parsed || iprNv != Gsm::UART_BAUD) {
                 char cmd[40];
-                snprintf(cmd, sizeof(cmd), "AT+IPR=%lu", (unsigned long)GSM::UART_BAUD);
-                sendAt(cmd, "IPRST", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+                snprintf(cmd, sizeof(cmd), "AT+IPR=%lu", (unsigned long)Gsm::UART_BAUD);
+                sendAt(cmd, "IPRST", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
                 _initPhase = GsmInitPhase::DLockWaitIpr;
             } else {
                 _lastCommandTime = 0;
@@ -427,7 +418,7 @@ void GSMController::handleInit() {
         if (_awaitOk) {
             resetAwait();
             clearResponse();
-            sendAt("AT&W", "NVW", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT&W", "NVW", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             _initPhase = GsmInitPhase::DLockWaitW;
         }
         return;
@@ -443,10 +434,10 @@ void GSMController::handleInit() {
             resetAwait();
             clearResponse();
             _stack.uart.flushTx();
-            gsmOpenUart(GSM::UART_BAUD);
+            gsmOpenUart(Gsm::UART_BAUD);
             _stack.at.reset();
             _lastCommandTime = 0;
-            sendAt("AT", nullptr, AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT", nullptr, AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             _initPhase = GsmInitPhase::DLockAwaitVerifyAt;
         }
         return;
@@ -467,7 +458,7 @@ void GSMController::handleInit() {
         return;
     case GsmInitPhase::CCreg:
         if (_lastCommandTime == 0) {
-            sendAt("AT+CREG?", nullptr, AwaitKind::CREG, GSM::REG_TIMEOUT_MS);
+            sendAt("AT+CREG?", nullptr, AwaitKind::CREG, Gsm::REG_TIMEOUT_MS);
             _initPhase = GsmInitPhase::CCregWait;
         }
         return;
@@ -475,7 +466,7 @@ void GSMController::handleInit() {
         if (_awaitError) {
             resetAwait();
             clearResponse();
-            _postResumeTarget = GSMState::REGISTERING;
+            _postResumeTarget = GsmState::REGISTERING;
             _lastCommandTime = 0;
             _initPhase = GsmInitPhase::ModAte;
             return;
@@ -491,7 +482,7 @@ void GSMController::handleInit() {
         return;
     case GsmInitPhase::CCgatt:
         if (_lastCommandTime == 0) {
-            sendAt("AT+CGATT?", nullptr, AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT+CGATT?", nullptr, AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             _initPhase = GsmInitPhase::CCgattWait;
         }
         return;
@@ -507,12 +498,12 @@ void GSMController::handleInit() {
         if (_awaitError || awaitTimedOut(now)) {
             resetAwait();
             clearResponse();
-            if (_initCgattBusyRetries < GSM::INIT_CGATT_RETRY_MAX) {
+            if (_initCgattBusyRetries < Gsm::INIT_CGATT_RETRY_MAX) {
                 _initCgattBusyRetries++;
-                logger.log("[GSMController] INIT AT+CGATT? fail (retry %u/%u), wait %lums\n",
+                logger.log(LogModule::GsmController, "INIT AT+CGATT? fail (retry %u/%u), wait %lums\n",
                            (unsigned)_initCgattBusyRetries,
-                           (unsigned)GSM::INIT_CGATT_RETRY_MAX,
-                           (unsigned long)GSM::INIT_CGATT_RETRY_DELAY_MS);
+                           (unsigned)Gsm::INIT_CGATT_RETRY_MAX,
+                           (unsigned long)Gsm::INIT_CGATT_RETRY_DELAY_MS);
                 _lastCommandTime = now;
                 _initPhase = GsmInitPhase::CCgattBackoff;
                 return;
@@ -522,7 +513,7 @@ void GSMController::handleInit() {
         }
         return;
     case GsmInitPhase::CCgattBackoff:
-        if ((int32_t)(now - _lastCommandTime) < (int32_t)GSM::INIT_CGATT_RETRY_DELAY_MS) {
+        if ((int32_t)(now - _lastCommandTime) < (int32_t)Gsm::INIT_CGATT_RETRY_DELAY_MS) {
             return;
         }
         _lastCommandTime = 0;
@@ -531,7 +522,7 @@ void GSMController::handleInit() {
     case GsmInitPhase::CSapbr:
         if (_lastCommandTime == 0) {
             _resumeSapbrHadIp = false;
-            sendAt("AT+SAPBR=2,1", nullptr, AwaitKind::IP, GSM::GET_IP_TIMEOUT_MS);
+            sendAt("AT+SAPBR=2,1", nullptr, AwaitKind::IP, Gsm::GET_IP_TIMEOUT_MS);
             _initPhase = GsmInitPhase::CSapbrWait;
         }
         return;
@@ -540,9 +531,9 @@ void GSMController::handleInit() {
             _resumeSapbrHadIp = false;
             resetAwait();
             clearResponse();
-            _postResumeTarget = GSMState::REGISTERING;
+            _postResumeTarget = GsmState::REGISTERING;
             if ((_cregStat == 1 || _cregStat == 5)) {
-                _postResumeTarget = GSMState::GPRS_SETUP;
+                _postResumeTarget = GsmState::GPRS_SETUP;
             }
             _lastCommandTime = 0;
             _initPhase = GsmInitPhase::ModAte;
@@ -555,11 +546,11 @@ void GSMController::handleInit() {
             const bool regOk = (_cregStat == 1 || _cregStat == 5);
             // Warm SAPBR IP alone is not enough: Contype/APN may differ from config (SIM/APN change).
             if (regOk && _resumeSapbrHadIp && apnMatchesApplied_()) {
-                _postResumeTarget = GSMState::READY;
+                _postResumeTarget = GsmState::READY;
             } else if (regOk) {
-                _postResumeTarget = GSMState::GPRS_SETUP;
+                _postResumeTarget = GsmState::GPRS_SETUP;
             } else {
-                _postResumeTarget = GSMState::REGISTERING;
+                _postResumeTarget = GsmState::REGISTERING;
             }
             _lastCommandTime = 0;
             _initPhase = GsmInitPhase::ModAte;
@@ -568,9 +559,9 @@ void GSMController::handleInit() {
     case GsmInitPhase::ModAte:
         if (_lastCommandTime == 0) {
 #if defined(GSM_MODEM_ECHO) && (GSM_MODEM_ECHO != 0)
-            sendAt("ATE1", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("ATE1", "CFG", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
 #else
-            sendAt("ATE0", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("ATE0", "CFG", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
 #endif
             return;
         }
@@ -588,7 +579,7 @@ void GSMController::handleInit() {
         return;
     case GsmInitPhase::ModCmee:
         if (_lastCommandTime == 0) {
-            sendAt("AT+CMEE=2", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT+CMEE=2", "CFG", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -606,7 +597,7 @@ void GSMController::handleInit() {
     case GsmInitPhase::ModClts:
         if (_lastCommandTime == 0) {
             // Network time sync (NITZ) → modem CCLK; best-effort fallback if CNTP fails later.
-            sendAt("AT+CLTS=1", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT+CLTS=1", "CFG", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -623,7 +614,7 @@ void GSMController::handleInit() {
         return;
     case GsmInitPhase::ModCreg2:
         if (_lastCommandTime == 0) {
-            sendAt("AT+CREG=2", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT+CREG=2", "CFG", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -640,7 +631,7 @@ void GSMController::handleInit() {
         return;
     case GsmInitPhase::ModClip:
         if (_lastCommandTime == 0) {
-            sendAt("AT+CLIP=1", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT+CLIP=1", "CFG", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -658,7 +649,7 @@ void GSMController::handleInit() {
     case GsmInitPhase::ModDdet:
         if (_lastCommandTime == 0) {
             // SIM800: enable DTMF detection URCs (+DTMF:).
-            sendAt("AT+DDET=1", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT+DDET=1", "CFG", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -675,7 +666,7 @@ void GSMController::handleInit() {
         return;
     case GsmInitPhase::ModCmgf:
         if (_lastCommandTime == 0) {
-            sendAt("AT+CMGF=1", "CFG", AwaitKind::OK, GSM::AT_OK_TIMEOUT_MS);
+            sendAt("AT+CMGF=1", "CFG", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
@@ -691,15 +682,15 @@ void GSMController::handleInit() {
         {
             const char* t = "UNKNOWN";
             switch (_postResumeTarget) {
-            case GSMState::READY: t = "READY"; break;
-            case GSMState::GPRS_SETUP: t = "GPRS_SETUP"; break;
-            case GSMState::REGISTERING: t = "REGISTERING"; break;
+            case GsmState::READY: t = "READY"; break;
+            case GsmState::GPRS_SETUP: t = "GPRS_SETUP"; break;
+            case GsmState::REGISTERING: t = "REGISTERING"; break;
             default: break;
             }
-            logger.log("[GSMController] INIT OK -> %s\n", t);
+            logger.log(LogModule::GsmController, "INIT OK -> %s\n", t);
         }
         changeState(_postResumeTarget);
-        if (_postResumeTarget == GSMState::READY) {
+        if (_postResumeTarget == GsmState::READY) {
             updateSignalQuality();
         }
         return;

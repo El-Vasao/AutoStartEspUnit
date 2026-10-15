@@ -2,14 +2,15 @@
 #include "core/Core.h"
 #include "common/EspHal.h"
 #include "core/internal/CorePrivate.h"
-#include "core/internal/CoreBootHelpers.h"
 
 #include "config/Config.h"
+#include "config/VehicleRules.h"
+#include "io/HwMap.h"
 #include "common/Logger.h"
 #include "common/Pins.h"
 #include "common/Utils.h"
 #include "common/ErrorCodes.h"
-#include "fs/FSManager.h"
+#include "fs/FsManager.h"
 #include "web/WebServer.h"
 
 #include <WiFi.h>
@@ -29,7 +30,6 @@ CoreMode Core::getMode() const {
 }
 
 void Core::startOTAUpdate() {
-    // Legacy /ota/start: stream OTA completes on upload final; keep as no-op enter if already streaming.
     CorePrivate& impl = *_impl;
     logHeapSnapshot("ota_start_requested");
     if (impl.modeManager.getCurrentMode() == CoreMode::OTA_UPDATE) {
@@ -39,8 +39,7 @@ void Core::startOTAUpdate() {
         impl.modeManager.switchMode(CoreMode::OTA_UPDATE);
         return;
     }
-    // No staged file path anymore — require an in-flight or completed stream session.
-    logger.log("[Core] /ota/start ignored: use POST /upload stream OTA\n");
+    logger.log(LogModule::Core, "OTA enter ignored: stream via POST /upload\n");
 }
 
 void Core::onOtaHttpUploadStreamOpenedFromWeb() {
@@ -78,7 +77,7 @@ void Core::handleBoot() {
     // `ensureProgramIndex` + flash — иначе не успеваем покормить WDT (rst cause 4).
     switch (impl.bootStage) {
             case CorePrivate::BootStage::InitWiFiOff: {
-                logger.log("[Core] BOOT: InitWiFiOff\n");
+                logger.log(LogModule::Core, "BOOT: InitWiFiOff\n");
                 WiFi.persistent(false);
                 WiFi.disconnect(true);
                 WiFi.mode(WIFI_OFF);
@@ -86,10 +85,10 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::MountFS: {
-                logger.log("[Core] BOOT: MountFS\n");
+                logger.log(LogModule::Core, "BOOT: MountFS\n");
                 if (!fileSystem.begin()) {
                     impl.errorManager.set(ErrorCode::FS_MOUNT_FAIL);
-                    logger.log("[Core] FATAL: Cannot mount LittleFS. Will reboot on next tick...\n");
+                    logger.log(LogModule::Core, "FATAL: Cannot mount LittleFS. Will reboot on next tick...\n");
                     impl.bootStage = CorePrivate::BootStage::Done;
                     impl.pendingHardRestart = true;
                     espHalFeedWdt();
@@ -131,14 +130,14 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::LoadOrCreateConfig: {
-                logger.log("[Core] BOOT: LoadOrCreateConfig\n");
+                logger.log(LogModule::Core, "BOOT: LoadOrCreateConfig\n");
                 const ConfigLoadOutcome lo = config.loadWithOutcome();
                 if (lo == ConfigLoadOutcome::OkAfterFactoryDefaultsWrittenRebootRecommended) {
                     // Preserve why load failed before factory defaults (RTC survives soft reboot).
                     if (config.lastLoadError() != ErrorCode::NONE) {
                         impl.errorManager.set(config.lastLoadError());
                     }
-                    logger.log("[Core] Factory defaults written; rebooting on next tick\n");
+                    logger.log(LogModule::Core, "Factory defaults written; rebooting on next tick\n");
                     impl.bootConfigLoaded = true;
                     impl.bootStage = CorePrivate::BootStage::Done;
                     impl.pendingHardRestart = true;
@@ -150,18 +149,22 @@ void Core::handleBoot() {
                                                  ? config.lastLoadError()
                                                  : ErrorCode::CONFIG_MISSING;
                     impl.errorManager.set(cfgErr);
-                    logger.log("[Core] Config load and factory reset failed. Entering EMERGENCY_AP.\n");
+                    logger.log(LogModule::Core, "Config load and factory reset failed. Entering EMERGENCY_AP.\n");
                     impl.bootTargetMode = CoreMode::EMERGENCY_AP;
                     impl.bootStage = CorePrivate::BootStage::SelectInitialMode;
                     break;
                 }
                 impl.bootConfigLoaded = true;
+                if (const char* r = vehicle_rules::checkBlockInput(config.getBase())) {
+                    logger.log(LogModule::Core, "start block input: %s — engine start stays blocked\n", r);
+                    impl.errorManager.set(ErrorCode::START_BLOCKED);
+                }
                 espHalFeedWdt();
                 impl.bootStage = CorePrivate::BootStage::EnsureProgramIndex;
                 break;
             }
             case CorePrivate::BootStage::EnsureProgramIndex: {
-                logger.log("[Core] BOOT: EnsureProgramIndex\n");
+                logger.log(LogModule::Core, "BOOT: EnsureProgramIndex\n");
                 if (impl.bootConfigLoaded) {
                     (void)config.ensureProgramIndex();
                 }
@@ -170,15 +173,15 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::InitHardware: {
-                logger.log("[Core] BOOT: InitHardware\n");
+                logger.log(LogModule::Core, "BOOT: InitHardware\n");
                 // Validate pin maps.
                 const size_t inN = sizeof(Pin::INPUT_IDS) / sizeof(Pin::INPUT_IDS[0]);
                 const size_t rlN = sizeof(Pin::RELAY_IDS) / sizeof(Pin::RELAY_IDS[0]);
-                impl.bootHwMapBad = coreBoot_pinArrayHasZeroOrDuplicates(Pin::INPUT_IDS, inN) ||
-                                    coreBoot_pinArrayHasZeroOrDuplicates(Pin::RELAY_IDS, rlN);
+                impl.bootHwMapBad = HwMap::idsHaveZeroOrDuplicates(Pin::INPUT_IDS, inN) ||
+                                    HwMap::idsHaveZeroOrDuplicates(Pin::RELAY_IDS, rlN);
                 if (impl.bootHwMapBad) {
                     impl.errorManager.set(ErrorCode::HW_MAP_INVALID);
-                    logger.log("[Core] FATAL: Hardware map invalid (zero/duplicates in INPUT_IDS/RELAY_IDS)\n");
+                    logger.log(LogModule::Core, "FATAL: Hardware map invalid (zero/duplicates in INPUT_IDS/RELAY_IDS)\n");
                 }
 
                 impl.sensors.begin();
@@ -190,9 +193,9 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::InitManagers: {
-                logger.log("[Core] BOOT: InitManagers\n");
+                logger.log(LogModule::Core, "BOOT: InitManagers\n");
                 impl.mqtt.setAppPorts(&impl.ports);
-                impl.programExecutor.setLifecycleCallback(&MQTTClient::onProgramLifecycleThunk, &impl.mqtt);
+                impl.programExecutor.setLifecycleCallback(&MqttClient::onProgramLifecycleThunk, &impl.mqtt);
                 impl.cellular.init(impl.gsm, impl.mqtt, webServer, impl.timeSyncManager);
                 impl.triggerManager.begin();
                 impl.batterySaverManager.begin();
@@ -205,7 +208,7 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::SelectInitialMode: {
-                logger.log("[Core] BOOT: SelectInitialMode\n");
+                logger.log(LogModule::Core, "BOOT: SelectInitialMode\n");
                 CoreMode initialMode = CoreMode::NORMAL;
                 if (impl.bootTargetMode == CoreMode::EMERGENCY_AP) {
                     initialMode = CoreMode::EMERGENCY_AP;
@@ -219,7 +222,7 @@ void Core::handleBoot() {
 
                 impl.modeManager.switchMode(initialMode);
                 impl.bootStage = CorePrivate::BootStage::Done;
-                logger.log("[Core] Boot finished, initial mode=%s\n", getModeName());
+                logger.log(LogModule::Core, "Boot finished, initial mode=%s\n", getModeName());
                 logHeapSnapshot("boot_done");
                 break;
             }
@@ -266,7 +269,7 @@ void Core::handleNormal() {
     {
         uint8_t pid = 0;
         if (impl.gsm.takePendingProgramStart(pid)) {
-            logger.log("[Core] inbound DTMF start program %u\n", (unsigned)pid);
+            logger.log(LogModule::Core, "inbound DTMF start program %u\n", (unsigned)pid);
             (void)impl.programExecutor.start(pid);
         }
     }
@@ -277,7 +280,7 @@ void Core::handleNormal() {
             const uint32_t idleMs = millis() - webServer.lastUiActivityMs();
             const uint32_t timeoutMs = secToMs((uint32_t)wcfg.ap_timeout_sec);
             if (idleMs >= timeoutMs) {
-                logger.log("[Core] AP timeout reached (%us), switching to NORMAL_SILENT\n",
+                logger.log(LogModule::Core, "AP timeout reached (%us), switching to NORMAL_SILENT\n",
                            (unsigned)wcfg.ap_timeout_sec);
                 impl.modeManager.switchMode(CoreMode::NORMAL_SILENT);
             }
@@ -311,7 +314,7 @@ void Core::handleNormalSilent() {
     {
         uint8_t pid = 0;
         if (impl.gsm.takePendingProgramStart(pid)) {
-            logger.log("[Core] inbound DTMF start program %u\n", (unsigned)pid);
+            logger.log(LogModule::Core, "inbound DTMF start program %u\n", (unsigned)pid);
             (void)impl.programExecutor.start(pid);
         }
     }

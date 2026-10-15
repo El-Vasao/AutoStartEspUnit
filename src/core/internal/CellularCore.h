@@ -4,8 +4,8 @@
 
 #include "common/Constants.h"
 
-class GSMController;
-class MQTTClient;
+class GsmController;
+class MqttClient;
 class WebServer;
 class TimeSyncManager;
 
@@ -28,7 +28,7 @@ class TimeSyncManager;
 class CellularCore {
 public:
     CellularCore() = default;
-    void init(GSMController& gsm, MQTTClient& mqtt, WebServer& web, TimeSyncManager& timeSync);
+    void init(GsmController& gsm, MqttClient& mqtt, WebServer& web, TimeSyncManager& timeSync);
 
     void service();
     void suspend();
@@ -37,8 +37,8 @@ private:
     /// Drain MQTT disconnect + CIP idle. Returns false if still busy (retry next service).
     bool drainMqttDisconnect_();
 
-    GSMController* _gsm{nullptr};
-    MQTTClient* _mqtt{nullptr};
+    GsmController* _gsm{nullptr};
+    MqttClient* _mqtt{nullptr};
     WebServer* _web{nullptr};
     TimeSyncManager* _timeSync{nullptr};
     bool _gsmStarted{false};

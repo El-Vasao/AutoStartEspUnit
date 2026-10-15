@@ -128,15 +128,16 @@ Tick Machine::tick(const Sample& s) {
         case Phase::Settling: {
             const uint32_t elapsed = now - phaseStartMs_;
             if (elapsed < p_.settleMs) return t;
+            const bool windowReady = s.voltageValid && s.voltageWindowFull;
             const bool timedOut = elapsed >= p_.settleMs + p_.windowExtraMs;
-            if (!(s.voltageValid && s.voltageWindowFull) && !timedOut) return t;
-            if (s.voltageValid && s.voltage >= p_.runningVoltage) {
+            if (!windowReady && !timedOut) return t;
+            if (windowReady && s.voltage >= p_.runningVoltage) {
                 phase_ = Phase::Idle;
                 t.outcome = Outcome::Success;
                 endAttempt(StopReason::VoltageOk, s, t);
                 return t;
             }
-            endAttempt(s.voltageValid && s.voltageWindowFull ? StopReason::VoltageLow : StopReason::NoVoltage, s, t);
+            endAttempt(windowReady ? StopReason::VoltageLow : StopReason::NoVoltage, s, t);
             failOrRest(s, t);
             return t;
         }
