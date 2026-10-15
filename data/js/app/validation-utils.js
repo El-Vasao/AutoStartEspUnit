@@ -45,7 +45,10 @@
       if (kw === 'minLength') return `Не короче ${params.limit}`;
       if (kw === 'minimum') return `Не меньше ${params.limit}`;
       if (kw === 'maximum') return `Не больше ${params.limit}`;
-      if (kw === 'pattern') return 'Неверный формат';
+      if (kw === 'pattern') {
+        if (String(e?.instancePath || '').endsWith('/message')) return 'Только латиница (ASCII)';
+        return 'Неверный формат';
+      }
       if (kw === 'type') return 'Неверное значение';
       if (kw === 'enum') return 'Недопустимое значение';
       if (kw === 'additionalProperties') return 'Лишнее поле';

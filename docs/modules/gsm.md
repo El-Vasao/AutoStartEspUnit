@@ -94,7 +94,7 @@ stateDiagram-v2
 
 Файлы: `src/gsm/GsmController.Voice.cpp`, URC в `GsmController.Urc.cpp`, init `AT+CLIP=1` / `AT+DDET=1` / `AT+CMGF=1`.
 
-- **Outbound:** `requestCallOwner(timeoutMs)` → `ATDphone;`, wait, `ATH`. `requestSmsOwner(text)` → `AT+CMGS` + body + Ctrl+Z.
+- **Outbound:** `requestCallOwner()` → `ATDphone;`, ring until `+CLCC` stat 0 or 25 s, then `ATH`. `requestSmsOwner(text)` → `AT+CMGS` + body + Ctrl+Z.
 - **Inbound:** `RING`/`+CLIP` → match `owner_phone` (digit suffix) **и** непустой `dtmf_password` → drain MQTT → `ATA` → DTMF password → program id digits + `#` → `ATH` → `takePendingProgramStart` → `ProgramExecutor::start`.
 - CLIP/DTMF mismatch или таймаут → hangup, без старта программы.
 - После звонка GPRS/MQTT обычно переподключается (ожидаемо).

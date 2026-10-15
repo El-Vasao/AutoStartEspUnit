@@ -119,6 +119,15 @@ test('unknown program action fails program.schema.json', () => {
   }
 });
 
+test('SMS message accepts printable ASCII and rejects other letters', () => {
+  const ajv = createAjv();
+  const validate = ajv.compile(readDataJson('validation/program.schema.json'));
+  const step = (message) => ({ id: 1, name: 'x', steps: [{ step: 1, action: 'SMS_OWNER', message }] });
+  assert.equal(validate(step('Engine started')), true);
+  assert.equal(validate(step('')), true);
+  assert.equal(validate(step('Двигатель')), false);
+});
+
 test('program editor action params are declared and fit program.schema.json', () => {
   const ui = readDataJson('ui/program-steps.ui.json').programSteps;
   const stepProps = readDataJson('validation/program.schema.json').properties.steps.items.properties;

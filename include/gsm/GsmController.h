@@ -160,8 +160,9 @@ public:
     /// Program preempt / stop: hang up or cancel epoch so ATD/CMGS is not orphaned.
     void abortModemServiceEpoch();
 
-    /// Outbound program actions (owner_phone from config). Returns false if rejected.
-    bool requestCallOwner(uint32_t timeoutMs);
+    /// Outbound ring to owner_phone. Rings until answer or `Gsm::VOICE_DEFAULT_RING_MS`, then ATH.
+    /// Returns false if rejected.
+    bool requestCallOwner();
     bool requestSmsOwner(const char* message);
     /// Consumes outbound completion. Returns false if not ready.
     bool takeVoiceOpResult(bool& okOut);
@@ -309,6 +310,9 @@ private:
     bool _voiceResultOk{false};
     bool _voicePromptSeen{false};
     bool _voiceNoCarrier{false};
+    /// DialRing: +CLCC stat 0 — remote picked up.
+    bool _voiceAnswered{false};
+    uint32_t _voiceNextClccMs{0};
     bool _voicePendingProgramValid{false};
     uint8_t _voicePendingProgramId{0};
     /// Inbound: RING seen, waiting for matching +CLIP before starting epoch.

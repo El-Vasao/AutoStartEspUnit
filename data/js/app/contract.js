@@ -26,7 +26,7 @@
       /** Stream OTA package: firmware + LittleFS tail in one POST; device reboots after it. */
       upload: '/upload',
 
-      /** POST body: op=thermostat|batterysaver|input|trigger_input_id|trigger_temp_id (+ id/enabled) */
+      /** POST body: op=thermostat|batterysaver|input_id|trigger_input_id|trigger_temp_id (+ id/enabled) */
       runtime: '/runtime',
     },
 

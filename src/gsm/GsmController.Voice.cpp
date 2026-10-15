@@ -28,6 +28,8 @@ void GsmController::voiceReset_() {
     _voiceHangupDeadlineMs = 0;
     _voicePromptSeen = false;
     _voiceNoCarrier = false;
+    _voiceAnswered = false;
+    _voiceNextClccMs = 0;
 }
 
 void GsmController::voiceFinish_(bool ok) {
@@ -61,7 +63,7 @@ void GsmController::abortModemServiceEpoch() {
     }
 }
 
-bool GsmController::requestCallOwner(uint32_t timeoutMs) {
+bool GsmController::requestCallOwner() {
     if (_voicePhase != VoicePhase::Idle) return false;
     if (_state != GsmState::READY) return false;
     const char* phone = config.getBase().gsm.owner_phone;
@@ -73,10 +75,7 @@ bool GsmController::requestCallOwner(uint32_t timeoutMs) {
 
     strlcpy(_voicePhone, phone, sizeof(_voicePhone));
     _voiceSmsText[0] = '\0';
-    _voiceTimeoutMs = timeoutMs ? timeoutMs : Gsm::VOICE_DEFAULT_RING_MS;
-    if (_voiceTimeoutMs > Gsm::VOICE_CALL_CEILING_MS) {
-        _voiceTimeoutMs = Gsm::VOICE_CALL_CEILING_MS;
-    }
+    _voiceTimeoutMs = Gsm::VOICE_DEFAULT_RING_MS;
     _voiceKind = VoiceKind::OutCall;
     _voicePhase = VoicePhase::NeedMqttDrain;
     _voiceEpochStartMs = millis();
@@ -272,17 +271,21 @@ void GsmController::voiceHandleUrc_(const char* line) {
         return;
     }
 
+    if (_voicePhase == VoicePhase::DialRing) {
+        int8_t stat = -1;
+        if (gsm_at::parseClccStat(line, stat) && stat == 0) {
+            _voiceAnswered = true;
+            return;
+        }
+    }
+
     if (strcmp(line, "NO CARRIER") == 0 || strcmp(line, "BUSY") == 0 ||
         strcmp(line, "NO ANSWER") == 0) {
         _voiceNoCarrier = true;
-        if (_voicePhase == VoicePhase::DialRing || _voicePhase == VoicePhase::CollectPassword ||
-            _voicePhase == VoicePhase::CollectProgId || _voicePhase == VoicePhase::AnswerWait) {
-            if (_voicePhase == VoicePhase::DialRing) {
-                // Outbound: remote hung up / no answer — treat as completed ring attempt.
-                _voicePhase = VoicePhase::FinishOk;
-            } else {
-                _voicePhase = VoicePhase::FinishFail;
-            }
+        // DialRing hangs up on the next tick so an in-flight AT+CLCC can finish first.
+        if (_voicePhase == VoicePhase::CollectPassword || _voicePhase == VoicePhase::CollectProgId ||
+            _voicePhase == VoicePhase::AnswerWait) {
+            _voicePhase = VoicePhase::FinishFail;
         }
     }
 }
@@ -344,13 +347,29 @@ void GsmController::serviceVoice_(uint32_t now) {
         resetAwait();
         _voicePhase = VoicePhase::DialRing;
         _voicePhaseDeadlineMs = now + _voiceTimeoutMs;
+        _voiceNextClccMs = now + Gsm::VOICE_CLCC_POLL_MS;
+        _voiceAnswered = false;
         _voiceNoCarrier = false;
         return;
 
     case VoicePhase::DialRing:
-        if (_voiceNoCarrier || (int32_t)(now - _voicePhaseDeadlineMs) >= 0) {
+        if (_voiceNoCarrier || _voiceAnswered || (int32_t)(now - _voicePhaseDeadlineMs) >= 0) {
+            if (_voiceAnswered) {
+                logger.log(LogModule::GsmController, "voice: owner answered\n");
+            } else if (!_voiceNoCarrier) {
+                logger.log(LogModule::GsmController, "voice: ring timeout\n");
+            }
             _voicePhase = VoicePhase::HangupSend;
+            return;
         }
+        if (_await != AwaitKind::NONE) {
+            if (_awaitOk || _awaitError || awaitTimedOut(now)) resetAwait();
+            return;
+        }
+        if ((int32_t)(now - _voiceNextClccMs) < 0) return;
+        if (_stack.at.isBusy() || _stack.at.hasResult()) return;
+        if (!sendAt("AT+CLCC", "CLCC", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS)) return;
+        _voiceNextClccMs = now + Gsm::VOICE_CLCC_POLL_MS;
         return;
 
     case VoicePhase::HangupSend:

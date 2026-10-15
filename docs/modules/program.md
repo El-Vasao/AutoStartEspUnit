@@ -26,7 +26,7 @@
 
 | Action | Параметры | Поведение |
 |--------|-----------|-----------|
-| `CALL_OWNER` | `ms` (длительность гудков; UI в секундах) | Набрать `gsm.owner_phone`, ждать до `ms` или `NO CARRIER`/`BUSY`, затем `ATH`. MQTT CIP на эпоху выключен. |
+| `CALL_OWNER` | нет | Набрать `gsm.owner_phone`. Гудки, пока абонент не ответит (`+CLCC` active) или не истечёт 25 с, затем `ATH`. `NO CARRIER`/`BUSY`/`NO ANSWER` завершают попытку. MQTT CIP на эпоху выключен. Поле `ms` в старом файле игнорируется. |
 | `SMS_OWNER` | `message` | SMS на `owner_phone` с текстом шага. |
 
 Пустой `owner_phone` / отказ GSM → программа завершается с fail.

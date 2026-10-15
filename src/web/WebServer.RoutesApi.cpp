@@ -413,9 +413,40 @@ void WebServer::setupApiRoutes_() {
             sendJsonSuccess(request);
             return;
         }
-        // Примечание: операции вида trigger_* (по id) пока не перенесены в этот роут,
-        // чтобы не смешивать крупные изменения API. Если понадобится — перенесём вместе с
-        // унификацией схемы параметров и строгой валидацией.
+        if (op == "trigger_input_id") {
+            uint32_t id = 0;
+            bool en = false;
+            if (!readIdEnabledBodyParams(request, &id, &en)) {
+                request->send(400, kContentTypeText, "Missing parameters");
+                return;
+            }
+            const bool ok =
+                p && p->control.setInputTrigger &&
+                p->control.setInputTrigger(p->control.ctx, (uint16_t)id, en);
+            if (!ok) {
+                request->send(400, kContentTypeText, "Input trigger id not found");
+                return;
+            }
+            sendJsonSuccess(request);
+            return;
+        }
+        if (op == "trigger_temp_id") {
+            uint32_t id = 0;
+            bool en = false;
+            if (!readIdEnabledBodyParams(request, &id, &en)) {
+                request->send(400, kContentTypeText, "Missing parameters");
+                return;
+            }
+            const bool ok =
+                p && p->control.setTempTrigger &&
+                p->control.setTempTrigger(p->control.ctx, (uint16_t)id, en);
+            if (!ok) {
+                request->send(400, kContentTypeText, "Temp trigger id not found");
+                return;
+            }
+            sendJsonSuccess(request);
+            return;
+        }
         request->send(400, kContentTypeText, "Invalid op");
     });
 }

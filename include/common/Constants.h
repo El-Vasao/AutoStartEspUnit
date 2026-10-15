@@ -307,12 +307,6 @@ namespace Rpm {
     constexpr uint32_t UPDATE_MS = 10;
 }
 
-/// ProgramExecutor action timings (not from config).
-namespace ProgramTiming {
-    /// CALL_OWNER: ring duration below this uses modem default (`Gsm::VOICE_DEFAULT_RING_MS`).
-    constexpr uint32_t CALL_OWNER_MIN_RING_MS = 3000UL;
-}
-
 /// Soft wall-clock sanity (reject pre-~2023-11 UTC).
 namespace TimeSync {
     constexpr long MIN_SANE_EPOCH_UTC = 1700000000L;
@@ -660,7 +654,9 @@ namespace Gsm {
     constexpr size_t CMD_BUFFER_SIZE = 128;
 
     /// Voice / SMS exclusive modem epoch (MQTT CIP suspended).
+    /// CALL_OWNER rings until CLCC reports active, or this long, then ATH.
     constexpr uint32_t VOICE_DEFAULT_RING_MS = 25000;
+    constexpr uint32_t VOICE_CLCC_POLL_MS = 2000;
     constexpr uint32_t VOICE_PASSWORD_TIMEOUT_MS = 30000;
     constexpr uint32_t VOICE_PROGID_TIMEOUT_MS = 15000;
     constexpr uint32_t VOICE_CALL_CEILING_MS = 60000;

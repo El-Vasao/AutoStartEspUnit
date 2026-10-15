@@ -90,6 +90,19 @@ void test_parseDtmfTone() {
     TEST_ASSERT_FALSE(gsm_at::parseDtmfTone("+CREG: 1", tone));
 }
 
+void test_parseClccStat() {
+    int8_t stat = -1;
+    TEST_ASSERT_TRUE(gsm_at::parseClccStat("+CLCC: 1,0,0,0,0,\"+79001234567\",145", stat));
+    TEST_ASSERT_EQUAL_INT8(0, stat);
+    TEST_ASSERT_TRUE(gsm_at::parseClccStat("+CLCC: 1,0,3,0,0,\"+79001234567\",145", stat));
+    TEST_ASSERT_EQUAL_INT8(3, stat);
+    TEST_ASSERT_TRUE(gsm_at::parseClccStat("+CLCC: 1,0,2,0,0,\"7900\",129", stat));
+    TEST_ASSERT_EQUAL_INT8(2, stat);
+    TEST_ASSERT_FALSE(gsm_at::parseClccStat("+CLIP: \"1\",129", stat));
+    TEST_ASSERT_FALSE(gsm_at::parseClccStat("+CLCC: garbage", stat));
+    TEST_ASSERT_FALSE(gsm_at::parseClccStat(nullptr, stat));
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -107,5 +120,6 @@ int main(int, char**) {
     RUN_TEST(test_phonesMatch_short);
     RUN_TEST(test_parseClipDigits);
     RUN_TEST(test_parseDtmfTone);
+    RUN_TEST(test_parseClccStat);
     return UNITY_END();
 }

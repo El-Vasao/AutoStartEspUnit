@@ -25,4 +25,7 @@ bool parseClipDigits(const char* line, char* digitsOut, size_t digitsCap);
 /// Parse +DTMF: X or +DDET: X into a single tone char ('0'-'9','*','#').
 bool parseDtmfTone(const char* line, char& toneOut);
 
+/// +CLCC stat: 0 active (answered), 2 dialing, 3 alerting. False if the line is not +CLCC.
+bool parseClccStat(const char* line, int8_t& statOut);
+
 } // namespace gsm_at

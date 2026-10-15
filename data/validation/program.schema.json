@@ -49,7 +49,7 @@
           "input_id": { "type": "integer", "minimum": 0, "maximum": 65535 },
           "input_trigger_id": { "type": "integer", "minimum": 0, "maximum": 65535 },
           "temp_trigger_id": { "type": "integer", "minimum": 0, "maximum": 65535 },
-          "message": { "type": "string", "maxLength": 64 }
+          "message": { "type": "string", "maxLength": 64, "pattern": "^[\\x20-\\x7E]*$" }
         }
       }
     }

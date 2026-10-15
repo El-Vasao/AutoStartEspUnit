@@ -32,5 +32,7 @@ test('errorToMessage gives Russian texts for common keywords', () => {
   assert.equal(v.errorToMessage({ keyword: 'maxLength', params: { limit: 31 } }), 'Не длиннее 31');
   assert.equal(v.errorToMessage({ keyword: 'type' }), 'Неверное значение');
   assert.equal(v.errorToMessage({ keyword: 'required' }), 'Обязательно');
+  assert.equal(v.errorToMessage({ keyword: 'pattern', instancePath: '/steps/0/message' }), 'Только латиница (ASCII)');
+  assert.equal(v.errorToMessage({ keyword: 'pattern', instancePath: '/gsm/owner_phone' }), 'Неверный формат');
   assert.equal(v.errorToMessage({ keyword: 'whatever', message: 'raw' }), 'raw');
 });

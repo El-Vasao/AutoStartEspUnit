@@ -253,10 +253,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
             return;
 
         case ActionId::CALL_OWNER: {
-            // UI default ms=1s is too short for a ring; treat <3s as "use modem default".
-            uint32_t ringMs = step.ms;
-            if (ringMs < ProgramTiming::CALL_OWNER_MIN_RING_MS) ringMs = Gsm::VOICE_DEFAULT_RING_MS;
-            if (!core.getGSM().requestCallOwner(ringMs)) {
+            if (!core.getGSM().requestCallOwner()) {
                 logger.log(LogModule::ProgramExecutor, "CALL_OWNER rejected (no phone / GSM busy)\n");
                 finish(false);
                 return;

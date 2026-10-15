@@ -2,6 +2,7 @@
 
 #include "common/Constants.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -160,6 +161,21 @@ bool parseDtmfTone(const char* line, char& toneOut) {
         return true;
     }
     return false;
+}
+
+bool parseClccStat(const char* line, int8_t& statOut) {
+    if (!line) return false;
+    const char* p = strstr(line, "+CLCC:");
+    if (!p) return false;
+    int id = 0;
+    int dir = 0;
+    int stat = -1;
+    if (sscanf(p, "+CLCC: %d,%d,%d", &id, &dir, &stat) != 3) return false;
+    (void)id;
+    (void)dir;
+    if (stat < 0 || stat > 5) return false;
+    statOut = static_cast<int8_t>(stat);
+    return true;
 }
 
 } // namespace gsm_at
