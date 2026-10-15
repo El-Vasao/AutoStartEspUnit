@@ -12,7 +12,11 @@
         const st = Alpine.store('deviceStatus');
         const hw = st?.hwMap;
         if (hw && Array.isArray(hw.relays) && hw.relays.length) {
-          return hw.relays.map((r, idx) => ({ value: Number(r?.id) || 0, label: String(r?.label || ('K' + (idx + 1))) }));
+          return hw.relays.map((r) => {
+            const id = Number(r?.id) || 0;
+            const name = String(r?.label || r?.name || '').trim();
+            return { value: id, label: name || String(id || '') };
+          });
         }
         return [];
       }
@@ -21,7 +25,12 @@
         const st = Alpine.store('deviceStatus');
         const hw = st?.hwMap;
         if (hw && Array.isArray(hw.inputs) && hw.inputs.length) {
-          return hw.inputs.map((r, idx) => ({ value: Number(r?.id) || 0, label: String(r?.label || (Alpine.store('uiFormat')?.inputName?.(idx) || ('IN' + (idx + 1)))) }));
+          return hw.inputs.map((r, idx) => {
+            const id = Number(r?.id) || 0;
+            const name = String(r?.label || r?.name || '').trim();
+            const label = name || Alpine.store('uiFormat')?.inputName?.(idx) || String(id || '');
+            return { value: id, label };
+          });
         }
         return [];
       }
@@ -36,7 +45,9 @@
           const id = Number(item.id) || 0;
           if (!id) continue;
           if (type !== undefined && (Number(item.type) || 0) !== type) continue;
-          const label = Alpine.store('uiFormat')?.inputLabelById?.(id) || (Alpine.store('uiFormat')?.inputName?.(idx) || ('IN' + (idx + 1)));
+          const label = Alpine.store('uiFormat')?.inputLabelById?.(id)
+            || Alpine.store('uiFormat')?.inputName?.(idx)
+            || String(id);
           out.push({ value: id, label });
         }
         return out;
@@ -60,7 +71,11 @@
         const starterId = Number(Alpine.store('settings')?.vehicle?.starter_relay_id) || 0;
         if (hw && Array.isArray(hw.relays) && hw.relays.length) {
           return hw.relays
-            .map((r, idx) => ({ value: Number(r?.id) || 0, label: String(r?.label || ('K' + (idx + 1))) }))
+            .map((r) => {
+              const id = Number(r?.id) || 0;
+              const name = String(r?.label || r?.name || '').trim();
+              return { value: id, label: name || String(id || '') };
+            })
             .filter((o) => !starterId || o.value !== starterId);
         }
         return [];
@@ -70,7 +85,9 @@
         const st = Alpine.store('deviceStatus');
         const n = (st?.hwCounts?.locked ? st.hwCounts.sensors : (st?.tempSensors?.length || 0)) || 0;
         const out = [];
-        for (let idx = 0; idx < n; idx++) out.push({ value: idx, label: Alpine.store('uiFormat')?.sensorName?.(idx) || ('Датчик ' + (idx + 1)) });
+        for (let idx = 0; idx < n; idx++) {
+          out.push({ value: idx, label: Alpine.store('uiFormat')?.sensorName?.(idx) || String(idx) });
+        }
         return out;
       }
 
@@ -95,7 +112,7 @@
           const id = Number(item.id) || 0;
           if (!id) continue;
           const name = String(item.name || '').trim();
-          out.push({ value: id, label: name || ('Датчик ' + id) });
+          out.push({ value: id, label: name || String(id) });
         }
         return out;
       }
@@ -103,7 +120,10 @@
       if (from === 'programs') {
         const items = Alpine.store('programs')?.items || [];
         const out = [{ value: 0, label: '— нет —' }];
-        for (const p of items) out.push({ value: p.id, label: p.name });
+        for (const p of items) {
+          const name = String(p?.name || '').trim();
+          out.push({ value: p.id, label: name || String(p.id) });
+        }
         return out;
       }
 
@@ -114,7 +134,8 @@
           const tr = list[i] || {};
           const id = Number(tr.id) || 0;
           if (!id) continue;
-          const inName = Alpine.store('uiFormat')?.inputLabelById?.(tr.input_id) || ('IN' + (Number(tr.input_id) || 0));
+          const inId = Number(tr.input_id) || 0;
+          const inName = Alpine.store('uiFormat')?.inputLabelById?.(inId) || String(inId);
           const lvl = tr.trigger_level ? 'Высокий' : 'Низкий';
           out.push({ value: id, label: `${inName} ${lvl}` });
         }
@@ -128,7 +149,8 @@
           const tr = list[i] || {};
           const id = Number(tr.id) || 0;
           if (!id) continue;
-          const sName = Alpine.store('uiFormat')?.sensorLabelById?.(tr.sensor_id) || ('Датчик ' + (tr.sensor_id || 0));
+          const sId = Number(tr.sensor_id) || 0;
+          const sName = Alpine.store('uiFormat')?.sensorLabelById?.(sId) || String(sId);
           const cmp = tr.comparison === 'below' ? '<' : '>';
           out.push({ value: id, label: `${sName} ${cmp} ${(tr.threshold || 0)}°C` });
         }

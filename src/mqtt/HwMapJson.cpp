@@ -20,9 +20,7 @@ void emitRelays(Print& p, const BaseConfig&) {
         any = true;
         p.print("{\"id\":");
         p.print(static_cast<unsigned>(Pin::RELAY_IDS[i]));
-        p.print(",\"name\":\"K");
-        p.print(static_cast<unsigned>(i + 1));
-        p.print("\"}");
+        p.print(",\"name\":\"\"}");
     }
     p.print(']');
 }

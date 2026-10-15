@@ -362,7 +362,7 @@
                     <div class="tile-grid" x-show="$store.deviceStatus.loaded">
                             <template x-for="(state, index) in $store.deviceStatus.relays" :key="index">
                                 <div class="tile relay-tile" :class="state ? 'relay-on' : 'relay-off'">
-                                    <div class="tile-name" x-text="'K' + (index+1)"></div>
+                                    <div class="tile-name" x-text="(String($store.deviceStatus.hwMap?.relays?.[index]?.label || $store.deviceStatus.hwMap?.relays?.[index]?.name || '').trim() || $store.deviceStatus.hwMap?.relays?.[index]?.id || (index + 1))"></div>
                                     <div class="tile-sub" x-text="state ? 'Вкл' : 'Выкл'"></div>
                                 </div>
                             </template>
@@ -381,7 +381,7 @@
                                 :data-index="index"
                                 data-gesture="inputTrigger"
                             >
-                                <div class="tile-name" x-text="($store.uiFormat.inputLabelById(trigger.input_id) || ('IN' + (Number(trigger.input_id) || 0))) + ' → #' + trigger.program_id"></div>
+                                <div class="tile-name" x-text="$store.uiFormat.inputLabelById(trigger.input_id) + ' → #' + trigger.program_id"></div>
                                 <div class="tile-sub" x-text="trigger.trigger_level ? 'Высокий' : 'Низкий'"></div>
                             </div>
                         </template>
@@ -778,7 +778,7 @@
                                 <p class="loading-placeholder" x-show="!($store.deviceStatus.sensorSlots > 0)">Нет датчиков</p>
                                 <template x-for="i in ($store.deviceStatus.sensorSlots || 0)" :key="i">
                                     <div class="sensor-config-item" :id="'settings-sensor-' + (i-1)">
-                                        <h4 x-text="'Датчик ' + i"></h4>
+                                        <h4 x-text="(String($store.settings.sensors?.[i-1]?.name || '').trim() || $store.settings.sensors?.[i-1]?.id || i)"></h4>
                                         <template x-for="field in ($store.settingsUiSchema.settings?.sensors?.fields || [])" :key="field.key">
                                             <div class="form-group" x-data="$store.settingsForm.fieldRow(field, String(field.pathTmpl).replace('{i}', String(i-1)))" x-show="!field.hidden">
                                                 <label class="form-label" x-text="field.label"></label>
@@ -852,7 +852,7 @@
                                 <p class="loading-placeholder" x-show="!($store.deviceStatus.inputSlots > 0)">Нет входов</p>
                                 <template x-for="i in ($store.deviceStatus.inputSlots || 0)" :key="i">
                                     <div class="input-config-item" :id="'settings-input-' + (i-1)">
-                                        <h4 x-text="$store.uiFormat.inputName(i-1)"></h4>
+                                        <h4 x-text="'Вход ' + i"></h4>
                                         <template x-for="field in ($store.settingsUiSchema.settings?.inputs?.fields || [])" :key="field.pathTmpl + ':' + field.bind">
                                             <div class="form-group" x-data="$store.settingsForm.fieldRow(field, String(field.pathTmpl).replace('{i}', String(i-1)))" x-show="(!field.hidden) && (!field.showIf || field.showIf($store, i-1))">
                                                 <label class="form-label" x-text="field.label"></label>

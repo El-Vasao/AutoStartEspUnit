@@ -17,14 +17,14 @@ function load({ startMethod = 'timed', starterRelayId = 2002 } = {}) {
       deviceStatus: {
         hwMap: {
           relays: [
-            { id: 2001, label: 'K1' },
-            { id: 2002, label: 'K2' },
-            { id: 2003, label: 'K3' },
+            { id: 2001, label: '' },
+            { id: 2002, label: '' },
+            { id: 2003, label: '' },
           ],
         },
       },
       programs: { items: [{ id: 1, name: 'Прогрев' }] },
-      uiFormat: { inputLabelById: (id) => 'IN' + id },
+      uiFormat: { inputLabelById: (id) => String(id) },
     },
   });
   env.load('js/app/options.js');
@@ -49,7 +49,9 @@ test('start input list follows vehicle.start_method', () => {
 test('program relays exclude the starter relay', () => {
   assert.deepEqual(values(load()('programRelays')), [2001, 2003]);
   assert.deepEqual(values(load({ starterRelayId: 0 })('programRelays')), [2001, 2002, 2003]);
-  assert.deepEqual(values(load()('relays')), [2001, 2002, 2003]);
+  const relays = load()('relays');
+  assert.deepEqual(values(relays), [2001, 2002, 2003]);
+  assert.equal(relays[0].label, '2001');
 });
 
 test('sensor ids skip unmapped sensors', () => {

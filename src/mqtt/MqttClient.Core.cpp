@@ -283,6 +283,7 @@ void MqttClient::loop() {
             _awaitFirstStatus = _topicStatus[0] != '\0';
             _firstStatusAfterMs = millis() + NetTiming::MQTT_FIRST_STATUS_DELAY_MS;
             _havePublishedBaseline = false;
+            _lastEdgeProbe = 0;
             // Clear sticky active; undelivered history remains for first full status last_err.
             core.getErrorManager().clear(ErrorCode::MQTT_CONNECT_FAIL);
         }
@@ -326,15 +327,27 @@ void MqttClient::loop() {
             if ((int32_t)(millis() - _firstStatusAfterMs) >= 0 && publishStatus(true)) {
                 _awaitFirstStatus = false;
                 _lastStatusPublish = millis();
+                _lastEdgeProbe = _lastStatusPublish;
                 core.cooperate();
             }
         } else if (txOk && subReady && teleIdle && _topicStatus[0]) {
             const auto& mqttCfg = config.getBase().mqtt;
             const uint32_t interval_ms = secToMs(mqttCfg.publish_interval_sec);
-            const bool due = (_lastStatusPublish == 0) || (millis() - _lastStatusPublish >= interval_ms);
-            if (due && publishStatus(false)) {
+            const bool intervalDue =
+                (_lastStatusPublish == 0) || (millis() - _lastStatusPublish >= interval_ms);
+            const bool edgeDue = _havePublishedBaseline &&
+                                 (millis() - _lastEdgeProbe >= NetTiming::MQTT_EDGE_STATUS_GAP_MS);
+            if (intervalDue && publishStatus(false)) {
                 _lastStatusPublish = millis();
+                _lastEdgeProbe = _lastStatusPublish;
                 core.cooperate();
+            } else if (!intervalDue && edgeDue) {
+                _lastEdgeProbe = millis();
+                if (tryPublishEdgeStatus_()) {
+                    _lastStatusPublish = millis();
+                    _lastEdgeProbe = _lastStatusPublish;
+                    core.cooperate();
+                }
             }
         }
     } else if (!_fsm.isDisconnectPending()) {
@@ -343,6 +356,7 @@ void MqttClient::loop() {
         _onlinePublishDue = false;
         _awaitFirstStatus = false;
         _havePublishedBaseline = false;
+        _lastEdgeProbe = 0;
         _subWaitStartMs = 0;
         _subackTimeoutLogged = false;
         clearPending_();
@@ -472,6 +486,18 @@ bool MqttClient::publishStatus(bool forceFull) {
     _havePublishedBaseline = true;
     logger.log(LogModule::MqttClient, "pub status %s bytes=%u\n", needFull ? "full" : "delta", (unsigned)measured);
     return true;
+}
+
+bool MqttClient::tryPublishEdgeStatus_() {
+    if (!_topicStatus[0] || !_havePublishedBaseline) return false;
+    StatusSnapshot snapshot{};
+    captureStatusSnapshot_(snapshot);
+    if (_lastErrAwaitConfirm) snapshot.lastErrCount = 0;
+    if (snapshot.lastErrCount == 0 &&
+        !mqttStatusHasEdgeChanges(snapshot, _lastPublished, config.getBase())) {
+        return false;
+    }
+    return publishStatus(false);
 }
 
 void MqttClient::confirmLastErrDelivery_() {

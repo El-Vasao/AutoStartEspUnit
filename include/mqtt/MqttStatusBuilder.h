@@ -18,3 +18,8 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
 /// float/heap/timer ε from `JsonBytes::Mqtt`).
 bool mqttStatusHasSignificantChanges(const StatusSnapshot& cur, const StatusSnapshot& prev,
                                      const BaseConfig& cfg);
+
+/// Discrete changes that should publish a delta without waiting for `publish_interval_sec`.
+/// Not voltage, temperature, CSQ, heap, or `timerRemaining` alone.
+bool mqttStatusHasEdgeChanges(const StatusSnapshot& cur, const StatusSnapshot& prev,
+                              const BaseConfig& cfg);

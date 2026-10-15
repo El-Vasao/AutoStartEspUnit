@@ -25,10 +25,10 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "broker": "m5.wqtt.ru",
     "port": 10162,
     "client_id": "",
-    "user": "foo",
-    "pass": "bar",
+    "user": "u_vejNCO",
+    "pass": "u_vejNCO",
     "topic_prefix": "car/Subaru",
-    "publish_interval_sec": 60
+    "publish_interval_sec": 600
   },
   "vehicle": {
     "adc_voltage_coeff": 0.004,

@@ -61,6 +61,7 @@ private:
 
     Client& _netClient;
     uint32_t _lastStatusPublish;
+    uint32_t _lastEdgeProbe{0};
     uint32_t _lastReconnectAttempt;
     bool _reconnectEnabled{true};
     uint8_t _connectFailStreak{0};
@@ -131,6 +132,8 @@ private:
     bool publishThinReply_(const char* id, uint16_t code);
     bool publishListReply_(const char* id);
     bool publishStatusReply_(const char* id);
+    /// True only when an edge delta was staged. No edge and TX failure both return false.
+    bool tryPublishEdgeStatus_();
     bool publishHwMapReply_(const char* id);
     void captureStatusSnapshot_(StatusSnapshot& out) const;
     bool validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const;

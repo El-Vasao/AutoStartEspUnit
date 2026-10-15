@@ -78,7 +78,7 @@ MQTT-публикация статуса и подписка на команды
 
 ### Доставка
 - LWT `/avail` `"offline"` retained Will QoS1; после connect — `"online"` **только после SUBACK** (пока `/cmd` не подтверждён — `avail` не online; SUBSCRIBE ретраится по timeout).
-- `/status` QoS0, период `publish_interval_sec` (если Tele-idle); первый Tele после connect — full, далее delta или skip по significant changes.
+- `/status` QoS0. Первый Tele после connect — full. Дальше дискретный край (программа, реле, входы, режим, runtime, `rev`, `last_err`) — delta не позже `MQTT_EDGE_STATUS_GAP_MS` (250 мс), если Tele свободен. Напряжение, температура, CSQ, heap и `timerRemaining` сами публикацию не ускоряют: их смотрит период `publish_interval_sec` (skip, если порог не пробит). Если порог уже пробит в момент края или периода, поле входит в эту дельту.
 - `/cmd` и `/reply` QoS0.
 
 ### 1) Command (`{prefix}/cmd`)
@@ -127,7 +127,7 @@ MQTT-публикация статуса и подписка на команды
 `run`: `202` → финал `200`/`500` после lifecycle — в том числе при синхронном `finish()` внутри `start()` (одношаговые программы); `422` если старт не удался.  
 Клиент: ждать `202` (~10 с) как факт приёма; финал — своим таймаутом. Повтор с тем же `id` обрабатывается заново (idempotency LRU нет).
 
-`hwmap` — каталог для кэша приложения. Только строки с `id != 0`. Реле подписаны `K1`… как в UI (отдельного имени в конфиге нет). У триггера своего имени нет: подпись собирается из `inputs` / `sensors` того же объекта.
+`hwmap` — каталог для кэша приложения. Только строки с `id != 0`. У реле своего имени в конфиге нет (`name` пустой — клиент показывает id). У триггера своего имени нет: подпись собирается из `inputs` / `sensors` того же объекта.
 
 - `relays`: `id`, `name`
 - `inputs`: `id`, `name`
@@ -145,9 +145,9 @@ retained `"offline"` / `"online"`.
 
 `emitMqttStatusJson` / `emitMqttStatusDeltaJson`. QoS 0, не retained. Wire всегда **компактный** JSON (без pretty-print). Лимит тела `JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES` (900).
 
-**Каналы:** Tele периодический; `cmd=status` → fat `/reply` с `"status":{…}` всегда **full** (Tele не форсируется). Первый Tele после connect — full; далее delta или skip.
+**Каналы:** Tele: первый кадр после connect — full; дискретный край — delta с паузой 250 мс; период `publish_interval_sec` — напряжение, температура, CSQ, heap, таймер шага. `cmd=status` → fat `/reply` с `"status":{…}` всегда **full** (Tele не форсируется).
 
-**Full / delta / skip:** `forceFull` или нет baseline → full; иначе undelivered `diag.last_err` → TX; иначе significant → delta; иначе skip. Тик `uptime` / `time.epoch` сами по себе skip не отменяют.
+**Full / delta / skip:** `forceFull` или нет baseline → full; иначе undelivered `diag.last_err` → TX; иначе significant → delta; иначе skip. Край не ждёт период. Тик `uptime` / `time.epoch` сами по себе skip не отменяют. Напряжение (ε 0.05 В), температура (ε 0.1 °C), CSQ, heap и один только `timerRemaining` не являются краем.
 
 **Схема:** корень `full`, `uptime`, `mode`; объекты `time`, `hw`, `radio`, `program`, `runtime`, `diag`, `rev`.
 
@@ -224,9 +224,11 @@ retained `"offline"` / `"online"`.
 - `diag` — `freeHeap` при `|Δ|≥2048`; `last_err` полный массив если count>0
 - `rev` — весь объект, если сменился `programs` или `hw`
 
-#### Significant → delta (иначе skip)
+#### Когда уходит delta
 
-`mode`; `time` meta (не epoch alone); `hw` voltage(ε)/engine/inputs/relays/temps; `radio.csq`; `program` running/current/last/timer; `runtime` thermostat/batterySaver/triggers; `diag.freeHeap` ≥2 KiB; `diag.last_err` changed **или** count>0; `rev` (`programs` или `hw`).
+Сразу (пауза 250 мс, Tele свободен): `mode`; мета `time` (не тик `epoch`); `engineRunning`; входы; реле; `program` `running`/`current`/`last`; runtime термостата, защиты АКБ и триггеров; `rev`; `diag.last_err`.
+
+Только по `publish_interval_sec`: напряжение (ε 0.05 В), температура (ε 0.1 °C, не один `lastMs`), CSQ, `freeHeap` (≥2 КиБ), `timerRemaining` (`|Δ|≥1` с). Нет пересечения порога — skip. Если порог уже пробит к отправке края или периода, поле входит в ту же дельту.
 
 **Не significant:** тик `uptime`, тик `time.epoch`, только `temp.lastMs`, подпороговые Δ voltage/temp/heap/timer.
 

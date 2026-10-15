@@ -449,6 +449,8 @@ namespace NetTiming {
     constexpr uint32_t MQTT_SUBACK_TIMEOUT_MS = 8000;
     /// Wall budget for encode+queue of one status publish (ms).
     constexpr uint32_t MQTT_PUBLISH_BUDGET_MS = 10;
+    /// Min gap between edge-triggered `/status` deltas (program, relays, inputs, …).
+    constexpr uint32_t MQTT_EDGE_STATUS_GAP_MS = 250;
     /// MqttFsmClient TCP connect wall-clock (layered over Sim800Tcp CONNECT_TIMEOUT_MS).
     constexpr uint32_t MQTT_TCP_CONNECT_TIMEOUT_MS = 45000;
 

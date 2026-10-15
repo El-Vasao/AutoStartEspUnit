@@ -271,6 +271,23 @@ bool mqttStatusHasSignificantChanges(const StatusSnapshot& cur, const StatusSnap
     return false;
 }
 
+bool mqttStatusHasEdgeChanges(const StatusSnapshot& cur, const StatusSnapshot& prev,
+                              const BaseConfig& cfg) {
+    if (strcmp(cur.modeName, prev.modeName) != 0) return true;
+    if (timeMetaChanged(cur, prev)) return true;
+    if (cur.engineRunning != prev.engineRunning) return true;
+    if (anyInputChanged(cur, prev)) return true;
+    if (anyRelayChanged(cur, prev)) return true;
+    if (programIdsChanged(cur, prev)) return true;
+    if (cur.thermostatRuntime != prev.thermostatRuntime) return true;
+    if (cur.batterySaverRuntime != prev.batterySaverRuntime) return true;
+    if (anyTriggerChanged(cur, prev, cfg)) return true;
+    if (lastErrChanged(cur, prev)) return true;
+    if (cur.lastErrCount > 0) return true;
+    if (cur.programsRev != prev.programsRev || cur.hwRev != prev.hwRev) return true;
+    return false;
+}
+
 static void printRevObject(Print& p, const StatusSnapshot& s) {
     p.print("{\"programs\":\"");
     writeFnv1a32Hex(p, s.programsRev);

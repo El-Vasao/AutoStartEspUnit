@@ -51,9 +51,7 @@ void emitBootstrapJson(Print& p) {
         if (i) p.print(',');
         p.print("{\"id\":");
         p.print(Pin::INPUT_IDS[i]);
-        p.print(",\"label\":\"IN");
-        p.print(i + 1);
-        p.print("\"}");
+        p.print(",\"label\":\"\"}");
     }
 
     p.print("],\"relays\":[");
@@ -61,9 +59,7 @@ void emitBootstrapJson(Print& p) {
         if (i) p.print(',');
         p.print("{\"id\":");
         p.print(Pin::RELAY_IDS[i]);
-        p.print(",\"label\":\"K");
-        p.print(i + 1);
-        p.print("\"}");
+        p.print(",\"label\":\"\"}");
     }
 
     p.print("]},\"temperatureSensorRoms\":[");

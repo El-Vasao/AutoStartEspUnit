@@ -7,11 +7,13 @@
     Alpine.store('uiFormat', {
       inputName(idx) {
         try {
-          const s = Alpine.store('settings');
-          const custom = s?.inputs?.[idx]?.name;
+          const item = Alpine.store('settings')?.inputs?.[idx];
+          const custom = item?.name;
           if (typeof custom === 'string' && custom.trim()) return custom.trim();
+          const id = Number(item?.id) || 0;
+          return id ? String(id) : '';
         } catch (e) {}
-        return ('IN' + (idx + 1));
+        return '';
       },
       inputLabelById(id) {
         try {
@@ -19,19 +21,21 @@
           if (!iid) return '—';
           const s = Alpine.store('settings');
           const list = Array.isArray(s?.inputs) ? s.inputs : [];
-          const hitIdx = list.findIndex(x => x && Number(x.id) === iid);
-          if (hitIdx < 0) return ('IN#' + iid);
-          return this.inputName(hitIdx);
+          const hit = list.find(x => x && Number(x.id) === iid);
+          const name = String(hit?.name || '').trim();
+          return name || String(iid);
         } catch (e) {}
         return '—';
       },
       sensorName(idx) {
         try {
-          const s = Alpine.store('settings');
-          const custom = s?.sensors?.[idx]?.name;
+          const item = Alpine.store('settings')?.sensors?.[idx];
+          const custom = item?.name;
           if (typeof custom === 'string' && custom.trim()) return custom.trim();
+          const id = Number(item?.id) || 0;
+          return id ? String(id) : '';
         } catch (e) {}
-        return ('Датчик ' + (idx + 1));
+        return '';
       },
       sensorLabelByRom(rom) {
         try {
@@ -41,7 +45,7 @@
           const list = Array.isArray(s?.sensors) ? s.sensors : [];
           const hit = list.find(x => x && String(x.rom || '') === r);
           const name = hit?.name;
-          if (typeof name === 'string' && name.trim()) return `${name.trim()}`;
+          if (typeof name === 'string' && name.trim()) return name.trim();
           return r;
         } catch (e) {}
         return String(rom || '');
@@ -54,7 +58,7 @@
           const list = Array.isArray(s?.sensors) ? s.sensors : [];
           const hit = list.find(x => x && Number(x.id) === sid);
           const name = String(hit?.name || '').trim();
-          return name || ('Датчик ' + sid);
+          return name || String(sid);
         } catch (e) {}
         return '—';
       },
