@@ -20,7 +20,7 @@ See `include/common/Pins.h`.
 
 [`partitions.csv`](../partitions.csv) — dual OTA (`app0`/`app1`) + FS labeled `spiffs` subtype (Arduino LittleFS mounts it). ~1.4 MB FS.
 
-## UART legacy
+## UART0 (SIM800 + debug)
 
 SIM800 and debug Serial share UART0 (GPIO20/21).
 

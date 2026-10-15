@@ -37,9 +37,10 @@ public:
         deferredPostedProgramIndexPhase_ = false;
     }
 
-    void queueResetConfig();
-    void queueResetPrograms();
-    void queueDeleteProgram(uint8_t id);
+    /// Returns false if another flash op is already queued (does not overwrite).
+    bool queueResetConfig();
+    bool queueResetPrograms();
+    bool queueDeleteProgram(uint8_t id);
 
     bool isPending() const {
         return deferredPostedConfigApply_ || deferredPostedProgramApply_ || pendingFsOp_ != PendingFsOp::NONE;

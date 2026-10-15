@@ -198,7 +198,7 @@ bool FsManager::ensurePath(const char* path) {
 
     if (!path || path[0] == '\0') return true;
 
-    // Ищем последний '/', не создавая String (лишние аллокации на ESP8266 нам не нужны).
+    // Ищем последний '/', не создавая String.
     const char* lastSlash = strrchr(path, '/');
     if (!lastSlash || lastSlash == path) return true; // корень или нет родительской директории
 

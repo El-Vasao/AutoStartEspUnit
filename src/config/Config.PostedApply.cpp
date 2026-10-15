@@ -10,6 +10,7 @@
 #include "config/internal/ConfigStorageInternal.h"
 #include "program/ProgramAction.h"
 #include "program/ProgramValidate.h"
+#include "common/Pins.h"
 
 #include <math.h>
 
@@ -102,10 +103,27 @@ bool Config::commitPostedProgramFile(const char* tmpPath, uint8_t* outId, ErrorC
         return false;
     }
     const uint16_t starterRelayId = baseCache.vehicle.starter_relay_id;
+    uint16_t inTrigIds[Limits::MAX_TRIGGERS];
+    uint16_t tempTrigIds[Limits::MAX_TRIGGERS];
+    uint8_t nInTrig = 0;
+    uint8_t nTempTrig = 0;
+    for (uint8_t i = 0; i < baseCache.input_triggers_count && nInTrig < Limits::MAX_TRIGGERS; i++) {
+        inTrigIds[nInTrig++] = baseCache.input_triggers[i].id;
+    }
+    for (uint8_t i = 0; i < baseCache.temperature_triggers_count && nTempTrig < Limits::MAX_TRIGGERS; i++) {
+        tempTrigIds[nTempTrig++] = baseCache.temperature_triggers[i].id;
+    }
+    const program_validate::ChannelTables tables{
+        {Pin::RELAY_IDS, HardwareLimits::RELAYS},
+        {Pin::INPUT_IDS, HardwareLimits::INPUTS},
+        {inTrigIds, nInTrig},
+        {tempTrigIds, nTempTrig},
+    };
     for (uint8_t i = 0; i < prog.step_count; i++) {
         const Step& s = prog.steps[i];
+        const program_validate::ChannelRef ch{s.relay_id, s.input_id, s.input_trigger_id, s.temp_trigger_id};
         const program_validate::Issue issue =
-            program_validate::checkStep(actionIdFromString(s.action), s.relay_id, starterRelayId);
+            program_validate::checkStep(actionIdFromString(s.action), ch, starterRelayId, tables);
         if (issue != program_validate::Issue::None) {
             logger.log(LogModule::Config, "Program %u rejected: step %u (%s) %s\n", prog.id, (unsigned)(i + 1),
                        s.action, program_validate::issueToString(issue));

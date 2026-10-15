@@ -177,7 +177,10 @@ void WebServer::setupApiRoutes_() {
 
     server.on("/config/reset", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (rejectIfFlashBusy(request)) return;
-        flashCommit.queueResetConfig();
+        if (!flashCommit.queueResetConfig()) {
+            sendBusy(request);
+            return;
+        }
         sendJsonSuccess(request);
     });
 
@@ -316,7 +319,10 @@ void WebServer::setupApiRoutes_() {
     server.on("/programs", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (rejectIfFlashBusy(request)) return;
         if (request->hasParam("reset", true) && request->getParam("reset", true)->value() == "1") {
-            flashCommit.queueResetPrograms();
+            if (!flashCommit.queueResetPrograms()) {
+                sendBusy(request);
+                return;
+            }
             sendJsonSuccess(request);
             return;
         }
@@ -356,7 +362,10 @@ void WebServer::setupApiRoutes_() {
             return;
         }
         uint8_t id = request->getParam("id")->value().toInt();
-        flashCommit.queueDeleteProgram(id);
+        if (!flashCommit.queueDeleteProgram(id)) {
+            sendBusy(request);
+            return;
+        }
         sendJsonSuccess(request);
     });
 

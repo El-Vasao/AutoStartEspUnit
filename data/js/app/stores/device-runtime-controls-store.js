@@ -111,10 +111,10 @@
           if (ok) {
             if (!Alpine.store('deviceStatus').inputsEnabled) Alpine.store('deviceStatus').inputsEnabled = [];
             Alpine.store('deviceStatus').inputsEnabled[index] = newState;
-            Alpine.store('uiNotification').success(newState ? 'Вкл' : 'Выкл');
-          } else Alpine.store('uiNotification').error('Ошибка');
+            Alpine.store('uiToast').success(newState ? 'Вкл' : 'Выкл');
+          } else Alpine.store('uiToast').error('Ошибка');
         } catch (e) {
-          Alpine.store('uiNotification').error('Ошибка сети');
+          Alpine.store('uiToast').error('Ошибка сети');
         }
       },
 
@@ -124,7 +124,7 @@
           const settings = Alpine.store('settings') || {};
           const row = settings.input_triggers?.[index] || {};
           const id = Number(row.id) || 0;
-          if (!id) { Alpine.store('uiNotification').error('Триггер не задан'); return; }
+          if (!id) { Alpine.store('uiToast').error('Триггер не задан'); return; }
           const { ok } = await APP.api.apiJson(runtimeEndpoint(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -135,10 +135,10 @@
             if (!st.runtime || typeof st.runtime !== 'object') st.runtime = {};
             if (!st.runtime.inputTriggersById || typeof st.runtime.inputTriggersById !== 'object') st.runtime.inputTriggersById = {};
             st.runtime.inputTriggersById[String(id)] = !current;
-            Alpine.store('uiNotification').success(!current ? 'Вкл' : 'Выкл');
-          } else Alpine.store('uiNotification').error('Ошибка');
+            Alpine.store('uiToast').success(!current ? 'Вкл' : 'Выкл');
+          } else Alpine.store('uiToast').error('Ошибка');
         } catch (e) {
-          Alpine.store('uiNotification').error('Ошибка сети');
+          Alpine.store('uiToast').error('Ошибка сети');
         }
       },
 
@@ -148,7 +148,7 @@
           const settings = Alpine.store('settings') || {};
           const row = settings.temperature_triggers?.[index] || {};
           const id = Number(row.id) || 0;
-          if (!id) { Alpine.store('uiNotification').error('Триггер не задан'); return; }
+          if (!id) { Alpine.store('uiToast').error('Триггер не задан'); return; }
           const { ok } = await APP.api.apiJson(runtimeEndpoint(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -159,10 +159,10 @@
             if (!st.runtime || typeof st.runtime !== 'object') st.runtime = {};
             if (!st.runtime.tempTriggersById || typeof st.runtime.tempTriggersById !== 'object') st.runtime.tempTriggersById = {};
             st.runtime.tempTriggersById[String(id)] = !current;
-            Alpine.store('uiNotification').success(!current ? 'Вкл' : 'Выкл');
-          } else Alpine.store('uiNotification').error('Ошибка');
+            Alpine.store('uiToast').success(!current ? 'Вкл' : 'Выкл');
+          } else Alpine.store('uiToast').error('Ошибка');
         } catch (e) {
-          Alpine.store('uiNotification').error('Ошибка сети');
+          Alpine.store('uiToast').error('Ошибка сети');
         }
       },
 
@@ -178,10 +178,10 @@
             const st = Alpine.store('deviceStatus');
             if (!st.runtime || typeof st.runtime !== 'object') st.runtime = {};
             st.runtime.thermostat = !current;
-            Alpine.store('uiNotification').success(!current ? 'Вкл' : 'Выкл');
-          } else Alpine.store('uiNotification').error('Ошибка');
+            Alpine.store('uiToast').success(!current ? 'Вкл' : 'Выкл');
+          } else Alpine.store('uiToast').error('Ошибка');
         } catch (e) {
-          Alpine.store('uiNotification').error('Ошибка сети');
+          Alpine.store('uiToast').error('Ошибка сети');
         }
       },
 
@@ -197,10 +197,10 @@
             const st = Alpine.store('deviceStatus');
             if (!st.runtime || typeof st.runtime !== 'object') st.runtime = {};
             st.runtime.batterySaver = !current;
-            Alpine.store('uiNotification').success(!current ? 'Вкл' : 'Выкл');
-          } else Alpine.store('uiNotification').error('Ошибка');
+            Alpine.store('uiToast').success(!current ? 'Вкл' : 'Выкл');
+          } else Alpine.store('uiToast').error('Ошибка');
         } catch (e) {
-          Alpine.store('uiNotification').error('Ошибка сети');
+          Alpine.store('uiToast').error('Ошибка сети');
         }
       }
     });

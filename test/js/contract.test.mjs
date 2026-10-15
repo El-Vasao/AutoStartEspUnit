@@ -104,6 +104,21 @@ test('program editor actions match firmware ProgramAction.cpp', () => {
   assert.deepEqual([...uiActions].sort(), [...firmwareActionNames()].sort());
 });
 
+test('unknown program action fails program.schema.json', () => {
+  const ajv = createAjv();
+  const validate = ajv.compile(readDataJson('validation/program.schema.json'));
+  const sample = {
+    id: 1,
+    name: 'x',
+    steps: [{ step: 1, action: 'STARTER_TIMED' }]
+  };
+  assert.equal(validate(sample), false);
+  const names = firmwareActionNames();
+  for (const action of names) {
+    assert.ok(validate({ id: 1, name: 'x', steps: [{ step: 1, action }] }), action);
+  }
+});
+
 test('program editor action params are declared and fit program.schema.json', () => {
   const ui = readDataJson('ui/program-steps.ui.json').programSteps;
   const stepProps = readDataJson('validation/program.schema.json').properties.steps.items.properties;
@@ -140,6 +155,20 @@ test('every contract.js endpoint is a registered firmware route', () => {
   assert.deepEqual(missing, []);
   const header = readProjectFile('include/web/WebServer.h');
   assert.match(header, /"\/events"/, 'SSE path in WebServer.h changed');
+});
+
+test('ui-maps mode and gsm keys match firmware strings', () => {
+  const maps = readProjectFile('data/js/app/ui-maps.js');
+  const constants = readProjectFile('include/common/Constants.h');
+  for (const key of ['boot', 'emergency_ap', 'setup_ap', 'normal', 'normal_silent', 'ota_update', 'reboot_required']) {
+    assert.match(maps, new RegExp('\\b' + key + '\\b'));
+    assert.match(constants, new RegExp('"' + key + '"'));
+  }
+  const gsmSrc = readProjectFile('src/gsm/GsmController.Core.cpp');
+  for (const st of ['IDLE', 'INIT', 'REGISTERING', 'GPRS_SETUP', 'GPRS_ATTACH', 'GPRS_GETIP', 'READY', 'ERROR']) {
+    assert.match(maps, new RegExp('\\b' + st + '\\b'));
+    assert.match(gsmSrc, new RegExp('"' + st + '"'));
+  }
 });
 
 test('docs/modules has one markdown file per src module', () => {

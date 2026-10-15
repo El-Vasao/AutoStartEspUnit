@@ -56,7 +56,5 @@
   APP.stores.registerUiToastStore = function registerUiToastStore(Alpine) {
     const api = createNotificationApi(Alpine);
     Alpine.store('uiToast', api);
-    Alpine.store('uiNotification', api);
-    Alpine.store('uiStatusBar', api);
   };
 })();

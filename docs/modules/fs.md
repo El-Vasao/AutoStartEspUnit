@@ -21,8 +21,8 @@
 Типовой сценарий (web):
 1) web принимает POST и пишет tmp-файл (`/__http/*.tmp`)
 2) web отмечает “pending”
-3) в `Core::update()` вызывается `webServer.processDeferred()`
-4) `FsManager` / `FlashCommitCoordinator` выполняет commit, когда это безопасно
+3) в `Core::update()` вызывается `flashCommit.tick`
+4) `FlashCommitCoordinator` выполняет commit, когда это безопасно
 
 ## Атомарные записи
 Общий принцип: всегда иметь возможность восстановиться после ребута в середине записи.

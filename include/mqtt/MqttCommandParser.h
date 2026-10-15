@@ -4,7 +4,7 @@
 
 #include "mqtt/MqttCommand.h"
 
-/// Parse flat cmd JSON (id, cmd, program, name, ref, enabled). No legacy action/*.
+/// Parse cmd JSON (id, cmd, program, name, ref, enabled).
 /// Returns true when syntactically valid and kind is known; check fields for args.
 bool parseMqttCommandJson(const char* json, MqttCommand& out);
 

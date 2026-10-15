@@ -41,7 +41,7 @@
       initPhaseGapMs: 0,
       /** Pause before EventSource after checklist HTTP. */
       sseStartDelayMs: 0,
-      /** Max concurrent SoftAP HTTP (was 1 on ESP8266). */
+      /** Max concurrent SoftAP HTTP. */
       deviceFetchMaxConcurrent: 2,
       /** Max wait for mode+hardware while UI stays locked; then degraded unlock. */
       sseInitDeadlineMs: 12000,

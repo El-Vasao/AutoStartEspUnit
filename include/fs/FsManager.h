@@ -5,7 +5,7 @@
 #include <LittleFS.h>
 #include "common/Constants.h"
 
-/** ESP32 LittleFS space snapshot (replaces ESP8266 FSInfo). */
+/** ESP32 LittleFS space snapshot. */
 struct FsSpaceInfo {
     size_t totalBytes = 0;
     size_t usedBytes = 0;

@@ -13,8 +13,8 @@
       setFile(file) { this.file = file; },
       async start() {
         if (this.started) return;
-        if (!this.file) { Alpine.store('uiStatusBar').flash('Выберите файл .bin', 'warning', 4000); return; }
-        Alpine.store('uiStatusBar').clearHardwareError();
+        if (!this.file) { Alpine.store('uiToast').flash('Выберите файл .bin', 'warning', 4000); return; }
+        Alpine.store('uiToast').clearHardwareError();
         this.started = true;
         this.uploading = true;
         this.progress = 0;
@@ -39,7 +39,7 @@
             // Stream OTA flashes during upload; device reboots after final.
           } else {
             APP.utils.LS.del('otaInProgress');
-            Alpine.store('uiStatusBar').setHardwareError('Ошибка прошивки.');
+            Alpine.store('uiToast').setHardwareError('Ошибка прошивки.');
             this.status = 'Ошибка загрузки';
             this.started = false;
             this.uploading = false;
@@ -47,7 +47,7 @@
         };
         xhr.onerror = () => {
           APP.utils.LS.del('otaInProgress');
-          Alpine.store('uiStatusBar').setHardwareError('Ошибка сети при прошивке.');
+          Alpine.store('uiToast').setHardwareError('Ошибка сети при прошивке.');
           this.status = 'Ошибка сети';
           this.started = false;
           this.uploading = false;

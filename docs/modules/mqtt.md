@@ -136,7 +136,7 @@ retained `"offline"` / `"online"`.
 
 **Full / delta / skip:** `forceFull` или нет baseline → full; иначе undelivered `diag.last_err` → TX; иначе significant → delta; иначе skip. Тик `uptime` / `time.epoch` сами по себе skip не отменяют.
 
-**Вложенная схема (breaking vs legacy flat):** корень `full`, `uptime`, `mode`; объекты `time`, `hw`, `radio`, `program`, `runtime`, `diag`.
+**Схема:** корень `full`, `uptime`, `mode`; объекты `time`, `hw`, `radio`, `program`, `runtime`, `diag`.
 
 #### Full (`"full":true`)
 
@@ -262,4 +262,4 @@ Clean soft reboot: LWT offline→online + `uptime` reset only. Power-cut may cle
 **Не в MQTT status:** `gsmState`, `mqttConnected`, имена программ, `flashCommit`, frequencies, sticky `lastError`.
 
 ### Вне scope
-QoS1, текстовые `err` на wire, persist LRU, ACL, legacy API.
+QoS1, текстовые `err` на wire, persist LRU, ACL, сторонние MQTT-библиотеки.

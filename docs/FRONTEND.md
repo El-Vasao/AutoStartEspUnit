@@ -14,7 +14,7 @@ flowchart LR
 
 ## Stores
 
-Registered in `data/js/app/stores/stores-init.js`. Notifications: one object as `uiToast` / `uiNotification` / `uiStatusBar`. Paths: `APP.path`. Ajv: `APP.validation.createAjv()`.
+Registered in `data/js/app/stores/stores-init.js`. Notifications: `uiToast`. Paths: `APP.path`. Ajv: `APP.validation.createAjv()`.
 
 ## SSE
 

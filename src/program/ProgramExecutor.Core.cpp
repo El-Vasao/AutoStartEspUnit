@@ -6,6 +6,7 @@
 #include "io/RelayController.h"
 #include "core/ErrorManager.h"
 #include "io/HwMap.h"
+#include "common/Pins.h"
 #include "common/Logger.h"
 #include "config/Config.h"
 #include "program/ProgramValidate.h"
@@ -87,11 +88,30 @@ bool ProgramExecutor::start(uint8_t programId) {
         _localSteps = nullptr;
         return false;
     }
-    const uint16_t starterRelayId = config.getBase().vehicle.starter_relay_id;
+    const auto& base = config.getBase();
+    const uint16_t starterRelayId = base.vehicle.starter_relay_id;
+    uint16_t inTrigIds[Limits::MAX_TRIGGERS];
+    uint16_t tempTrigIds[Limits::MAX_TRIGGERS];
+    uint8_t nInTrig = 0;
+    uint8_t nTempTrig = 0;
+    for (uint8_t i = 0; i < base.input_triggers_count && nInTrig < Limits::MAX_TRIGGERS; i++) {
+        inTrigIds[nInTrig++] = base.input_triggers[i].id;
+    }
+    for (uint8_t i = 0; i < base.temperature_triggers_count && nTempTrig < Limits::MAX_TRIGGERS; i++) {
+        tempTrigIds[nTempTrig++] = base.temperature_triggers[i].id;
+    }
+    const program_validate::ChannelTables tables{
+        {Pin::RELAY_IDS, HardwareLimits::RELAYS},
+        {Pin::INPUT_IDS, HardwareLimits::INPUTS},
+        {inTrigIds, nInTrig},
+        {tempTrigIds, nTempTrig},
+    };
     for (uint8_t i = 0; i < _localStepCount; i++) {
         _localActions[i] = _localSteps[i].action;
+        const program_validate::ChannelRef ch{_localSteps[i].relay_id, _localSteps[i].input_id,
+                                              _localSteps[i].input_trigger_id, _localSteps[i].temp_trigger_id};
         const program_validate::Issue issue =
-            program_validate::checkStep(_localActions[i], _localSteps[i].relay_id, starterRelayId);
+            program_validate::checkStep(_localActions[i], ch, starterRelayId, tables);
         if (issue != program_validate::Issue::None) {
             logger.log(LogModule::ProgramExecutor, "Program %u rejected: step %u %s\n", (unsigned)programId,
                        (unsigned)(i + 1), program_validate::issueToString(issue));

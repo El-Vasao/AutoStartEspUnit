@@ -6,7 +6,7 @@
   const endpoints = APP.contract?.api?.endpoints || {};
   const timeoutsMs = APP.contract?.api?.timeoutsMs || {};
 
-  // SoftAP ESP32-C3: allow a small number of concurrent HTTP (ESP8266 used 1).
+  // SoftAP: a small number of concurrent HTTP.
   const maxConcurrent = Math.max(1, Number(timeoutsMs.deviceFetchMaxConcurrent) || 2);
   let deviceFetchInFlight = 0;
   const deviceFetchWaiters = [];
@@ -194,7 +194,10 @@
 
     try {
       const { ok, status, data } = await request();
-      if (api.handleBusy409?.(status)) return { ok: false, busy409: true, status, data };
+      if (api.handleBusy409?.(status)) {
+        try { Alpine.store('uiToast')?.error?.('Устройство занято записью. Повторите.'); } catch (e) {}
+        return { ok: false, busy409: true, status, data };
+      }
 
       try { Alpine.store('uiBusy')?.setProgress?.(35); } catch (e) {}
 
@@ -215,11 +218,11 @@
       });
 
       if (res.timeout) {
-        try { Alpine.store('uiNotification')?.warning?.('Нет подтверждения записи. Проверьте связь.'); } catch (e) {}
+        try { Alpine.store('uiToast')?.warning?.('Нет подтверждения записи. Проверьте связь.'); } catch (e) {}
         return { ok: false, timeout: true, status, data };
       }
       if (!res.ok) {
-        try { Alpine.store('uiNotification')?.error?.('Не удалось записать.'); } catch (e) {}
+        try { Alpine.store('uiToast')?.error?.('Не удалось записать.'); } catch (e) {}
         return { ok: false, commitOk: false, status, data };
       }
 
@@ -227,7 +230,7 @@
       try { await onCommitOk?.({ status, data, commit: res }); } catch (e) {}
       return { ok: true, status, data, commit: res };
     } catch (e) {
-      try { Alpine.store('uiNotification')?.error?.('Ошибка сети'); } catch (e2) {}
+      try { Alpine.store('uiToast')?.error?.('Ошибка сети'); } catch (e2) {}
       return { ok: false, error: e };
     } finally {
       try { Alpine.store('uiState')?.setFlashLock?.(false); } catch (e) {}

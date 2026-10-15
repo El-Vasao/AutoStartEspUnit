@@ -204,7 +204,7 @@
                 if (APP.utils.LS.get('otaPostRebootGoPanel') === '1') {
                   APP.utils.LS.del('otaPostRebootGoPanel');
                   Alpine.store('uiState').setActiveTab('panel');
-                  Alpine.store('uiStatusBar').flash('Обновление завершено', 'success', 5000);
+                  Alpine.store('uiToast').flash('Обновление завершено', 'success', 5000);
                 }
               }
             }
@@ -297,7 +297,7 @@
             if (APP.utils.LS.get('otaPostRebootGoPanel') === '1') {
               APP.utils.LS.del('otaPostRebootGoPanel');
               Alpine.store('uiState').setActiveTab('panel');
-              Alpine.store('uiStatusBar').flash('Обновление завершено', 'success', 5000);
+              Alpine.store('uiToast').flash('Обновление завершено', 'success', 5000);
             }
           }
         }

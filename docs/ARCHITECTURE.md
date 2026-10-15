@@ -59,7 +59,7 @@ flowchart TD
 
 ## 3) Политика работы с памятью (ESP32-C3)
 
-Heap headroom заметно выше, чем на ESP8266, но предсказуемый RAM-профиль всё ещё важен (OTA `Update.begin`, SoftAP+SSE+GSM).
+Предсказуемый RAM-профиль важен (OTA `Update.begin`, SoftAP+SSE+GSM; ~170 KB free heap after boot).
 
 ### Heap churn / `String`
 `String` допускается только там, где API Arduino/ESPAsyncWebServer принуждает к этому.

@@ -33,7 +33,7 @@
 
 Входящий DTMF-старт (не шаг программы): см. [`gsm.md`](gsm.md) § Voice/SMS.
 
-Неизвестная строка действия → `ActionId::UNKNOWN` → `PROGRAM_INVALID_REF` при приёме файла и в `start()`. Прошивка не подменяет шаг на `ENGINE_START` и не чинит файл на LittleFS.
+Неизвестная строка действия или неизвестный `relay_id` / `input_id` / trigger id → `PROGRAM_INVALID_REF` при приёме файла и в `start()`. Прошивка не подменяет шаг и не чинит файл на LittleFS.
 
 ```mermaid
 flowchart TD

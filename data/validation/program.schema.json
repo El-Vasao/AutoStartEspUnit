@@ -18,7 +18,32 @@
         "required": ["step", "action"],
         "properties": {
           "step": { "type": "integer", "minimum": 1, "maximum": 15 },
-          "action": { "type": "string", "minLength": 1, "maxLength": 23 },
+          "action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 23,
+            "enum": [
+              "WAIT",
+              "RELAY_PULSE_ON_OFF_ON",
+              "RELAY_PULSE_OFF_ON_OFF",
+              "ENGINE_START",
+              "RELAY_ON",
+              "RELAY_OFF",
+              "RELAY_TOGGLE",
+              "INPUT_ENABLE",
+              "INPUT_DISABLE",
+              "INPUT_TRIGGER_ENABLE",
+              "INPUT_TRIGGER_DISABLE",
+              "TEMP_TRIGGER_ENABLE",
+              "TEMP_TRIGGER_DISABLE",
+              "BATTERY_SAVER_ON",
+              "BATTERY_SAVER_OFF",
+              "THERMOSTAT_ON",
+              "THERMOSTAT_OFF",
+              "CALL_OWNER",
+              "SMS_OWNER"
+            ]
+          },
           "relay_id": { "type": "integer", "minimum": 0, "maximum": 65535 },
           "ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
           "input_id": { "type": "integer", "minimum": 0, "maximum": 65535 },

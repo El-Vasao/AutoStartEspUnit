@@ -97,7 +97,7 @@ ConfigLoadOutcome Config::loadWithOutcome() {
     lastLoadError_ = ErrorCode::NONE;
 
     // Важно: `BaseConfig` большой; при ошибке файла вызываем `reset()`, где на стеке ещё один `BaseConfig`.
-    // Держим `tmp` в отдельном блоке, чтобы к моменту `reset()` он уже был уничтожен — иначе stack smashing на ESP8266.
+    // Держим `tmp` в отдельном блоке, чтобы к моменту `reset()` он уже был уничтожен (два BaseConfig на стеке).
     {
         BaseConfig tmp;
         size_t fileLen = 0;

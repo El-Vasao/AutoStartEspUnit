@@ -32,36 +32,45 @@ void FlashCommitCoordinator::recordFlashCommitSnapshot(FlashCommitOp op, bool ok
     lastFlashCrc_ = crc;
 }
 
-void FlashCommitCoordinator::queueResetConfig() {
+bool FlashCommitCoordinator::queueResetConfig() {
     if ((deferredPostedConfigApply_ || deferredPostedProgramApply_) ||
         (pendingFsOp_ != PendingFsOp::NONE && pendingFsOp_ != PendingFsOp::RESET_CONFIG)) {
         logger.log(LogModule::FlashCommitCoordinator, "queue refused: reset_config (busy %u)\n",
                    (unsigned)pendingFsOp_);
-        return;
+        recordFlashCommitSnapshot(FlashCommitOp::RESET_CONFIG, false, false, lastFlashCrc_);
+        webServer.broadcastStatusForce();
+        return false;
     }
     pendingFsOp_ = PendingFsOp::RESET_CONFIG;
+    return true;
 }
 
-void FlashCommitCoordinator::queueResetPrograms() {
+bool FlashCommitCoordinator::queueResetPrograms() {
     if ((deferredPostedConfigApply_ || deferredPostedProgramApply_) ||
         (pendingFsOp_ != PendingFsOp::NONE && pendingFsOp_ != PendingFsOp::RESET_PROGRAMS)) {
         logger.log(LogModule::FlashCommitCoordinator, "queue refused: reset_programs (busy %u)\n",
                    (unsigned)pendingFsOp_);
-        return;
+        recordFlashCommitSnapshot(FlashCommitOp::RESET_PROGRAMS, false, false, lastFlashCrc_);
+        webServer.broadcastStatusForce();
+        return false;
     }
     pendingFsOp_ = PendingFsOp::RESET_PROGRAMS;
+    return true;
 }
 
-void FlashCommitCoordinator::queueDeleteProgram(uint8_t id) {
+bool FlashCommitCoordinator::queueDeleteProgram(uint8_t id) {
     if ((deferredPostedConfigApply_ || deferredPostedProgramApply_) ||
         (pendingFsOp_ != PendingFsOp::NONE &&
          !(pendingFsOp_ == PendingFsOp::DELETE_PROGRAM && pendingProgramId_ == id))) {
         logger.log(LogModule::FlashCommitCoordinator, "queue refused: delete_program %u (busy %u)\n",
                    (unsigned)id, (unsigned)pendingFsOp_);
-        return;
+        recordFlashCommitSnapshot(FlashCommitOp::DELETE_PROGRAM, false, false, lastFlashCrc_);
+        webServer.broadcastStatusForce();
+        return false;
     }
     pendingProgramId_ = id;
     pendingFsOp_ = PendingFsOp::DELETE_PROGRAM;
+    return true;
 }
 
 void FlashCommitCoordinator::tick(Core& core) {

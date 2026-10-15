@@ -42,7 +42,7 @@ struct AppPorts;
  * Важно:
  * - Сервер предполагается “локальным” (AP/captive portal). Сейчас нет авторизации.
  * - SSE используется как транспорт для UI (лог + статус).
- * - Тяжёлые ответы (JSON) желательно делать компактными: ESP8266 чувствителен к фрагментации heap.
+ * - Тяжёлые ответы (JSON) компактные: фиксированные буферы, без `String` на горячем пути.
  * - В NORMAL веб не считается опциональным модулем — см. блок «Продукт» выше.
  */
 class WebServer {
@@ -100,10 +100,10 @@ public:
     /**
      * @brief True when any flash operation is pending.
      *
-     * Контракт (важно для ESP8266/LittleFS):
+     * Контракт (LittleFS):
      * - когда возвращает true, любые новые операции записи/удаления должны быть отвергнуты/отложены;
      * - сюда входят не только глобальные FS-deferred операции, но и “внутренние” web POST-потоки
-     *   (JSON в tmp, ожидающий применения в `processDeferred()`).
+     *   (JSON в tmp, ожидающий применения в `flashCommit.tick`).
      *
      * Архитектура:
      * - метод намеренно реализован в `.cpp`, чтобы публичный заголовок web-подсистемы
@@ -180,7 +180,7 @@ private:
 
     void rebuildActiveUiSessionCount();
 
-    /// POST JSON → tmp (FsManager), затем deferred apply в `processDeferred()`.
+    /// POST JSON → tmp (FsManager), затем deferred apply в `flashCommit.tick`.
     enum class JsonPostStreamKind : uint8_t { Config, Program };
     static const char* jsonPostTmpPath(JsonPostStreamKind k);
     static bool jsonPostOtherSidePending(JsonPostStreamKind k);

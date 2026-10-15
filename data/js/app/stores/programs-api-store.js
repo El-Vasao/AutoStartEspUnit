@@ -39,12 +39,12 @@
           } catch (e2) {
             this.items = [];
             this.loadOk = false;
-            Alpine.store('uiNotification').error('Неверный список программ');
+            Alpine.store('uiToast').error('Неверный список программ');
           }
         } catch (e) {
           this.items = [];
           this.loadOk = false;
-          Alpine.store('uiNotification').error('Не удалось загрузить программы');
+          Alpine.store('uiToast').error('Не удалось загрузить программы');
         } finally {
           this.loading = false;
           this.loaded = true;
@@ -66,7 +66,7 @@
           return this.current;
         } catch (e) {
           this.editingMode = null;
-          Alpine.store('uiNotification').error('Не удалось загрузить программу');
+          Alpine.store('uiToast').error('Не удалось загрузить программу');
           return null;
         } finally {
           this.loading = false;
@@ -80,10 +80,10 @@
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: `run=${id}`
           });
-          if (ok && data.success) Alpine.store('uiNotification').success('Программа запущена');
-          else Alpine.store('uiNotification').error('Не удалось запустить');
+          if (ok && data.success) Alpine.store('uiToast').success('Программа запущена');
+          else Alpine.store('uiToast').error('Не удалось запустить');
         } catch (e) {
-          Alpine.store('uiNotification').error('Ошибка сети');
+          Alpine.store('uiToast').error('Ошибка сети');
         }
       },
 
@@ -102,12 +102,12 @@
                 timeoutMsCommit: 8000,
                 request: async () => await APP.api.apiJson(`${programEndpoint()}?id=${id}`, { method: 'DELETE' }),
                 onCommitOk: async () => {
-                  Alpine.store('uiNotification').success('Программа удалена');
+                  Alpine.store('uiToast').success('Программа удалена');
                   await self.loadList(true);
                 }
               });
               if (res.busy409) return;
-              if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка удаления');
+              if (!res.ok && !res.timeout) Alpine.store('uiToast').error('Ошибка удаления');
             } catch (e) {}
           }
         });
@@ -123,11 +123,11 @@
             const vr = pv?.validateProgramDataHard?.(programData) || { ok: false, errorsByPath: { __schema__: ['Проверка недоступна'] } };
             if (!vr.ok) {
               const reason = (vr.errorsByPath?.__schema__ && vr.errorsByPath.__schema__[0]) ? String(vr.errorsByPath.__schema__[0]) : 'Неверные данные программы';
-              Alpine.store('uiNotification').error(reason);
+              Alpine.store('uiToast').error(reason);
               return false;
             }
           } catch (e0) {
-            Alpine.store('uiNotification').error('Проверьте поля программы');
+            Alpine.store('uiToast').error('Проверьте поля программы');
             return false;
           }
 
@@ -144,17 +144,17 @@
               body: JSON.stringify(programData)
             }),
             onCommitOk: async () => {
-              Alpine.store('uiNotification').success('Программа сохранена');
+              Alpine.store('uiToast').success('Программа сохранена');
               self.current = null;
               self.editingMode = null;
               await self.loadList(true);
             }
           });
           if (res.busy409) return false;
-          if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка сохранения');
+          if (!res.ok && !res.timeout) Alpine.store('uiToast').error('Ошибка сохранения');
           return !!res.ok;
         } catch (e) {
-          Alpine.store('uiNotification').error('Ошибка сохранения');
+          Alpine.store('uiToast').error('Ошибка сохранения');
           return false;
         } finally {
           this.loading = false;
@@ -201,12 +201,12 @@
                   body: 'reset=1'
                 }),
                 onCommitOk: async () => {
-                  Alpine.store('uiNotification').success('Программы удалены');
+                  Alpine.store('uiToast').success('Программы удалены');
                   await self.loadList(true);
                 }
               });
               if (res.busy409) return;
-              if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка сброса');
+              if (!res.ok && !res.timeout) Alpine.store('uiToast').error('Ошибка сброса');
             } finally {
               this.loading = false;
             }

@@ -186,7 +186,7 @@ namespace Timing {
     /// Минимальная частота yield в длинных циклах (FreeRTOS fairness + lwIP).
     constexpr uint32_t COOPERATE_INTERVAL_MS = 20;
     /// Период «диффа» SSE: сравнение блоков железа/режима без обязательной отправки каждого.
-    /// 500 ms: ESP32-C3 SoftAP headroom (было 1000 на ESP8266 queue pressure).
+    /// 500 ms: период диффа SSE при SoftAP.
     constexpr uint32_t SSE_STATUS_INTERVAL_MS = 500;
     /// Период лёгкого события `clocks`: uptime и таймер программы для синхронизации UI.
     constexpr uint32_t SSE_CLOCKS_INTERVAL_MS = 1000;
@@ -335,7 +335,7 @@ namespace ApConfig {
     constexpr uint8_t HIDDEN = 0;
     /// SoftAP TX cap: Arduino `WIFI_POWER_8_5dBm` (0.25 dBm units).
     constexpr int8_t TX_POWER = 34;
-    /// ESP32-C3 SoftAP: allow a few concurrent STA (was 1 on ESP8266 RAM gates).
+    /// SoftAP в SETUP: несколько одновременных STA.
     constexpr uint8_t SETUP_MAX_CONNECTIONS = 4;
     /// В NORMAL допускаем несколько станций (ESP32-C3 имеет больше RAM).
     constexpr uint8_t NORMAL_MAX_CONNECTIONS = 4;

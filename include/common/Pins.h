@@ -8,7 +8,7 @@
  * @brief Hardware pin map for ESP-C3-12F drop-in on the AutoStart ESP-12 PCB.
  *
  * Pad→GPIO remap (same PCB nets, ESP32-C3 chip numbers):
- * - UART TX/RX pads → GPIO21 / GPIO20 (SIM800 + debug Serial legacy)
+ * - UART TX/RX pads → GPIO21 / GPIO20 (SIM800 + debug Serial share UART0)
  * - Former GPIO16 pad → GPIO2 (RELAY5)
  * - Former GPIO15 pad → GPIO8 (RELAY4, C3 strapping: prefer HIGH at boot)
  * - Former GPIO0 pad → GPIO9 (1-Wire, C3 strapping: LOW = download)
@@ -17,7 +17,7 @@
 
 namespace Pin {
 
-    // GSM on UART0 pads (shared with debug Serial — intentional legacy)
+    // GSM on UART0 pads (shared with debug Serial)
     constexpr uint8_t GSM_TX = 21;     // module TX pad → SIM800 RXD
     constexpr uint8_t GSM_RX = 20;     // module RX pad ← SIM800 TXD
 

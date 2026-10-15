@@ -17,10 +17,31 @@ enum class Issue : uint8_t {
     UnknownAction,
     /// Шаг RELAY_* адресует реле стартера: стартером управляет только ENGINE_START.
     DrivesStarterRelay,
+    /// input_id / relay_id / trigger id нет в таблице устройства.
+    InvalidRef,
+};
+
+struct IdTable {
+    const uint16_t* ids{nullptr};
+    uint8_t count{0};
+};
+
+struct ChannelRef {
+    uint16_t relay_id{0};
+    uint16_t input_id{0};
+    uint16_t input_trigger_id{0};
+    uint16_t temp_trigger_id{0};
+};
+
+struct ChannelTables {
+    IdTable relays{};
+    IdTable inputs{};
+    IdTable inputTriggers{};
+    IdTable tempTriggers{};
 };
 
 /// `starterRelayId` = 0 — реле стартера не назначено.
-Issue checkStep(ActionId action, uint16_t relayId, uint16_t starterRelayId);
+Issue checkStep(ActionId action, const ChannelRef& ch, uint16_t starterRelayId, const ChannelTables& tables);
 
 /// Короткое имя проблемы для журнала ("unknown action", ...); "" для None.
 const char* issueToString(Issue issue);

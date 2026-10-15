@@ -104,67 +104,6 @@ body {
     margin: 0;
 }
 
-.status-strip {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: 1px solid var(--border-soft);
-    font-size: 0.88rem;
-    line-height: 1.35;
-}
-
-.status-strip-text {
-    flex: 1;
-    min-width: 0;
-    color: var(--text-primary);
-}
-
-.status-strip-text strong {
-    display: block;
-    margin-bottom: 2px;
-    font-size: 0.82rem;
-    letter-spacing: 0.02em;
-    color: var(--text-secondary);
-}
-
-.status-strip-ota {
-    background: rgba(47, 129, 247, 0.12);
-    border-color: rgba(47, 129, 247, 0.35);
-}
-
-.status-strip-success {
-    background: rgba(52, 211, 153, 0.12);
-    border-color: rgba(52, 211, 153, 0.4);
-}
-
-.status-strip-danger {
-    background: rgba(251, 113, 133, 0.12);
-    border-color: rgba(251, 113, 133, 0.45);
-}
-
-.status-strip-dirty {
-    background: rgba(251, 191, 36, 0.08);
-    border-color: rgba(251, 191, 36, 0.28);
-}
-
-.status-strip-info {
-    background: rgba(47, 129, 247, 0.10);
-    border-color: rgba(47, 129, 247, 0.3);
-}
-
-.status-strip-warning {
-    background: rgba(251, 191, 36, 0.10);
-    border-color: rgba(251, 191, 36, 0.35);
-}
-
-.status-strip-error {
-    background: rgba(251, 113, 133, 0.10);
-    border-color: rgba(251, 113, 133, 0.38);
-}
-
 .btn.compact {
     padding: 6px 12px;
     font-size: 0.82rem;
@@ -176,40 +115,6 @@ body {
     background: var(--bg-elevated);
     color: var(--text-primary);
     border: 1px solid var(--border);
-}
-
-.status-dismiss {
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    font-size: 1.25rem;
-    line-height: 1;
-    padding: 0 4px;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-.status-dismiss:hover {
-    color: var(--text-primary);
-}
-
-.status-validation {
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: 1px solid rgba(251, 113, 133, 0.4);
-    background: rgba(251, 113, 133, 0.08);
-    font-size: 0.86rem;
-}
-.status-validation strong {
-    display: block;
-    margin-bottom: 6px;
-    color: var(--danger);
-}
-.status-validation ul {
-    margin: 0;
-    padding-left: 1.1rem;
-}
-.status-validation li {
-    margin: 4px 0;
 }
 
 /* Unsaved changes highlighting (only after user attempted to leave Settings) */
@@ -254,20 +159,6 @@ body {
 }
 
 /* Green “new item” highlights removed (too noisy). */
-
-.revert-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    margin-bottom: 12px;
-    padding: 8px 10px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-soft);
-    border-radius: 12px;
-    font-size: 0.85rem;
-    color: var(--text-muted);
-}
 
 .status-badge {
     background: var(--accent-light);
@@ -1380,10 +1271,6 @@ button.link:focus {
         flex-direction: column;
         align-items: flex-start;
         gap: 6px;
-    }
-    .status-strip {
-        flex-direction: column;
-        align-items: stretch;
     }
     main {
         padding: var(--space-3);

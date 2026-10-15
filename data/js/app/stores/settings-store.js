@@ -173,7 +173,7 @@
           this._baselineObj = APP.utils.deepClone(cfg);
           this.dirty = false;
         } catch (e) {
-          Alpine.store('uiNotification').error('Не удалось загрузить настройки');
+          Alpine.store('uiToast').error('Не удалось загрузить настройки');
         } finally {
           if (manageLoading) this.loading = false;
         }
@@ -202,16 +202,9 @@
           this[key] = v;
         }
 
-        // Normalize loose-typed fields from device/config.json to match schema expectations.
         try {
           const veh = this.vehicle;
           if (veh && typeof veh === 'object') {
-            const raw = veh.adc_voltage_coeff;
-            // settings.schema.json expects number; older configs may store it as string.
-            if (typeof raw === 'string' && raw !== '') {
-              const n = Number(raw);
-              if (Number.isFinite(n)) veh.adc_voltage_coeff = n;
-            }
             // Ephemeral FE calibrate input — never persisted by device; drop leftovers after reload.
             if (Object.prototype.hasOwnProperty.call(veh, 'adc_calibrate_voltage')) {
               delete veh.adc_calibrate_voltage;
@@ -234,8 +227,8 @@
           if (errs.length) {
             this.validationErrors = errs.map(e => ({ ...e, source: 'client' }));
             this.loading = false;
-            Alpine.store('uiStatusBar')?.goToValidationField?.(errs[0]?.field);
-            Alpine.store('uiNotification')?.error?.(errs[0]?.message || 'Проверьте поля');
+            Alpine.store('uiToast')?.goToValidationField?.(errs[0]?.field);
+            Alpine.store('uiToast')?.error?.(errs[0]?.message || 'Проверьте поля');
             return;
           }
         } catch (e) {
@@ -244,7 +237,7 @@
           return;
         }
 
-        Alpine.store('uiStatusBar').clearHardwareError();
+        Alpine.store('uiToast').clearHardwareError();
         try {
           const self = this;
           const result = await APP.api.runFlashWrite({
@@ -278,17 +271,17 @@
           if (result.busy409) return;
 
           if (result.timeout) {
-            Alpine.store('uiStatusBar').setHardwareError('Нет подтверждения записи. Проверьте связь.');
+            Alpine.store('uiToast').setHardwareError('Нет подтверждения записи. Проверьте связь.');
             return;
           }
           if (!result.ok) {
             // If validation errors already set above, do not overwrite them with generic message.
             if (!this.validationErrors?.length) {
-              Alpine.store('uiStatusBar').setHardwareError('Не удалось сохранить. Перезагрузите и повторите.');
+              Alpine.store('uiToast').setHardwareError('Не удалось сохранить. Перезагрузите и повторите.');
             }
           }
         } catch (e) {
-          Alpine.store('uiStatusBar').setHardwareError('Ошибка сети при сохранении.');
+          Alpine.store('uiToast').setHardwareError('Ошибка сети при сохранении.');
         } finally {
           this.loading = false;
         }

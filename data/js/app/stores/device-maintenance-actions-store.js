@@ -14,9 +14,9 @@
               // Soft UI guard: reboot/reset/OTA are assumed safe only in trusted network (device AP).
               // If user enabled debug mode, we still show confirmation above.
               await APP.api.apiJson(APP.api.endpoints?.reboot || '/reboot', { method: 'POST' });
-              Alpine.store('uiNotification').info('Перезагрузка…');
+              Alpine.store('uiToast').info('Перезагрузка…');
             } catch (e) {
-              Alpine.store('uiNotification').error('Ошибка сети');
+              Alpine.store('uiToast').error('Ошибка сети');
             }
           }
         });
@@ -28,9 +28,9 @@
           onConfirm: async () => {
             try {
               await APP.api.apiJson(APP.api.endpoints?.modemReboot || '/modem/reboot', { method: 'POST' });
-              Alpine.store('uiNotification').info('Перезагрузка модема…');
+              Alpine.store('uiToast').info('Перезагрузка модема…');
             } catch (e) {
-              Alpine.store('uiNotification').error('Ошибка сети');
+              Alpine.store('uiToast').error('Ошибка сети');
             }
           }
         });
@@ -49,7 +49,7 @@
                 timeoutMsCommit: 8000,
                 request: async () => await APP.api.apiJson(APP.api.endpoints?.configReset || '/config/reset', { method: 'POST' }),
                 onCommitOk: async () => {
-                  Alpine.store('uiNotification').success('Настройки сброшены. Нужна перезагрузка.');
+                  Alpine.store('uiToast').success('Настройки сброшены. Нужна перезагрузка.');
                   Alpine.store('uiBusy').showOk({
                     title: 'Сброс выполнен',
                     message: 'Настройки сброшены. Нужна перезагрузка.',
@@ -58,7 +58,7 @@
                 }
               });
               if (res.busy409) return;
-              if (!res.ok && !res.timeout) Alpine.store('uiNotification').error('Ошибка сброса');
+              if (!res.ok && !res.timeout) Alpine.store('uiToast').error('Ошибка сброса');
             } catch (e) {}
           }
         });

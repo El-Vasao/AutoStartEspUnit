@@ -208,8 +208,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::INPUT_TRIGGER_DISABLE: {
             const int8_t idx = findInputTriggerIndexById(step.input_trigger_id);
             if (idx < 0 || !validTriggerIndex((uint8_t)idx)) {
-                logInvalidTriggerAndSkip((uint8_t)idx, "input_trigger");
-                nextStep();
+                abortInvalidRef("input_trigger_id", step.input_trigger_id);
                 return;
             }
             core.setTriggerRuntime((uint8_t)idx, actionId == ActionId::INPUT_TRIGGER_ENABLE);
@@ -221,8 +220,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::TEMP_TRIGGER_DISABLE: {
             const int8_t idx = findTempTriggerIndexById(step.temp_trigger_id);
             if (idx < 0 || !validTriggerIndex((uint8_t)idx)) {
-                logInvalidTriggerAndSkip((uint8_t)idx, "temp_trigger");
-                nextStep();
+                abortInvalidRef("temp_trigger_id", step.temp_trigger_id);
                 return;
             }
             core.setTempTriggerRuntime((uint8_t)idx, actionId == ActionId::TEMP_TRIGGER_ENABLE);
