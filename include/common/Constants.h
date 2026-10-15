@@ -392,12 +392,14 @@ namespace JsonBytes {
 
     namespace Mqtt {
         constexpr size_t CMD_JSON_MAX = 256; ///< макс. размер входящей JSON-команды (payload) + '\0'
-        /// Лимит тела MQTT PUBLISH (JSON) при frame max 1024 и длине топика до `TextBytes::Mqtt::TOPIC-1`.
+        /// Лимит тела MQTT PUBLISH (JSON) при длине топика до `TextBytes::Mqtt::TOPIC-1`.
         /// Wire: payload + 1 (fixed) + ≤4 (RL) + 2 (topic len) + topicLen ≤ TX_MAX.
         constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 900;
         constexpr size_t LIST_PROGRAMS_JSON_MAX = 960; ///< list reply: envelope + programs array
         /// status cmd fat /reply: id+code + nested status object (≤ STATUS_PAYLOAD_MAX_BYTES).
         constexpr size_t STATUS_REPLY_JSON_MAX = 960;
+        /// hwmap reply: envelope + full hardware catalog (all trigger slots, long names).
+        constexpr size_t HWMAP_JSON_MAX = 2800;
         /// Voltage change below this does not count as significant / does not enter a delta.
         constexpr float STATUS_VOLTAGE_EPS = 0.05f;
         /// Temperature change below this does not count as significant / does not enter a delta.
@@ -451,7 +453,8 @@ namespace NetTiming {
     constexpr uint32_t MQTT_TCP_CONNECT_TIMEOUT_MS = 45000;
 
     /// One MQTT/TCP frame staging size (MqttFsm TX slot + Sim800Tcp RX/TX rings).
-    constexpr uint16_t MQTT_FRAME_MAX = 1024;
+    /// 3072 fits one `hwmap` reply (full catalog) plus the PUBLISH header.
+    constexpr uint16_t MQTT_FRAME_MAX = 3072;
     /// MqttFsmClient outbound queue depth (Ctrl reserve + Tele + in-flight).
     constexpr uint8_t MQTT_TX_Q_DEPTH = 3;
     /// RX assemble buffer (incomplete frame).

@@ -3,6 +3,7 @@
 #include "app/AppPorts.h"
 #include "config/Config.h"
 #include "config/SensorRomResolve.h"
+#include "mqtt/HwMapJson.h"
 #include "mqtt/MqttStatusBuilder.h"
 
 #include "app/StatusSnapshot.h"
@@ -113,6 +114,9 @@ void MqttClient::captureStatusSnapshot_(StatusSnapshot& s) const {
         s.csqRssi = gsm.getSignalQuality();
         s.csqBer = gsm.getSignalBer();
     }
+
+    s.programsRev = config.programsRev();
+    s.hwRev = hwMapObjectFnv(cfg);
 
     ErrorSnapshotEntry undeliv[ErrorHistory::CAPACITY]{};
     const uint8_t n = err.copyUndelivered(undeliv, ErrorHistory::CAPACITY);

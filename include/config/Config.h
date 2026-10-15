@@ -68,12 +68,18 @@ public:
     bool isProgramUsed(uint8_t id) const;
     bool ensureProgramIndex();
 
+    /// FNV-1a of the current program index array (`[{id,name},...]`). 0 until the index is accepted.
+    uint32_t programsRev() const { return programsRev_; }
+
 private:
     BaseConfig baseCache;
     uint16_t configCRC{};
     bool loaded{};
     ErrorCode lastLoadError_{ErrorCode::NONE};
     WdtPort wdtPort_{};
+    uint32_t programsRev_{0};
+
+    void refreshProgramsRevFromRows_(const void* rows, size_t n);
 
     bool loadBaseFromFile(const char* path, BaseConfig& target, size_t& outLen, uint16_t* outFileCrc = nullptr);
     bool saveBaseConfig(const BaseConfig& cfg);

@@ -112,6 +112,7 @@ MqttCommandKind cmdFrom(const char* c) {
     if (strcmp(c, "status") == 0) return MqttCommandKind::Status;
     if (strcmp(c, "set") == 0) return MqttCommandKind::Set;
     if (strcmp(c, "set_time") == 0) return MqttCommandKind::SetTime;
+    if (strcmp(c, "hwmap") == 0) return MqttCommandKind::HwMap;
     return MqttCommandKind::None;
 }
 

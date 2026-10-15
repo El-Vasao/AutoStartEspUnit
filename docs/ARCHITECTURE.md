@@ -80,7 +80,7 @@ flowchart TD
 Дополнение:
 - Для рантайм-исполнения программ — компактные шаги без строк (`CompiledStep`).
 - Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`).
-- MQTT: выделенные топики из конфигурации; payload caps (`STATUS_PAYLOAD_MAX_BYTES=900`) согласованы с `MqttFsmClient::TX_MAX=1024`. Нормативный JSON статуса — `docs/modules/mqtt.md` §4 (вложенные `time`/`hw`/`radio`/`program`/`runtime`/`diag`, `full` marker, snapshot/delta merge).
+- MQTT: выделенные топики из конфигурации; payload статуса (`STATUS_PAYLOAD_MAX_BYTES=900`) меньше кадра `MqttFsmClient::TX_MAX` (3072, вместе с ответом `hwmap`). Нормативный JSON статуса — `docs/modules/mqtt.md` §4 (вложенные `time`/`hw`/`radio`/`program`/`runtime`/`diag`/`rev`, `full` marker, snapshot/delta merge).
 
 ## 3.0) MQTT contract (топики, сообщения, доставка)
 MQTT чувствителен к стабильности цикла (SIM800 + SoftAP).

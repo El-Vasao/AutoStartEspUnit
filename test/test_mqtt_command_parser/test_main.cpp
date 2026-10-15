@@ -23,6 +23,10 @@ void test_parse_stop_list_status() {
 
     TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"c\",\"cmd\":\"status\"}", cmd));
     TEST_ASSERT_EQUAL((int)MqttCommandKind::Status, (int)cmd.kind);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"h1\",\"cmd\":\"hwmap\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::HwMap, (int)cmd.kind);
+    TEST_ASSERT_EQUAL_STRING("hwmap", mqttCmdKindStr(cmd.kind));
 }
 
 void test_parse_set_thermostat() {

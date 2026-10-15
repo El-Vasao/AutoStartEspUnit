@@ -2,6 +2,7 @@
 
 #include "app/AppPorts.h"
 #include "config/Config.h"
+#include "mqtt/HwMapJson.h"
 #include "mqtt/MqttCommandParser.h"
 #include "mqtt/MqttStatusBuilder.h"
 
@@ -72,6 +73,19 @@ size_t encodeStatusReply(Print& p, void* ctx) {
     } else {
         fc.print("null");
     }
+    fc.print('}');
+    return fc.n;
+}
+
+size_t encodeHwMapReply(Print& p, void* ctx) {
+    auto* c = reinterpret_cast<const ListReplyCtx*>(ctx);
+    CountingForwarder fc(p);
+    fc.print("{\"id\":\"");
+    json_escape::writeEscaped(fc, c->id ? c->id : "");
+    fc.print("\",\"code\":");
+    fc.print(MqttCmd::CODE_OK);
+    fc.print(",\"hw\":");
+    emitHwMapObject(config.getBase(), fc);
     fc.print('}');
     return fc.n;
 }
@@ -173,6 +187,22 @@ bool MqttClient::publishListReply_(const char* id) {
     return true;
 }
 
+bool MqttClient::publishHwMapReply_(const char* id) {
+    if (!_topicReply[0]) return false;
+    ListReplyCtx ctx{id};
+    size_t measured = 0;
+    if (!_fsm.publishPrintedMeasured(_topicReply, encodeHwMapReply, &ctx,
+                                     JsonBytes::Mqtt::HWMAP_JSON_MAX, false, true, &measured)) {
+        if (measured > JsonBytes::Mqtt::HWMAP_JSON_MAX) {
+            logger.log(LogModule::MqttClient, "hwmap reply too large measured=%u\n", (unsigned)measured);
+            return publishThinReply_(id, MqttCmd::CODE_UNPROCESSABLE);
+        }
+        return false;
+    }
+    logger.log(LogModule::MqttClient, "pub reply hwmap id=%s code=200 bytes=%u\n", id ? id : "", (unsigned)measured);
+    return true;
+}
+
 bool MqttClient::publishStatusReply_(const char* id) {
     if (!_topicReply[0]) return false;
     StatusSnapshot snap{};
@@ -217,6 +247,8 @@ bool MqttClient::stageReply_(const PendingReply& pr) {
         ok = publishListReply_(pr.id);
     } else if (pr.kind == PendingKind::Status) {
         ok = publishStatusReply_(pr.id);
+    } else if (pr.kind == PendingKind::HwMap) {
+        ok = publishHwMapReply_(pr.id);
     }
 
     if (ok) return true;
@@ -241,6 +273,8 @@ void MqttClient::flushPending_() {
             ok = publishListReply_(pr.id);
         } else if (pr.kind == PendingKind::Status) {
             ok = publishStatusReply_(pr.id);
+        } else if (pr.kind == PendingKind::HwMap) {
+            ok = publishHwMapReply_(pr.id);
         }
         if (!ok) break;
         for (uint8_t i = 1; i < _pendingCount; i++) {
@@ -268,6 +302,7 @@ bool MqttClient::validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const
         case MqttCommandKind::Stop:
         case MqttCommandKind::List:
         case MqttCommandKind::Status:
+        case MqttCommandKind::HwMap:
             return true;
         case MqttCommandKind::Set:
             if (cmd.setName == MqttSetName::None || !cmd.hasEnabled) {
@@ -427,6 +462,16 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
             logger.log(LogModule::MqttClient, "status id=%s\n", cmd.id);
             PendingReply pr{};
             pr.kind = PendingKind::Status;
+            strlcpy(pr.id, cmd.id, sizeof(pr.id));
+            pr.code = MqttCmd::CODE_OK;
+            logger.log(LogModule::MqttClient, "cmd final id=%s code=%u\n", pr.id, (unsigned)pr.code);
+            (void)stageReply_(pr);
+            return;
+        }
+        case MqttCommandKind::HwMap: {
+            logger.log(LogModule::MqttClient, "hwmap id=%s\n", cmd.id);
+            PendingReply pr{};
+            pr.kind = PendingKind::HwMap;
             strlcpy(pr.id, cmd.id, sizeof(pr.id));
             pr.code = MqttCmd::CODE_OK;
             logger.log(LogModule::MqttClient, "cmd final id=%s code=%u\n", pr.id, (unsigned)pr.code);

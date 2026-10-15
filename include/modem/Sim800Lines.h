@@ -28,7 +28,7 @@ public:
     };
     enum class State : uint8_t { Idle, MatchI, MatchP, MatchD, MatchComma, ReadLen, ReadData };
 
-    static constexpr uint16_t kMaxIpdLen = 1024; // Sim800Tcp::TCP_BUF_SIZE / MQTT_FRAME_MAX
+    static constexpr uint16_t kMaxIpdLen = 3072; // Sim800Tcp::TCP_BUF_SIZE / MQTT_FRAME_MAX
 
     Event feed(char c);
     void reset();

@@ -1,5 +1,7 @@
 #include "mqtt/MqttStatusBuilder.h"
 
+#include "common/Fnv1a.h"
+
 #include "common/Constants.h"
 #include "common/JsonEscape.h"
 #include "common/Pins.h"
@@ -264,8 +266,17 @@ bool mqttStatusHasSignificantChanges(const StatusSnapshot& cur, const StatusSnap
     if (freeHeapChanged(cur, prev)) return true;
     if (lastErrChanged(cur, prev)) return true;
     if (cur.lastErrCount > 0) return true;
+    if (cur.programsRev != prev.programsRev || cur.hwRev != prev.hwRev) return true;
     // Epoch / uptime ticks alone are not significant.
     return false;
+}
+
+static void printRevObject(Print& p, const StatusSnapshot& s) {
+    p.print("{\"programs\":\"");
+    writeFnv1a32Hex(p, s.programsRev);
+    p.print("\",\"hw\":\"");
+    writeFnv1a32Hex(p, s.hwRev);
+    p.print("\"}");
 }
 
 void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p) {
@@ -375,6 +386,10 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
         }
     }
     p.print('}');
+
+    comma(p, &c);
+    p.print("\"rev\":");
+    printRevObject(p, s);
 
     p.print('}');
 }
@@ -603,6 +618,12 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
             printLastErrArrayValue(p, cur);
         }
         p.print('}');
+    }
+
+    if (cur.programsRev != prev.programsRev || cur.hwRev != prev.hwRev) {
+        comma(p, &c);
+        p.print("\"rev\":");
+        printRevObject(p, cur);
     }
 
     p.print('}');

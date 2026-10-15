@@ -95,12 +95,13 @@ MQTT-публикация статуса и подписка на команды
 {"id":"7f3a","cmd":"set","name":"battery_saver","enabled":false}
 {"id":"a1","cmd":"set","name":"wifi_ap","enabled":true}
 {"id":"t1","cmd":"set_time","epoch":1710000000}
+{"id":"h1","cmd":"hwmap"}
 ```
 
 | Поле | Правило |
 |------|---------|
 | `id` | 1..`MqttCmd::ID_MAX_LEN` (16) |
-| `cmd` | `run` \| `stop` \| `list` \| `status` \| `set` \| `set_time` |
+| `cmd` | `run` \| `stop` \| `list` \| `status` \| `set` \| `set_time` \| `hwmap` |
 | `program` / `name` / `ref` / `enabled` / `epoch` | по cmd (`set_time` требует `epoch` ≥ `TimeSync::MIN_SANE_EPOCH_UTC`) |
 
 ### 2) Reply (`{prefix}/reply`)
@@ -110,6 +111,7 @@ MQTT-публикация статуса и подписка на команды
 {"id":"b2","code":200}
 {"id":"b2","code":200,"programs":[…]}
 {"id":"b2","code":200,"status":{"full":true,…}}
+{"id":"h1","code":200,"hw":{"relays":[…],"inputs":[…],"sensors":[…]}}
 ```
 
 | code | Смысл |
@@ -125,6 +127,17 @@ MQTT-публикация статуса и подписка на команды
 `run`: `202` → финал `200`/`500` после lifecycle — в том числе при синхронном `finish()` внутри `start()` (одношаговые программы); `422` если старт не удался.  
 Клиент: ждать `202` (~10 с) как факт приёма; финал — своим таймаутом. Повтор с тем же `id` обрабатывается заново (idempotency LRU нет).
 
+`hwmap` — каталог для кэша приложения. Только строки с `id != 0`. Реле подписаны `K1`… как в UI (отдельного имени в конфиге нет). У триггера своего имени нет: подпись собирается из `inputs` / `sensors` того же объекта.
+
+- `relays`: `id`, `name`
+- `inputs`: `id`, `name`
+- `sensors`: `id`, `name`
+- `inputTriggers`: `id`, `inputId`, `programId`, `level`
+- `tempTriggers`: `id`, `sensorId`, `programId`, `comparison`, `threshold`
+- `scheduleTriggers`: `id`, `programId`, `hour`, `minute`, `days`
+
+`rev.hw` в статусе — FNV-1a этих байт объекта `hw`. Тело больше `HWMAP_JSON_MAX` → финал `422`.
+
 ### 3) Connection markers (`{prefix}/avail`)
 retained `"offline"` / `"online"`.
 
@@ -136,7 +149,7 @@ retained `"offline"` / `"online"`.
 
 **Full / delta / skip:** `forceFull` или нет baseline → full; иначе undelivered `diag.last_err` → TX; иначе significant → delta; иначе skip. Тик `uptime` / `time.epoch` сами по себе skip не отменяют.
 
-**Схема:** корень `full`, `uptime`, `mode`; объекты `time`, `hw`, `radio`, `program`, `runtime`, `diag`.
+**Схема:** корень `full`, `uptime`, `mode`; объекты `time`, `hw`, `radio`, `program`, `runtime`, `diag`, `rev`.
 
 #### Full (`"full":true`)
 
@@ -181,7 +194,8 @@ retained `"offline"` / `"online"`.
     "last_err": [
       {"code": 21, "msg": "Panic reset", "active": true}
     ]
-  }
+  },
+  "rev": { "programs": "a1b2c3d4", "hw": "0e9f1a2b" }
 }
 ```
 
@@ -194,6 +208,8 @@ retained `"offline"` / `"online"`.
 | `program.timerRemaining` | секунды |
 | `diag.freeHeap` | байты |
 | `diag.last_err` | one-shot undelivered (newest first); omit if empty |
+| `rev.programs` | FNV-1a 32 (8 hex) массива `list` (`id`+`name`). Смена шагов без id/имени лист не меняет |
+| `rev.hw` | FNV-1a 32 объекта `hw` из ответа `hwmap` |
 
 #### Delta (`"full":false`)
 
@@ -206,10 +222,11 @@ retained `"offline"` / `"online"`.
 - `program` — partial: `running`, `current` (id или `null` при стопе), `last`, `timerRemaining` (`|Δ|≥1` с или смена running)
 - `runtime` — partial thermostat/batterySaver + changed trigger ids (без tombstone удалённых config id)
 - `diag` — `freeHeap` при `|Δ|≥2048`; `last_err` полный массив если count>0
+- `rev` — весь объект, если сменился `programs` или `hw`
 
 #### Significant → delta (иначе skip)
 
-`mode`; `time` meta (не epoch alone); `hw` voltage(ε)/engine/inputs/relays/temps; `radio.csq`; `program` running/current/last/timer; `runtime` thermostat/batterySaver/triggers; `diag.freeHeap` ≥2 KiB; `diag.last_err` changed **или** count>0.
+`mode`; `time` meta (не epoch alone); `hw` voltage(ε)/engine/inputs/relays/temps; `radio.csq`; `program` running/current/last/timer; `runtime` thermostat/batterySaver/triggers; `diag.freeHeap` ≥2 KiB; `diag.last_err` changed **или** count>0; `rev` (`programs` или `hw`).
 
 **Не significant:** тик `uptime`, тик `time.epoch`, только `temp.lastMs`, подпороговые Δ voltage/temp/heap/timer.
 

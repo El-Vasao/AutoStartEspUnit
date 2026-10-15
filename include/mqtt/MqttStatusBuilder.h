@@ -6,7 +6,7 @@
 #include "config/ConfigTypes.h"
 
 /// Canonical nested MQTT JSON status (see docs/modules/mqtt.md § StatusSnapshot).
-/// Full: `"full":true`, `uptime`, `mode`, `time`, `hw`, `radio`, `program`, `runtime`, `diag`
+/// Full: `"full":true`, `uptime`, `mode`, `time`, `hw`, `radio`, `program`, `runtime`, `diag`, `rev`
 /// (`diag.last_err` omitted when empty). Compact wire (no pretty-print).
 void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p);
 

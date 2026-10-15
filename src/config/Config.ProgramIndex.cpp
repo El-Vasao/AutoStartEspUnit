@@ -1,5 +1,6 @@
 #include "config/Config.h"
 #include "common/EspHal.h"
+#include "common/Fnv1a.h"
 #include "fs/FsManager.h"
 #include "common/Logger.h"
 #include "common/Utils.h"
@@ -33,6 +34,12 @@ bool loadRowsFromIndexFile(program_json::IndexRow* rows, size_t cap, size_t* out
 }
 
 } // namespace
+
+void Config::refreshProgramsRevFromRows_(const void* rows, size_t n) {
+    Fnv1aPrint fp;
+    program_json::emitProgramIndexArrayPrint(static_cast<const program_json::IndexRow*>(rows), n, fp);
+    programsRev_ = fp.hash();
+}
 
 bool Config::emitProgramListWrapped(Print& p) const {
     program_json::IndexRow rows[Limits::MAX_PROGRAMS];
@@ -160,6 +167,7 @@ bool Config::ensureProgramIndex() {
         return rebuildProgramIndex();
     }
 
+    refreshProgramsRevFromRows_(rows, indexCount);
     logger.log(LogModule::Config, "ensureProgramIndex: OK (files=%u index=%u)\n",
                (unsigned)filesCount, (unsigned)indexCount);
     return true;
@@ -273,6 +281,7 @@ bool Config::rebuildProgramIndex() {
 
     const bool wrote =
         fileSystem.writeJsonAtomicStream("/programs/index.json", encodeProgramIndexArray, &ctx, Limits::CONFIG_JSON_SIZE);
+    if (wrote) refreshProgramsRevFromRows_(items, count);
     logger.log(LogModule::Config, "rebuildProgramIndex: %s (%u items)\n", wrote ? "OK" : "FAILED", (unsigned)count);
     return wrote;
 }

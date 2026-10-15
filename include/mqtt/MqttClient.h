@@ -51,7 +51,7 @@ public:
     static void onProgramLifecycleThunk(void* ctx, uint8_t programId, bool finishedOk);
 
 private:
-    enum class PendingKind : uint8_t { None, Thin, List, Status };
+    enum class PendingKind : uint8_t { None, Thin, List, Status, HwMap };
 
     struct PendingReply {
         PendingKind kind{PendingKind::None};
@@ -131,6 +131,7 @@ private:
     bool publishThinReply_(const char* id, uint16_t code);
     bool publishListReply_(const char* id);
     bool publishStatusReply_(const char* id);
+    bool publishHwMapReply_(const char* id);
     void captureStatusSnapshot_(StatusSnapshot& out) const;
     bool validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const;
     void confirmLastErrDelivery_();

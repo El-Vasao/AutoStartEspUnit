@@ -61,4 +61,8 @@ struct StatusSnapshot {
     /// Last AT+CSQ: rssi 0..31 (99 unknown), ber 0..7 (-1 if never seen).
     int16_t csqRssi{0};
     int16_t csqBer{-1};
+
+    /// FNV-1a 32 of the `list` programs array and of the `hwmap` object.
+    uint32_t programsRev{0};
+    uint32_t hwRev{0};
 };
