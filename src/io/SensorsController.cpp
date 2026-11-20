@@ -72,7 +72,7 @@ void SensorsController::clearSensorErrorIf_(ErrorCode code) {
 }
 
 void SensorsController::begin() {
-    logger.log(LogModule::SensorsController, "начало\n");
+    logger.log(LogModule::SensorsController, "start\n");
     pinMode(Pin::ONEWIRE, INPUT);
 
     // Делитель АКБ даёт на АЦП ~0–1 В; ослабление 0 дБ ≈ полная шкала 0–1.1 В на ESP32-C3.
@@ -83,7 +83,7 @@ void SensorsController::begin() {
     ow.dallas.begin();
     _sensorCount = discoverSensors();
 
-    logger.log(LogModule::SensorsController, "найдено датчиков DS18B20: %u\n", _sensorCount);
+    logger.log(LogModule::SensorsController, "DS18B20 sensors found: %u\n", _sensorCount);
     printAllAddresses();
 
     for (uint8_t i = 0; i < _sensorCount; i++) {
@@ -92,10 +92,10 @@ void SensorsController::begin() {
 
     requestTemperatures();
 
-    logger.log(LogModule::SensorsController, "VoltageMonitor успех\n");
+    logger.log(LogModule::SensorsController, "VoltageMonitor ok\n");
     updateVoltage();
     if (_voltageData.valid) {
-        logger.log(LogModule::SensorsController, "начальное напряжение: %.2f В\n", _voltageData.voltage);
+        logger.log(LogModule::SensorsController, "initial voltage: %.2f V\n", _voltageData.voltage);
     }
 
     // Выводим конфиг датчиков (ROM+имя) из конфига
@@ -103,7 +103,7 @@ void SensorsController::begin() {
         const char* rom = config.getBase().sensors[i].rom;
         const char* name = config.getBase().sensors[i].name;
         if ((rom && rom[0]) || (name && name[0])) {
-            logger.log(LogModule::SensorsController, "датчик конфига %d: rom=%s имя=%s коэф.=%.2f\n",
+            logger.log(LogModule::SensorsController, "config sensor %d: rom=%s name=%s coef=%.2f\n",
                        i,
                        (rom && rom[0]) ? rom : "—",
                        (name && name[0]) ? name : "—",
@@ -162,7 +162,7 @@ void SensorsController::updateTemperatures() {
     }
 
     if (_conversionInProgress && (now - _conversionStartTime > DS18B20::CONVERSION_TIMEOUT_MS)) {
-        logger.log(LogModule::SensorsController, "таймаут преобразования температуры\n");
+        logger.log(LogModule::SensorsController, "temperature conversion timeout\n");
         _conversionInProgress = false;
         for (uint8_t i = 0; i < _sensorCount; i++) {
             _sensorData[i].valid = false;
@@ -230,7 +230,7 @@ void SensorsController::printAllAddresses() const {
     for (uint8_t i = 0; i < _sensorCount; i++) {
         char addrStr[TextBytes::Sensors::ADDR_STRING];
         formatSensorRomString(_foundAddresses[i], addrStr, sizeof(addrStr));
-        logger.log(LogModule::SensorsController, "  датчик %u: %s\n", i, addrStr);
+        logger.log(LogModule::SensorsController, "  sensor %u: %s\n", i, addrStr);
     }
 }
 

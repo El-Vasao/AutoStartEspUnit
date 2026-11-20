@@ -59,32 +59,6 @@ static void test_threshold_invalid_compare_never_fires() {
     TEST_ASSERT_FALSE(t.latched);
 }
 
-static void test_weekday_bits() {
-    TEST_ASSERT_EQUAL_HEX8(0x40, weekdayBit(0));  // воскресенье
-    TEST_ASSERT_EQUAL_HEX8(0x01, weekdayBit(1));  // понедельник
-    TEST_ASSERT_EQUAL_HEX8(0x20, weekdayBit(6));  // суббота
-    TEST_ASSERT_EQUAL_HEX8(0x00, weekdayBit(7));
-    TEST_ASSERT_EQUAL_HEX8(0x00, weekdayBit(-1));
-}
-
-static void test_schedule_due() {
-    // Только будни (пн..пт = 0x1F), 07:30.
-    TEST_ASSERT_TRUE(scheduleDue(7, 30, 0x1F, 7, 30, 1));
-    TEST_ASSERT_FALSE(scheduleDue(7, 30, 0x1F, 7, 30, 0));   // воскресенье
-    TEST_ASSERT_FALSE(scheduleDue(7, 30, 0x1F, 7, 31, 1));
-    TEST_ASSERT_TRUE(scheduleDue(7, 30, 0x00, 7, 30, 0));    // 0 = каждый день
-    TEST_ASSERT_FALSE(scheduleDue(24, 0, 0x7F, 0, 0, 1));    // неверный час
-}
-
-static void test_schedule_fires_once_per_day_after_success() {
-    const uint32_t today = 20261014;
-    TEST_ASSERT_TRUE(scheduleShouldFire(true, today, 0));
-    // Вызывающий отмечает сегодня только после успешного старта; отклонённый старт повторяется.
-    TEST_ASSERT_TRUE(scheduleShouldFire(true, today, 20261013));
-    TEST_ASSERT_FALSE(scheduleShouldFire(true, today, today));
-    TEST_ASSERT_FALSE(scheduleShouldFire(false, today, 0));
-}
-
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_compare_from_string);
@@ -93,8 +67,5 @@ int main(int, char**) {
     RUN_TEST(test_threshold_above_with_hysteresis);
     RUN_TEST(test_threshold_zero_hysteresis_is_plain_edge);
     RUN_TEST(test_threshold_invalid_compare_never_fires);
-    RUN_TEST(test_weekday_bits);
-    RUN_TEST(test_schedule_due);
-    RUN_TEST(test_schedule_fires_once_per_day_after_success);
     return UNITY_END();
 }

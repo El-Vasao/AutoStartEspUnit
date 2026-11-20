@@ -60,7 +60,7 @@ void ModeManager::switchMode(CoreMode newMode) {
         default: break;
     }
 
-    logger.log(LogModule::ModeManager, "смена режима: %s -> %s\n", oldModeName, newModeName);
+    logger.log(LogModule::ModeManager, "mode change: %s -> %s\n", oldModeName, newModeName);
 
     // Выходим из текущего режима.
     // Важно: exit/enter должны быть быстрыми и не делать тяжёлых блокирующих операций.
@@ -109,41 +109,41 @@ const char* ModeManager::getModeName() const {
 // --- Методы входа/выхода ---
 
 void ModeManager::enterBoot() {
-    logger.log(LogModule::ModeManager, "вход Boot\n");
+    logger.log(LogModule::ModeManager, "enter Boot\n");
 }
 
 void ModeManager::exitBoot() {}
 
 void ModeManager::enterEmergencyAP() {
-    logger.log(LogModule::ModeManager, "вход EMERGENCY_AP\n");
+    logger.log(LogModule::ModeManager, "enter EMERGENCY_AP\n");
     if (_webServer) {
         _webServer->start(CoreMode::EMERGENCY_AP);
     }
 }
 
 void ModeManager::exitEmergencyAP() {
-    logger.log(LogModule::ModeManager, "выход EMERGENCY_AP\n");
+    logger.log(LogModule::ModeManager, "exit EMERGENCY_AP\n");
     if (_webServer) {
         _webServer->stop();
     }
 }
 
 void ModeManager::enterSetupAP() {
-    logger.log(LogModule::ModeManager, "вход SETUP_AP\n");
+    logger.log(LogModule::ModeManager, "enter SETUP_AP\n");
     if (_webServer) {
         _webServer->start(CoreMode::SETUP_AP);
     }
 }
 
 void ModeManager::exitSetupAP() {
-    logger.log(LogModule::ModeManager, "выход SETUP_AP\n");
+    logger.log(LogModule::ModeManager, "exit SETUP_AP\n");
     if (_webServer) {
         _webServer->stop();
     }
 }
 
 void ModeManager::enterNormal() {
-    logger.log(LogModule::ModeManager, "вход NORMAL\n");
+    logger.log(LogModule::ModeManager, "enter NORMAL\n");
     if (_webServer) {
         _webServer->start(CoreMode::NORMAL);
     }
@@ -151,22 +151,22 @@ void ModeManager::enterNormal() {
 }
 
 void ModeManager::exitNormal() {
-    logger.log(LogModule::ModeManager, "выход NORMAL\n");
+    logger.log(LogModule::ModeManager, "exit NORMAL\n");
 }
 
 void ModeManager::enterNormalSilent() {
-    logger.log(LogModule::ModeManager, "вход NORMAL_SILENT\n");
+    logger.log(LogModule::ModeManager, "enter NORMAL_SILENT\n");
     if (_webServer) {
         _webServer->stop();
     }
 }
 
 void ModeManager::exitNormalSilent() {
-    logger.log(LogModule::ModeManager, "выход NORMAL_SILENT\n");
+    logger.log(LogModule::ModeManager, "exit NORMAL_SILENT\n");
 }
 
 void ModeManager::enterOTAUpdate() {
-    logger.log(LogModule::ModeManager, "вход OTA_UPDATE\n");
+    logger.log(LogModule::ModeManager, "enter OTA_UPDATE\n");
     // Снять предметную работу; SSE оставить открытым для прогресса и журнала UI на время потоковой записи flash.
     core.logHeapSnapshot("mode_enter_ota");
     if (core.getProgramExecutor().isRunning()) {
@@ -180,7 +180,7 @@ void ModeManager::enterOTAUpdate() {
 }
 
 void ModeManager::exitOTAUpdate() {
-    logger.log(LogModule::ModeManager, "выход OTA_UPDATE\n");
+    logger.log(LogModule::ModeManager, "exit OTA_UPDATE\n");
     core.logHeapSnapshot("mode_exit_ota");
     if (_ota) {
         _ota->onModeExit();

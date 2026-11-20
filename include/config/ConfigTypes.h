@@ -266,26 +266,6 @@ struct TimeConfig {
 };
 
 // ------------------------------------------------------------------
-// Триггеры расписания (локальные ЧЧ:ММ → программа)
-// ------------------------------------------------------------------
-struct ScheduleTriggerConfig {
-    uint16_t id;
-    bool enabled;
-    uint8_t hour;
-    uint8_t minute;
-    uint8_t days_mask; // bit0=пн … bit6=вс; 0x7F = каждый день
-    uint8_t program_id;
-
-    ScheduleTriggerConfig()
-        : id(0),
-          enabled(false),
-          hour(0),
-          minute(0),
-          days_mask(0x7F),
-          program_id(0) {}
-};
-
-// ------------------------------------------------------------------
 // Шаг программы
 // ------------------------------------------------------------------
 struct Step {
@@ -344,8 +324,6 @@ struct BaseConfig {
     uint8_t input_triggers_count;
     TempTriggerConfig temperature_triggers[Limits::MAX_TRIGGERS];
     uint8_t temperature_triggers_count;
-    ScheduleTriggerConfig schedule_triggers[Limits::MAX_SCHEDULE_TRIGGERS];
-    uint8_t schedule_triggers_count;
 
     BaseConfig() = default;
 };

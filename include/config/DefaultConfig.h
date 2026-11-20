@@ -111,6 +111,5 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "sync_interval_hours": 6
   },
   "input_triggers": [],
-  "temperature_triggers": [],
-  "schedule_triggers": []
+  "temperature_triggers": []
 })";

@@ -40,21 +40,4 @@ bool ThresholdLatch::update(float value, float threshold, Compare cmp, float hys
     return true;
 }
 
-uint8_t weekdayBit(int tmWday) {
-    if (tmWday < 0 || tmWday > 6) return 0;
-    if (tmWday == 0) return (uint8_t)(1u << 6);
-    return (uint8_t)(1u << (tmWday - 1));
-}
-
-bool scheduleDue(uint8_t hour, uint8_t minute, uint8_t daysMask, int tmHour, int tmMin, int tmWday) {
-    if (hour > 23 || minute > 59) return false;
-    const uint8_t mask = daysMask ? daysMask : 0x7F;
-    if ((mask & weekdayBit(tmWday)) == 0) return false;
-    return tmHour == hour && tmMin == minute;
-}
-
-bool scheduleShouldFire(bool due, uint32_t todayKey, uint32_t lastFireDayKey) {
-    return due && lastFireDayKey != todayKey;
-}
-
 } // namespace trigger_rules

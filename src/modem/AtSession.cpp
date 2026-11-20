@@ -66,9 +66,9 @@ void AtSession::finish_(bool ok, bool err, bool timeout) {
     const char* tag = (_active.tag && _active.tag[0]) ? _active.tag : nullptr;
     const char* cmd = (_active.cmd && _active.cmd[0]) ? _active.cmd : "";
     if (tag) {
-        logger.log(LogModule::AT, "<< ТАЙМАУТ для %s (%s)\n", cmd, tag);
+        logger.log(LogModule::AT, "<< TIMEOUT for %s (%s)\n", cmd, tag);
     } else {
-        logger.log(LogModule::AT, "<< ТАЙМАУТ для %s\n", cmd);
+        logger.log(LogModule::AT, "<< TIMEOUT for %s\n", cmd);
     }
 }
 

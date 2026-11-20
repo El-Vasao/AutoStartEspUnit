@@ -97,7 +97,7 @@ void ProgramExecutor::update() {
             if (ok) {
                 nextStep();
             } else {
-                logger.log(LogModule::ProgramExecutor, "%s не удалось\n",
+                logger.log(LogModule::ProgramExecutor, "%s failed\n",
                            actionId == ActionId::CALL_OWNER ? "CALL_OWNER" : "SMS_OWNER");
                 finish(false);
             }
@@ -110,7 +110,7 @@ void ProgramExecutor::update() {
 }
 
 void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
-    logger.log(LogModule::ProgramExecutor, "шаг %u/%u actionId=%u relay_id=%u input_id=%u мс=%u\n",
+    logger.log(LogModule::ProgramExecutor, "step %u/%u actionId=%u relay_id=%u input_id=%u ms=%u\n",
                (unsigned)(_currentStep + 1),
                (unsigned)_localStepCount,
                (unsigned)actionId,
@@ -254,7 +254,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
 
         case ActionId::CALL_OWNER: {
             if (!core.getGSM().requestCallOwner()) {
-                logger.log(LogModule::ProgramExecutor, "CALL_OWNER отклонён (нет телефона / GSM занят)\n");
+                logger.log(LogModule::ProgramExecutor, "CALL_OWNER rejected (no phone / GSM busy)\n");
                 finish(false);
                 return;
             }
@@ -263,12 +263,12 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
 
         case ActionId::SMS_OWNER: {
             if (!step.message[0]) {
-                logger.log(LogModule::ProgramExecutor, "SMS_OWNER пустое сообщение\n");
+                logger.log(LogModule::ProgramExecutor, "SMS_OWNER empty message\n");
                 finish(false);
                 return;
             }
             if (!core.getGSM().requestSmsOwner(step.message)) {
-                logger.log(LogModule::ProgramExecutor, "SMS_OWNER отклонён (нет телефона / GSM занят)\n");
+                logger.log(LogModule::ProgramExecutor, "SMS_OWNER rejected (no phone / GSM busy)\n");
                 finish(false);
                 return;
             }
@@ -278,7 +278,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
         case ActionId::UNKNOWN:
         default:
             // start() такие программы отвергает; если дошли сюда — скомпилированная копия повреждена.
-            logger.log(LogModule::ProgramExecutor, "неизвестный actionId %u на шаге %u\n", (unsigned)actionId,
+            logger.log(LogModule::ProgramExecutor, "unknown actionId %u at step %u\n", (unsigned)actionId,
                        (unsigned)(_currentStep + 1));
             abortWithError("unknown step", ErrorCode::PROGRAM_INVALID_REF);
             return;

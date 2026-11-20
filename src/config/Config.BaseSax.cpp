@@ -51,7 +51,6 @@ void initBaseLikeFillBasic(BaseConfig& t) {
     }
     t.input_triggers_count = 0;
     t.temperature_triggers_count = 0;
-    t.schedule_triggers_count = 0;
     t.setup_required = false;
     t.time = TimeConfig{}; // NTP выключен и пуст, пока его не заполнит JSON `time` (или заводской DefaultConfig)
 }
@@ -85,8 +84,6 @@ enum class St : uint8_t {
     InTrigObj,
     TempTrigArr,
     TempTrigObj,
-    SchedTrigArr,
-    SchedTrigObj,
 };
 
 class BaseConfigListener final : public JsonListener {
@@ -114,7 +111,6 @@ public:
         adcCalibrateVoltage_ = 0.0f;
         trig_ = TriggerConfig{};
         ttrig_ = TempTriggerConfig{};
-        strig_ = ScheduleTriggerConfig{};
     }
 
     bool hasAdcCalibrate() const { return hasAdcCalibrate_; }
@@ -205,11 +201,6 @@ public:
                 push(St::TempTrigObj);
                 break;
             }
-            case St::SchedTrigArr: {
-                strig_ = ScheduleTriggerConfig{};
-                push(St::SchedTrigObj);
-                break;
-            }
             default:
                 break;
         }
@@ -242,13 +233,6 @@ public:
                 extraTrimmed_++;
             }
         }
-        if (closing == St::SchedTrigObj) {
-            if (t_->schedule_triggers_count < Limits::MAX_SCHEDULE_TRIGGERS) {
-                t_->schedule_triggers[t_->schedule_triggers_count++] = strig_;
-            } else {
-                extraTrimmed_++;
-            }
-        }
         pop();
     }
 
@@ -277,8 +261,6 @@ public:
                 push(St::InTrigArr);
             } else if (streq(pending_, "temperature_triggers")) {
                 push(St::TempTrigArr);
-            } else if (streq(pending_, "schedule_triggers")) {
-                push(St::SchedTrigArr);
             }
         }
     }
@@ -524,19 +506,6 @@ public:
                 else if (streq(pending_, "program_id"))
                     ttrig_.program_id = json_scalar::parseU8(v, 0);
                 break;
-            case St::SchedTrigObj:
-                if (streq(pending_, "id")) strig_.id = json_scalar::parseU16(v, 0);
-                else if (streq(pending_, "enabled"))
-                    strig_.enabled = json_scalar::parseBool(v, false);
-                else if (streq(pending_, "hour"))
-                    strig_.hour = json_scalar::parseU8(v, 0);
-                else if (streq(pending_, "minute"))
-                    strig_.minute = json_scalar::parseU8(v, 0);
-                else if (streq(pending_, "days_mask"))
-                    strig_.days_mask = json_scalar::parseU8(v, 0x7F);
-                else if (streq(pending_, "program_id"))
-                    strig_.program_id = json_scalar::parseU8(v, 0);
-                break;
             case St::Root:
                 if (streq(pending_, "setup_required")) t_->setup_required = json_scalar::parseBool(v, false);
                 break;
@@ -569,7 +538,6 @@ private:
     bool seenActive_{false};
     TriggerConfig trig_;
     TempTriggerConfig ttrig_;
-    ScheduleTriggerConfig strig_;
 
     int junkNest_{0};
     uint8_t extraTrimmed_{0};
@@ -594,7 +562,7 @@ bool parseBaseConfigStreamingFromFile(File& file, BaseConfig& cfg, ParseMode mod
     if (listener.rootNotObject() || !listener.sawRootObject() || listener.failed()) return false;
     if (!complete && mode == ParseMode::Strict) return false;
     if (listener.extraTrimmed()) {
-        logger.log(LogModule::Config, "массивы конфига обрезаны (лишних объектов: %u)\n",
+        logger.log(LogModule::Config, "config arrays trimmed (extra objects: %u)\n",
                    (unsigned)listener.extraTrimmed());
     }
     return true;
@@ -605,7 +573,7 @@ bool parseBaseConfigStreamingFromProgmem(BaseConfig& cfg, const char* pgmDoc) {
     const bool complete = jsonStreamingParseProgmem(listener, pgmDoc);
     if (listener.rootNotObject() || !listener.sawRootObject() || listener.failed()) return false;
     if (listener.extraTrimmed()) {
-        logger.log(LogModule::Config, "массивы конфига обрезаны (лишних объектов: %u)\n",
+        logger.log(LogModule::Config, "config arrays trimmed (extra objects: %u)\n",
                    (unsigned)listener.extraTrimmed());
     }
     return complete;

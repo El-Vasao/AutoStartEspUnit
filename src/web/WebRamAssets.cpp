@@ -114,7 +114,7 @@ void preload() {
         if (n == 0 || n > kPreloadMax) {
             f.close();
             if (n > kPreloadMax) {
-                logger.log(LogModule::WebServer, "RAM UI: %s слишком велик (%u), отдача окном\n", path,
+                logger.log(LogModule::WebServer, "RAM UI: %s too large (%u), serving by window\n", path,
                            (unsigned)n);
             }
             continue;
@@ -122,7 +122,7 @@ void preload() {
         uint8_t* buf = static_cast<uint8_t*>(malloc(n));
         if (!buf) {
             f.close();
-            logger.log(LogModule::WebServer, "RAM UI: нет кучи для %s (%u)\n", path, (unsigned)n);
+            logger.log(LogModule::WebServer, "RAM UI: no heap for %s (%u)\n", path, (unsigned)n);
             continue;
         }
         const size_t got = f.read(buf, n);
@@ -134,7 +134,7 @@ void preload() {
         gBlobs[gBlobCount++] = Blob{path, buf, n};
     }
     gPreloaded = true;
-    logger.log(LogModule::WebServer, "RAM UI: предзагружено %u файлов (куча=%u)\n", (unsigned)gBlobCount,
+    logger.log(LogModule::WebServer, "RAM UI: preloaded %u files (heap=%u)\n", (unsigned)gBlobCount,
                (unsigned)espHalFreeHeap());
 }
 
@@ -271,7 +271,7 @@ size_t streamFill(uint8_t* dst, size_t maxLen, size_t index) {
             gWaiting = false;
             if (!woke || gCancel || !gOk) {
                 if (!woke) {
-                    logger.log(LogModule::WebServer, "RAM UI: таймаут окна %s\n", gPath);
+                    logger.log(LogModule::WebServer, "RAM UI: window timeout %s\n", gPath);
                 }
                 gCancel = true;
                 gEof = true;

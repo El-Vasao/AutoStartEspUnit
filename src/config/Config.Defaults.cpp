@@ -18,20 +18,20 @@ size_t encodeResetConfig(Print& p, void* ctx) {
 } // namespace
 
 bool Config::reset() {
-    logger.log(LogModule::Config, "сброс к заводским умолчаниям\n");
+    logger.log(LogModule::Config, "reset to factory defaults\n");
 
     char uniqueSSID[TextBytes::Wifi::SSID];
     generateUniqueSSID(uniqueSSID, sizeof(uniqueSSID));
 
     BaseConfig cfg{};
     if (!config_internal::parseBaseConfigStreamingFromProgmem(cfg, DEFAULT_CONFIG_JSON)) {
-        logger.log(LogModule::Config, "не удалось разобрать JSON заводского конфига\n");
+        logger.log(LogModule::Config, "failed to parse factory config JSON\n");
         return false;
     }
     strlcpy(cfg.wifi.ssid, uniqueSSID, sizeof(cfg.wifi.ssid));
 
     if (!fileSystem.writeJsonAtomicStream("/config.json", encodeResetConfig, &cfg, Limits::CONFIG_JSON_SIZE)) {
-        logger.log(LogModule::Config, "не удалось записать файл конфига\n");
+        logger.log(LogModule::Config, "failed to write config file\n");
         return false;
     }
     espHalFeedWdt();
@@ -42,10 +42,10 @@ bool Config::reset() {
     loaded = true;
 
     if (!writeFactoryPrograms()) {
-        logger.log(LogModule::Config, "заводской конфиг записан, программы не созданы\n");
+        logger.log(LogModule::Config, "factory config written, programs not created\n");
         return false;
     }
 
-    logger.log(LogModule::Config, "запись успешна, CRC=%04X\n", configCRC);
+    logger.log(LogModule::Config, "write ok, CRC=%04X\n", configCRC);
     return true;
 }

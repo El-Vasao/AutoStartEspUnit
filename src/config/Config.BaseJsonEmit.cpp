@@ -250,21 +250,6 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
     }
     o.print(']');
 
-    comma(o, &c), o.print("\"schedule_triggers\":[");
-    for (uint8_t i = 0; i < cfg.schedule_triggers_count; i++) {
-        const ScheduleTriggerConfig& sc = cfg.schedule_triggers[i];
-        if (i != 0) o.print(',');
-        o.print('{'), c = false;
-        if (sc.id) comma(o, &c), o.print("\"id\":"), o.print(sc.id);
-        comma(o, &c), o.print("\"enabled\":"), sc.enabled ? o.print("true") : o.print("false");
-        comma(o, &c), o.print("\"hour\":"), o.print(sc.hour);
-        comma(o, &c), o.print("\"minute\":"), o.print(sc.minute);
-        comma(o, &c), o.print("\"days_mask\":"), o.print(sc.days_mask);
-        comma(o, &c), o.print("\"program_id\":"), o.print(sc.program_id);
-        o.print('}');
-    }
-    o.print(']');
-
     o.print('}');
     return fc.n;
 }

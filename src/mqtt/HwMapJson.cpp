@@ -109,32 +109,6 @@ void emitTempTriggers(Print& p, const BaseConfig& cfg) {
     p.print(']');
 }
 
-void emitScheduleTriggers(Print& p, const BaseConfig& cfg) {
-    p.print('[');
-    bool any = false;
-    const uint8_t n = cfg.schedule_triggers_count < Limits::MAX_SCHEDULE_TRIGGERS
-                          ? cfg.schedule_triggers_count
-                          : Limits::MAX_SCHEDULE_TRIGGERS;
-    for (uint8_t i = 0; i < n; i++) {
-        const ScheduleTriggerConfig& t = cfg.schedule_triggers[i];
-        if (t.id == 0) continue;
-        if (any) p.print(',');
-        any = true;
-        p.print("{\"id\":");
-        p.print(static_cast<unsigned>(t.id));
-        p.print(",\"programId\":");
-        p.print(static_cast<unsigned>(t.program_id));
-        p.print(",\"hour\":");
-        p.print(static_cast<unsigned>(t.hour));
-        p.print(",\"minute\":");
-        p.print(static_cast<unsigned>(t.minute));
-        p.print(",\"days\":");
-        p.print(static_cast<unsigned>(t.days_mask));
-        p.print('}');
-    }
-    p.print(']');
-}
-
 } // namespace
 
 void emitHwMapObject(const BaseConfig& cfg, Print& p) {
@@ -149,9 +123,6 @@ void emitHwMapObject(const BaseConfig& cfg, Print& p) {
     comma(p, &c);
     p.print("\"sensors\":");
     emitSensors(p, cfg);
-    comma(p, &c);
-    p.print("\"scheduleTriggers\":");
-    emitScheduleTriggers(p, cfg);
     p.print('}');
 }
 

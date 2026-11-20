@@ -10,38 +10,38 @@
     return n ? `${silk} · ${n}` : silk;
   }
 
+  function settingsNameById(Alpine, listKey, id) {
+    try {
+      const list = Alpine.store('settings')?.[listKey];
+      if (!Array.isArray(list)) return '';
+      const hit = list.find((x) => x && String(x.id || '').trim() === String(id || '').trim());
+      return String(hit?.name || '').trim();
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function hwChannelOptions(kind, Alpine) {
+    const st = Alpine.store('deviceStatus');
+    const hw = st?.hwMap;
+    const listKey = kind === 'relay' ? 'relays' : kind === 'input' ? 'inputs' : 'sensors';
+    if (!(hw && Array.isArray(hw[listKey]) && hw[listKey].length)) return [];
+    return hw[listKey].map((r) => {
+      const id = String(r?.id || '').trim();
+      const name = settingsNameById(Alpine, listKey, id)
+        || String(r?.label || r?.name || '').trim();
+      return { value: id, label: silkLabel(id, name) };
+    }).filter((o) => o.value);
+  }
+
   APP.options.forSource = function forSource(source, Alpine) {
     try {
       const from = String(source || '');
       if (!from) return [];
 
-      if (from === 'relays') {
-        const st = Alpine.store('deviceStatus');
-        const hw = st?.hwMap;
-        if (hw && Array.isArray(hw.relays) && hw.relays.length) {
-          return hw.relays.map((r) => {
-            const id = String(r?.id || '').trim();
-            const name = String(r?.label || r?.name || '').trim();
-            return { value: id, label: silkLabel(id, name) };
-          }).filter((o) => o.value);
-        }
-        return [];
-      }
+      if (from === 'relays') return hwChannelOptions('relay', Alpine);
 
-      if (from === 'inputs') {
-        const st = Alpine.store('deviceStatus');
-        const hw = st?.hwMap;
-        if (hw && Array.isArray(hw.inputs) && hw.inputs.length) {
-          return hw.inputs.map((r, idx) => {
-            const id = String(r?.id || '').trim();
-            const name = String(r?.label || r?.name || '').trim()
-              || Alpine.store('uiFormat')?.inputName?.(idx)
-              || '';
-            return { value: id, label: silkLabel(id, name) };
-          }).filter((o) => o.value);
-        }
-        return [];
-      }
+      if (from === 'inputs') return hwChannelOptions('input', Alpine);
 
       // Input ids from settings, optionally filtered by type (0 = digital, 1 = pulse).
       const inputIdsOfType = (type) => {
@@ -53,10 +53,8 @@
           const id = String(item.id || '').trim();
           if (!id) continue;
           if (type !== undefined && (Number(item.type) || 0) !== type) continue;
-          const label = Alpine.store('uiFormat')?.inputLabelById?.(id)
-            || Alpine.store('uiFormat')?.inputName?.(idx)
-            || id;
-          out.push({ value: id, label });
+          const name = String(item.name || '').trim();
+          out.push({ value: id, label: silkLabel(id, name) });
         }
         return out;
       };
@@ -74,19 +72,9 @@
 
       // Relays for RELAY_* program steps: the starter relay is driven only by ENGINE_START.
       if (from === 'programRelays') {
-        const st = Alpine.store('deviceStatus');
-        const hw = st?.hwMap;
         const starterId = String(Alpine.store('settings')?.vehicle?.starter_relay_id || '').trim();
-        if (hw && Array.isArray(hw.relays) && hw.relays.length) {
-          return hw.relays
-            .map((r) => {
-              const id = String(r?.id || '').trim();
-              const name = String(r?.label || r?.name || '').trim();
-              return { value: id, label: silkLabel(id, name) };
-            })
-            .filter((o) => o.value && (!starterId || o.value !== starterId));
-        }
-        return [];
+        return hwChannelOptions('relay', Alpine)
+          .filter((o) => o.value && (!starterId || o.value !== starterId));
       }
 
       if (from === 'sensors') {

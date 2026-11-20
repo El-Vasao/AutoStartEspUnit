@@ -343,19 +343,23 @@
             const sec = schema[tabKey] || {};
             const fields = sec.fields;
             if (!Array.isArray(fields)) continue;
-            // sensors/inputs are repeats; handled separately
-            if (tabKey === 'sensors' || tabKey === 'inputs') continue;
+            // sensors/inputs/relays are repeats; handled separately
+            if (tabKey === 'sensors' || tabKey === 'inputs' || tabKey === 'relays') continue;
             for (const f of fields) {
               if (!visible(f)) continue;
               addPath(f.path);
             }
           }
 
+          // Стартер скрыт на «Автомобиль», редактируется на «Реле».
+          addPath('vehicle.starter_relay_id');
+
           // Sensors repeat (based on rendered sensor count)
           try {
             const sec = schema.sensors || {};
             const fields = sec.fields || [];
-            const n = Alpine.store('deviceStatus')?.tempSensors?.length || 0;
+            const n = Alpine.store('deviceStatus')?.sensorSlots ||
+              Alpine.store('deviceStatus')?.tempSensors?.length || 0;
             for (let i = 0; i < n; i++) {
               for (const f of fields) {
                 if (!visible(f, i)) continue;
@@ -369,7 +373,8 @@
           try {
             const sec = schema.inputs || {};
             const fields = sec.fields || [];
-            const n = Alpine.store('deviceStatus')?.inputs?.length || 0;
+            const n = Alpine.store('deviceStatus')?.inputSlots ||
+              Alpine.store('deviceStatus')?.inputs?.length || 0;
             for (let i = 0; i < n; i++) {
               for (const f of fields) {
                 if (!visible(f, i)) continue;
@@ -379,12 +384,26 @@
             }
           } catch (e3) {}
 
+          // Relays repeat
+          try {
+            const sec = schema.relays || {};
+            const fields = sec.fields || [];
+            const n = Alpine.store('deviceStatus')?.relaySlots ||
+              Alpine.store('deviceStatus')?.relays?.length || 0;
+            for (let i = 0; i < n; i++) {
+              for (const f of fields) {
+                if (!visible(f, i)) continue;
+                const path = String(f?.pathTmpl || '').replaceAll('{i}', String(i));
+                addPath(path);
+              }
+            }
+          } catch (eRelays) {}
+
           // Triggers: inputFields/tempFields use bind
           try {
             const sec = schema.triggers || {};
             const inFields = Array.isArray(sec.inputFields) ? sec.inputFields : [];
             const tFields = Array.isArray(sec.tempFields) ? sec.tempFields : [];
-            const sFields = Array.isArray(sec.scheduleFields) ? sec.scheduleFields : [];
 
             const inLen = st.input_triggers?.length || 0;
             for (let idx = 0; idx < inLen; idx++) {
@@ -404,15 +423,6 @@
                 addPath(`temperature_triggers.${idx}.${bind}`);
               }
             }
-            const sLen = st.schedule_triggers?.length || 0;
-            for (let idx = 0; idx < sLen; idx++) {
-              for (const f of sFields) {
-                if (f && f.hidden) continue;
-                const bind = String(f?.bind || '');
-                if (!bind) continue;
-                addPath(`schedule_triggers.${idx}.${bind}`);
-              }
-            }
           } catch (e4) {}
         } catch (e) {}
         return Array.from(out);
@@ -430,19 +440,26 @@
           time: ['time.'],
           sensors: ['sensors.'],
           inputs: ['inputs.'],
-          triggers: ['input_triggers.', 'temperature_triggers.', 'schedule_triggers.']
+          relays: ['relays.'],
+          triggers: ['input_triggers.', 'temperature_triggers.']
         };
         const prefixes = prefixMap[k] || [];
         if (!prefixes.length) return false;
+        const matches = (p) => {
+          if (p === 'vehicle.starter_relay_id') return k === 'relays';
+          if (k === 'vehicle' && p === 'vehicle.starter_relay_id') return false;
+          for (const pref of prefixes) if (p.startsWith(pref)) return true;
+          return false;
+        };
         const client = this._clientErrors || {};
         for (const p of Object.keys(client)) {
-          for (const pref of prefixes) if (p.startsWith(pref)) return true;
+          if (matches(p)) return true;
         }
         const serverErrs = Alpine.store('settings')?.validationErrors || [];
         for (const e of serverErrs) {
           const p = String(e?.field || '');
           if (!p) continue;
-          for (const pref of prefixes) if (p.startsWith(pref)) return true;
+          if (matches(p)) return true;
         }
         return false;
       },

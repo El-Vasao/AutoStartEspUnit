@@ -2,15 +2,25 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrowserEnv, plain } from './helpers/browser-env.mjs';
 
-function load({ startMethod = 'timed', starterRelayId = 'K2' } = {}) {
+function load({
+  startMethod = 'timed',
+  starterRelayId = 'K2',
+  relayNames = {},
+  inputNames = {},
+} = {}) {
   const env = createBrowserEnv({
     stores: {
       settings: {
         vehicle: { start_method: startMethod, starter_relay_id: starterRelayId },
         inputs: [
-          { id: 'IN1', type: 0 },
-          { id: 'IN2', type: 1 },
-          { id: 'IN3', type: 0 },
+          { id: 'IN1', type: 0, name: inputNames.IN1 || '' },
+          { id: 'IN2', type: 1, name: inputNames.IN2 || '' },
+          { id: 'IN3', type: 0, name: inputNames.IN3 || '' },
+        ],
+        relays: [
+          { id: 'K1', name: relayNames.K1 || '' },
+          { id: 'K2', name: relayNames.K2 || '' },
+          { id: 'K3', name: relayNames.K3 || '' },
         ],
         sensors: [{ id: 'T1', name: 'Салон' }, { id: '', name: 'unmapped' }],
       },
@@ -20,6 +30,11 @@ function load({ startMethod = 'timed', starterRelayId = 'K2' } = {}) {
             { id: 'K1', label: '' },
             { id: 'K2', label: '' },
             { id: 'K3', label: '' },
+          ],
+          inputs: [
+            { id: 'IN1', label: '' },
+            { id: 'IN2', label: '' },
+            { id: 'IN3', label: '' },
           ],
         },
       },
@@ -40,6 +55,11 @@ test('input lists are filtered by type and start with "none"', () => {
   assert.deepEqual(values(opt('pulseInputIds')), ['', 'IN2']);
 });
 
+test('empty input name stays silk-only without double prefix', () => {
+  const opts = load()('inputIds');
+  assert.equal(opts[1].label, 'IN1');
+});
+
 test('start input list follows vehicle.start_method', () => {
   assert.deepEqual(values(load({ startMethod: 'timed' })('startInputIds')), []);
   assert.deepEqual(values(load({ startMethod: 'rpm' })('startInputIds')), ['', 'IN2']);
@@ -52,6 +72,11 @@ test('program relays exclude the starter relay', () => {
   const relays = load()('relays');
   assert.deepEqual(values(relays), ['K1', 'K2', 'K3']);
   assert.equal(relays[0].label, 'K1');
+});
+
+test('relay label uses settings name with silk', () => {
+  const relays = load({ relayNames: { K2: 'Зажигание' } })('relays');
+  assert.equal(relays[1].label, 'K2 · Зажигание');
 });
 
 test('sensor ids skip unmapped sensors', () => {

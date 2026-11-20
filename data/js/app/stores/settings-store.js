@@ -17,12 +17,12 @@
       vehicle: {},
       sensors: [],
       inputs: [],
+      relays: [],
       thermostat: {},
       battery_saver: {},
       time: {},
       input_triggers: [],
       temperature_triggers: [],
-      schedule_triggers: [],
       setup_required: false,
     };
 
@@ -77,9 +77,9 @@
     // Static contract pieces not represented as path-based fields in schema:
     out.add('sensors');
     out.add('inputs');
+    out.add('relays');
     out.add('input_triggers');
     out.add('temperature_triggers');
-    out.add('schedule_triggers');
 
     return Array.from(out);
   }
@@ -112,11 +112,12 @@
         }
       }
 
-      if (!out.triggers) out.triggers = ['input_triggers', 'temperature_triggers', 'schedule_triggers'];
+      if (!out.triggers) out.triggers = ['input_triggers', 'temperature_triggers'];
       if (!out.battery) out.battery = ['battery_saver'];
       if (!out.time) out.time = ['time'];
       if (!out.sensors) out.sensors = ['sensors'];
       if (!out.inputs) out.inputs = ['inputs'];
+      if (!out.relays) out.relays = ['relays'];
 
       return out;
     } catch (e) {
@@ -182,9 +183,9 @@
       updateFromJSON(data) {
         if (!Array.isArray(this.input_triggers)) this.input_triggers = [];
         if (!Array.isArray(this.temperature_triggers)) this.temperature_triggers = [];
-        if (!Array.isArray(this.schedule_triggers)) this.schedule_triggers = [];
         if (!Array.isArray(this.sensors)) this.sensors = [];
         if (!Array.isArray(this.inputs)) this.inputs = [];
+        if (!Array.isArray(this.relays)) this.relays = [];
         if (!this.time || typeof this.time !== 'object') this.time = {};
 
         for (let key in data) {
@@ -196,6 +197,10 @@
           }
           if (key === 'inputs') {
             this.inputs = Array.isArray(v) ? v : [];
+            continue;
+          }
+          if (key === 'relays') {
+            this.relays = Array.isArray(v) ? v : [];
             continue;
           }
           // Shallow assign objects/arrays/primitives (WYSIWYG, no default fabrication).
@@ -299,9 +304,9 @@
           }
           if (config.sensors === undefined) config.sensors = this.sensors || {};
           if (config.inputs === undefined) config.inputs = this.inputs || {};
+          if (config.relays === undefined) config.relays = this.relays || {};
           if (config.input_triggers === undefined) config.input_triggers = Array.isArray(this.input_triggers) ? this.input_triggers : [];
           if (config.temperature_triggers === undefined) config.temperature_triggers = Array.isArray(this.temperature_triggers) ? this.temperature_triggers : [];
-          if (config.schedule_triggers === undefined) config.schedule_triggers = Array.isArray(this.schedule_triggers) ? this.schedule_triggers : [];
           return config;
         }
 
@@ -316,8 +321,8 @@
           const fields = sec.fields;
           if (!Array.isArray(fields)) continue;
 
-          // sensors/inputs are rendered separately using pathTmpl and repeats; handle below.
-          if (tabKey === 'sensors' || tabKey === 'inputs') continue;
+          // sensors/inputs/relays are rendered separately using pathTmpl and repeats; handle below.
+          if (tabKey === 'sensors' || tabKey === 'inputs' || tabKey === 'relays') continue;
 
           for (const f of fields) {
             const path = String(f?.path || '');
@@ -384,12 +389,35 @@
           }
         } catch (e) {}
 
+        // Relays repeat: prefer locked hwCounts.
+        try {
+          const sec = schema.relays || {};
+          const fields = sec.fields || [];
+          const st = Alpine.store('deviceStatus') || {};
+          const locked = !!st?.hwCounts?.locked;
+          const n = locked
+            ? (Number(st?.hwCounts?.relays) || 0)
+            : Math.max(
+              Array.isArray(this.relays) ? this.relays.length : 0,
+              Number(st?.hwCounts?.relays) || 0
+            );
+          for (let i = 0; i < n; i++) {
+            for (const f of fields) {
+              const tmpl = String(f?.pathTmpl || '');
+              if (!tmpl) continue;
+              const path = tmpl.replaceAll('{i}', String(i));
+              const v = getByPath(this, path);
+              if (v === undefined) continue;
+              setByPath(out, path, v);
+            }
+          }
+        } catch (e) {}
+
         // Triggers: these are rendered as inputFields/tempFields with bind → path.
         try {
           const trig = schema.triggers || {};
           const inFields = Array.isArray(trig.inputFields) ? trig.inputFields : [];
           const tFields = Array.isArray(trig.tempFields) ? trig.tempFields : [];
-          const sFields = Array.isArray(trig.scheduleFields) ? trig.scheduleFields : [];
 
           const inOut = [];
           for (let idx = 0; idx < (this.input_triggers?.length || 0); idx++) {
@@ -418,20 +446,6 @@
             tOut.push(row);
           }
           out.temperature_triggers = tOut;
-
-          const sOut = [];
-          for (let idx = 0; idx < (this.schedule_triggers?.length || 0); idx++) {
-            const row = {};
-            for (const f of sFields) {
-              const bind = String(f?.bind || '');
-              if (!bind) continue;
-              const path = `schedule_triggers.${idx}.${bind}`;
-              const v = getByPath(this, path);
-              if (v !== undefined) row[bind] = v;
-            }
-            sOut.push(row);
-          }
-          out.schedule_triggers = sOut;
         } catch (e) {
           // best-effort; do not block save
         }
@@ -500,11 +514,36 @@
         try {
           const cur = JSON.parse(APP.utils.stableStringify(this.getConfigForSave()));
           const base = JSON.parse(this._baseline);
+          const stripStarter = (veh) => {
+            if (!veh || typeof veh !== 'object') return veh;
+            const o = APP.utils.deepClone(veh);
+            delete o.starter_relay_id;
+            return o;
+          };
           for (const key of keys) {
+            if (tab === 'vehicle' && key === 'vehicle') {
+              if (APP.utils.stableStringify(stripStarter(cur.vehicle)) !==
+                  APP.utils.stableStringify(stripStarter(base.vehicle))) return true;
+              continue;
+            }
             if (APP.utils.stableStringify(cur[key]) !== APP.utils.stableStringify(base[key])) return true;
+          }
+          // Стартер редактируется на вкладке «Реле».
+          if (tab === 'relays') {
+            if (APP.utils.stableStringify(cur?.vehicle?.starter_relay_id) !==
+                APP.utils.stableStringify(base?.vehicle?.starter_relay_id)) return true;
           }
         } catch (e) {}
         return false;
+      },
+
+      setStarterRelayId(id) {
+        const sid = String(id || '').trim();
+        if (!sid) return;
+        if (!this.vehicle || typeof this.vehicle !== 'object') this.vehicle = {};
+        if (String(this.vehicle.starter_relay_id || '') === sid) return;
+        this.vehicle.starter_relay_id = sid;
+        this.recomputeDirty();
       },
 
       revertSubtab(tab) {
@@ -513,8 +552,18 @@
         if (!keys || !this._baseline) return;
         try {
           const base = JSON.parse(this._baseline);
+          const starterKeep = (tab === 'vehicle') ? this.vehicle?.starter_relay_id : undefined;
           for (const key of keys) {
             if (base[key] !== undefined) this[key] = APP.utils.deepClone(base[key]);
+          }
+          if (tab === 'relays' && base?.vehicle &&
+              Object.prototype.hasOwnProperty.call(base.vehicle, 'starter_relay_id')) {
+            if (!this.vehicle || typeof this.vehicle !== 'object') this.vehicle = {};
+            this.vehicle.starter_relay_id = base.vehicle.starter_relay_id;
+          }
+          if (tab === 'vehicle') {
+            if (!this.vehicle || typeof this.vehicle !== 'object') this.vehicle = {};
+            this.vehicle.starter_relay_id = starterKeep;
           }
           this.validationErrors = [];
           try { Alpine.store('settingsForm')?.clearClientErrors?.(); } catch (e2) {}
@@ -571,24 +620,6 @@
         this.recomputeDirty();
       },
       removeTempTrigger(index) { this.temperature_triggers.splice(index, 1); this.recomputeDirty(); },
-      addScheduleTrigger() {
-        const list = Array.isArray(this.schedule_triggers) ? this.schedule_triggers : [];
-        let maxId = 0;
-        for (const tr of list) {
-          const id = Number(tr?.id) || 0;
-          if (id > maxId) maxId = id;
-        }
-        this.schedule_triggers.push({
-          id: maxId + 1,
-          enabled: false,
-          hour: 7,
-          minute: 0,
-          days_mask: 127,
-          program_id: 0
-        });
-        this.recomputeDirty();
-      },
-      removeScheduleTrigger(index) { this.schedule_triggers.splice(index, 1); this.recomputeDirty(); },
     });
   };
 })();

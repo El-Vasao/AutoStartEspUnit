@@ -31,6 +31,12 @@ void fillName(char* dst, size_t cap) {
     dst[i] = '\0';
 }
 
+/// 15 кириллических букв (UTF-8) — потолок maxLength схемы; буфер NAME = 32.
+void fillCyrillic15(char* dst, size_t cap) {
+    static const char k15[] = u8"ЗажиганиеСалонА";
+    strlcpy(dst, k15, cap);
+}
+
 void fillWorst(BaseConfig& cfg) {
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
         cfg.inputs[i].id = static_cast<uint8_t>(i + 1);
@@ -58,14 +64,6 @@ void fillWorst(BaseConfig& cfg) {
         cfg.temperature_triggers[i].program_id = 255;
         strcpy(cfg.temperature_triggers[i].comparison, "below");
         cfg.temperature_triggers[i].threshold = -123.45f;
-    }
-    cfg.schedule_triggers_count = Limits::MAX_SCHEDULE_TRIGGERS;
-    for (uint8_t i = 0; i < Limits::MAX_SCHEDULE_TRIGGERS; i++) {
-        cfg.schedule_triggers[i].id = (uint16_t)(30 + i);
-        cfg.schedule_triggers[i].program_id = 255;
-        cfg.schedule_triggers[i].hour = 23;
-        cfg.schedule_triggers[i].minute = 59;
-        cfg.schedule_triggers[i].days_mask = 127;
     }
 }
 
@@ -117,6 +115,30 @@ void test_catalog_worst_case_fits_cipsend() {
     TEST_ASSERT_TRUE(trigFrame <= NetTiming::MQTT_FRAME_MAX);
 }
 
+void test_cyrillic15_names_fit_buffers_and_hwmap() {
+    BaseConfig cfg;
+    fillCyrillic15(cfg.inputs[0].name, sizeof(cfg.inputs[0].name));
+    fillCyrillic15(cfg.sensors[0].name, sizeof(cfg.sensors[0].name));
+    fillCyrillic15(cfg.relays[0].name, sizeof(cfg.relays[0].name));
+    cfg.inputs[0].id = 1;
+    cfg.sensors[0].id = 1;
+    cfg.relays[0].id = 1;
+
+    // 15 кириллических букв = 30 байт UTF-8; буфер NAME = 32 (место под NUL).
+    TEST_ASSERT_EQUAL(30u, (unsigned)strlen(u8"ЗажиганиеСалонА"));
+    TEST_ASSERT_TRUE(strlen(cfg.inputs[0].name) + 1 <= TextBytes::Inputs::NAME);
+    TEST_ASSERT_TRUE(strlen(cfg.sensors[0].name) + 1 <= TextBytes::Sensors::NAME);
+    TEST_ASSERT_TRUE(strlen(cfg.relays[0].name) + 1 <= TextBytes::Relays::NAME);
+    TEST_ASSERT_EQUAL_STRING(u8"ЗажиганиеСалонА", cfg.inputs[0].name);
+    TEST_ASSERT_EQUAL_STRING(u8"ЗажиганиеСалонА", cfg.sensors[0].name);
+    TEST_ASSERT_EQUAL_STRING(u8"ЗажиганиеСалонА", cfg.relays[0].name);
+
+    BufPrint hw;
+    emitHwMapObject(cfg, hw);
+    TEST_ASSERT_TRUE(hw.n() <= JsonBytes::Mqtt::HWMAP_TOPIC_JSON_MAX);
+    TEST_ASSERT_NOT_NULL(strstr(hw.data(), u8"ЗажиганиеСалонА"));
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -125,5 +147,6 @@ int main(int, char**) {
     RUN_TEST(test_fnv1a32_known_vectors);
     RUN_TEST(test_hwmap_hash_matches_emitted_bytes);
     RUN_TEST(test_catalog_worst_case_fits_cipsend);
+    RUN_TEST(test_cyrillic15_names_fit_buffers_and_hwmap);
     return UNITY_END();
 }

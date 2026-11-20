@@ -60,7 +60,7 @@ FsManager::FsManager() :
 }
 
 bool FsManager::begin() {
-    logger.log(LogModule::FsManager, "начало\n");
+    logger.log(LogModule::FsManager, "start\n");
 
     if (initialized) return true;
 
@@ -68,41 +68,41 @@ bool FsManager::begin() {
         initialized = true;
         fsInfo.totalBytes = LittleFS.totalBytes();
         fsInfo.usedBytes = LittleFS.usedBytes();
-        logger.log(LogModule::FsManager, "LittleFS смонтирован, всего: %u КБ, занято: %u КБ\n",
+        logger.log(LogModule::FsManager, "LittleFS mounted, total: %u KB, used: %u KB\n",
                    fsInfo.totalBytes / 1024, fsInfo.usedBytes / 1024);
         if (!exists("/programs")) {
             LittleFS.mkdir("/programs");
 #ifdef SERIAL_DEBUG
-            logger.log(LogModule::FsManager, "создан каталог /programs\n");
+            logger.log(LogModule::FsManager, "dir /programs created\n");
 #endif
         }
         // Создаём папки для библиотек, если их ещё нет (на всякий случай)
         if (!exists("/js")) {
             LittleFS.mkdir("/js");
 #ifdef SERIAL_DEBUG
-            logger.log(LogModule::FsManager, "создан каталог /js\n");
+            logger.log(LogModule::FsManager, "dir /js created\n");
 #endif
         }
         if (!exists("/css")) {
             LittleFS.mkdir("/css");
 #ifdef SERIAL_DEBUG
-            logger.log(LogModule::FsManager, "создан каталог /css\n");
+            logger.log(LogModule::FsManager, "dir /css created\n");
 #endif
         }
-        logger.log(LogModule::FsManager, "успех\n");
+        logger.log(LogModule::FsManager, "ok\n");
         return true;
     }
 
-    logger.log(LogModule::FsManager, "монтирование LittleFS не удалось, форматирование...\n");
+    logger.log(LogModule::FsManager, "LittleFS mount failed, formatting...\n");
     if (!LittleFS.format()) {
-        logger.log(LogModule::FsManager, "форматирование LittleFS НЕ УДАЛОСЬ\n");
+        logger.log(LogModule::FsManager, "LittleFS format FAILED\n");
         errorCount++;
         return false;
     }
 
-    logger.log(LogModule::FsManager, "LittleFS отформатирован, повторное монтирование...\n");
+    logger.log(LogModule::FsManager, "LittleFS formatted, remounting...\n");
     if (!LittleFS.begin()) {
-        logger.log(LogModule::FsManager, "монтирование LittleFS НЕ УДАЛОСЬ после форматирования\n");
+        logger.log(LogModule::FsManager, "LittleFS mount FAILED after formatting\n");
         errorCount++;
         return false;
     }
@@ -119,13 +119,13 @@ bool FsManager::begin() {
     if (!exists("/css")) {
         LittleFS.mkdir("/css");
     }
-    logger.log(LogModule::FsManager, "LittleFS смонтирован после форматирования\n");
-    logger.log(LogModule::FsManager, "успех\n");
+    logger.log(LogModule::FsManager, "LittleFS mounted after formatting\n");
+    logger.log(LogModule::FsManager, "ok\n");
     return true;
 }
 
 void FsManager::end() {
-    logger.log(LogModule::FsManager, "остановка...()\n");
+    logger.log(LogModule::FsManager, "stopping...()\n");
     if (initialized) {
         LittleFS.end();
         initialized = false;
@@ -133,7 +133,7 @@ void FsManager::end() {
 }
 
 bool FsManager::format() {
-    logger.log(LogModule::FsManager, "вызов format()\n");
+    logger.log(LogModule::FsManager, "calling format()\n");
     bool result = LittleFS.format();
     if (result) {
         initialized = false;
@@ -198,10 +198,10 @@ bool FsManager::ensurePath(const char* path) {
 
     bool created = LittleFS.mkdir(parent);
 #ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "%s каталог: %s\n", created ? "создан" : "не создан", parent);
+    logger.log(LogModule::FsManager, "%s dir: %s\n", created ? "created" : "not created", parent);
 #else
     if (!created) {
-        logger.log(LogModule::FsManager, "не удалось создать каталог: %s\n", parent);
+        logger.log(LogModule::FsManager, "failed to create dir: %s\n", parent);
     }
 #endif
     return created;

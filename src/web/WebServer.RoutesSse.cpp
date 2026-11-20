@@ -15,19 +15,19 @@ void WebServer::setupSseEndpointRoutes_() {
         webServer.refreshSseClientCount();
         // Потолок достигнут: сбросить всех, чтобы самый новый браузер мог подключиться (чтобы не залипали зомби).
         if (webServer.sseClientCount > WebSseLimits::MAX_SSE_CLIENTS) {
-            logger.logSerialOnly(LogModule::WebServer, "SSE выше предела (есть=%u предел=%u) — оставляю текущих клиентов\n",
+            logger.logSerialOnly(LogModule::WebServer, "SSE above limit (have=%u limit=%u) — keeping current clients\n",
                                  (unsigned)webServer.sseClientCount,
                                  (unsigned)WebSseLimits::MAX_SSE_CLIENTS);
         }
         WebServerRuntime::requestSseIncrementalBaseline(webServer);
-        logger.logSerialOnly(LogModule::WebServer, "SSE подключён (клиенты=%u, сессии UI=%u)\n",
+        logger.logSerialOnly(LogModule::WebServer, "SSE connected (clients=%u, UI sessions=%u)\n",
                              (unsigned)webServer.sseClientCount,
                              (unsigned)webServer.activeUiSessionCount());
     });
     events.onDisconnect([](AsyncEventSourceClient* client) {
         (void)client;
         webServer.refreshSseClientCount();
-        logger.logSerialOnly(LogModule::WebServer, "SSE отключён (клиенты=%u, сессии UI=%u, sta=%u, куча=%u, макс=%u, фраг=%u%%, gsm=%s)\n",
+        logger.logSerialOnly(LogModule::WebServer, "SSE off (clients=%u, UI sessions=%u, sta=%u, heap=%u, max=%u, frag=%u%%, gsm=%s)\n",
                              (unsigned)webServer.sseClientCount,
                              (unsigned)webServer.activeUiSessionCount(),
                              (unsigned)WiFi.softAPgetStationNum(),

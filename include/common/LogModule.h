@@ -32,7 +32,6 @@ enum class LogModule : uint8_t {
     OtaHandler,
     ProgramExecutor,
     RelayController,
-    ScheduleTriggerManager,
     SensorsController,
     Sim800TcpTransport,
     Starter,
@@ -62,7 +61,6 @@ inline const char* logModuleName(LogModule m) {
         case LogModule::OtaHandler:             return "OtaHandler";
         case LogModule::ProgramExecutor:        return "ProgramExecutor";
         case LogModule::RelayController:        return "RelayController";
-        case LogModule::ScheduleTriggerManager: return "ScheduleTriggerManager";
         case LogModule::SensorsController:      return "SensorsController";
         case LogModule::Sim800TcpTransport:     return "Sim800TcpTransport";
         case LogModule::Starter:                return "Starter";

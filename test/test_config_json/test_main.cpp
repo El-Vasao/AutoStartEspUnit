@@ -143,7 +143,6 @@ static void test_unknown_keys_and_extra_arrays_trim() {
         "{\"id\":\"IN3\",\"name\":\"i2\"},{\"id\":\"IN1\",\"name\":\"i3\"}]";
     json += triggerArray("input_triggers", Limits::MAX_TRIGGERS + 1);
     json += triggerArray("temperature_triggers", Limits::MAX_TRIGGERS + 1);
-    json += triggerArray("schedule_triggers", Limits::MAX_SCHEDULE_TRIGGERS + 1);
     json += '}';
 
     BaseConfig cfg;
@@ -161,9 +160,6 @@ static void test_unknown_keys_and_extra_arrays_trim() {
     TEST_ASSERT_EQUAL_UINT16(Limits::MAX_TRIGGERS, cfg.input_triggers[Limits::MAX_TRIGGERS - 1].id);
     TEST_ASSERT_EQUAL_UINT8(Limits::MAX_TRIGGERS, cfg.temperature_triggers_count);
     TEST_ASSERT_EQUAL_UINT16(Limits::MAX_TRIGGERS, cfg.temperature_triggers[Limits::MAX_TRIGGERS - 1].id);
-    TEST_ASSERT_EQUAL_UINT8(Limits::MAX_SCHEDULE_TRIGGERS, cfg.schedule_triggers_count);
-    TEST_ASSERT_EQUAL_UINT16(Limits::MAX_SCHEDULE_TRIGGERS,
-                             cfg.schedule_triggers[Limits::MAX_SCHEDULE_TRIGGERS - 1].id);
 }
 
 static void test_digital_active_state_defaults_and_pulse_type() {

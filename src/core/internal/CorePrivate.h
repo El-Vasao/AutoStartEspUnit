@@ -16,7 +16,6 @@
 #include "core/ThermostatManager.h"
 #include "core/TriggerManager.h"
 #include "core/TimeSyncManager.h"
-#include "core/ScheduleTriggerManager.h"
 #include "core/internal/CellularCore.h"
 
 /**
@@ -74,7 +73,6 @@ struct CorePrivate {
     TimeSyncManager timeSyncManager{config, gsm};
     BatterySaverManager batterySaverManager{config, sensors, programExecutor, timeSyncManager};
     ThermostatManager thermostatManager{config, sensors, programExecutor};
-    ScheduleTriggerManager scheduleTriggerManager{config, timeSyncManager, programExecutor};
 
     // Состояние и счётчики
     uint32_t lastUptimeSecond{0};

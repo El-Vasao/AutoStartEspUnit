@@ -137,7 +137,7 @@ void WebServer::setupApiRoutes_() {
             gBootstrapInFlight = false;
             return;
         }
-        logger.log(LogModule::WebServer, "/bootstrap готов за %lu мс (куча свободно=%u макс=%u)\n",
+        logger.log(LogModule::WebServer, "/bootstrap ready in %lu ms (heap free=%u max=%u)\n",
                    (unsigned long)(millis() - startedAt),
                    (unsigned)espHalFreeHeap(),
                    (unsigned)espHalMaxBlock());
@@ -161,13 +161,13 @@ void WebServer::setupApiRoutes_() {
 
         if (closing) {
             if (ok) {
-                logger.log(LogModule::WebServer, "сессия UI закрыта: id=%lu\n", static_cast<unsigned long>(sessionId));
+                logger.log(LogModule::WebServer, "UI session closed: id=%lu\n", static_cast<unsigned long>(sessionId));
             }
             if (ok && prevCount > 0 && newCount == 0) {
                 const size_t q = webServer.events.avgPacketsWaiting();
                 const uint16_t clients = webServer.refreshSseClientCount();
                 if (clients > 0 || q > 0) {
-                    logger.log(LogModule::WebServer, "сессий UI=0 (явное закрытие): закрываю SSE (клиенты=%u, очередь=%u)\n",
+                    logger.log(LogModule::WebServer, "UI sessions=0 (explicit close): closing SSE (clients=%u, queue=%u)\n",
                                (unsigned)clients, (unsigned)q);
                     webServer.events.close();
                     webServer.sseClientCount = 0;
@@ -226,13 +226,13 @@ void WebServer::setupApiRoutes_() {
 
             if (!index) {
                 gOtaHttpUploadAwaitTimedOut = false;
-                logger.log(LogModule::WebServer, "старт потоковой загрузки OTA: %s\n", filename.c_str());
+                logger.log(LogModule::WebServer, "OTA stream upload start: %s\n", filename.c_str());
 
                 // Снимок места обновляет цикл. LittleFS из этого колбэка не вызываем.
                 size_t freeSpace = fileSystem.cachedFreeSpace();
-                logger.log(LogModule::WebServer, "свободно перед потоком OTA (снимок): %u байт\n", (unsigned)freeSpace);
+                logger.log(LogModule::WebServer, "free before OTA stream (snapshot): %u bytes\n", (unsigned)freeSpace);
                 if (freeSpace < Ota::STREAM_FS_HEADROOM + FsSpace::MIN_FREE_SPACE) {
-                    logger.log(LogModule::WebServer, "недостаточно запаса ФС для хвоста UI\n");
+                    logger.log(LogModule::WebServer, "not enough FS margin for UI tail\n");
                     request->send(507, kContentTypeText, "Insufficient space");
                     return;
                 }
@@ -262,7 +262,7 @@ void WebServer::setupApiRoutes_() {
                 const AppPorts* p = webPorts();
                 const bool fed = p && p->ota.feed && p->ota.feed(p->ota.ctx, data, len);
                 if (!fed) {
-                    logger.log(LogModule::WebServer, "подача потока не удалась на %u байтах\n",
+                    logger.log(LogModule::WebServer, "stream feed failed at %u bytes\n",
                                (unsigned)(gUploadCtx.totalSize + len));
                     gUploadCtx.errored = true;
                     if (p) {
@@ -275,7 +275,7 @@ void WebServer::setupApiRoutes_() {
                 }
                 gUploadCtx.totalSize += len;
                 if (gUploadCtx.totalSize > Ota::FILE_MAX_SIZE) {
-                    logger.log(LogModule::WebServer, "загрузка отклонена: слишком велика (%u > %u)\n",
+                    logger.log(LogModule::WebServer, "upload rejected: too large (%u > %u)\n",
                                (unsigned)gUploadCtx.totalSize, (unsigned)Ota::FILE_MAX_SIZE);
                     gUploadCtx.errored = true;
                     if (p) {
@@ -289,7 +289,7 @@ void WebServer::setupApiRoutes_() {
             }
 
             if (final) {
-                logger.log(LogModule::WebServer, "потоковая загрузка завершена, размер: %u\n",
+                logger.log(LogModule::WebServer, "stream upload completed, size: %u\n",
                            (unsigned)gUploadCtx.totalSize);
                 const AppPorts* p = webPorts();
                 const bool ok = !gUploadCtx.errored && p && p->ota.finish && p->ota.finish(p->ota.ctx);

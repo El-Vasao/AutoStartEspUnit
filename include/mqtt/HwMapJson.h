@@ -5,7 +5,7 @@
 
 #include "config/ConfigTypes.h"
 
-/// Тело объекта `hwMap`: relays, inputs, sensors, scheduleTriggers.
+/// Тело объекта `hwMap`: relays, inputs, sensors.
 void emitHwMapObject(const BaseConfig& cfg, Print& p);
 
 /// Тело объекта `trigMap`: inputTriggers, tempTriggers.

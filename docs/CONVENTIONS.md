@@ -47,7 +47,7 @@
   - `Starter` — шаг ENGINE_START, чтобы журнал попыток запуска читался отдельно от остального исполнителя.
 - Из других задач FreeRTOS (обработчики async_tcp веб-сервера, esp_timer) `logger.log` разрешён: строка ждёт в кольце на `Logging::DEFERRED_SLOTS` мест и уходит из основного цикла (`Core::update()` → `logger.flushDeferred()`). Потерянные при переполнении строки сообщаются строкой модуля `Logger`. Из обработчиков прерываний журнал не пишут: вызов игнорируется.
 - `logger.logSerialOnly(...)` — шумные трассировки только в UART debug-сборки, в SSE не попадают.
-- Текст форматной строки — русский. Спецификаторы `%`, ключи JSON и токены модема и MQTT (`ATH`, `OK`, `+IPD`, `CIPSTART`, типы пакетов) не переводятся. Имя модуля `AT` не переводится: интерфейс ищет `] [AT] `.
+- Текст форматной строки — английский. Спецификаторы `%`, ключи JSON и токены модема и MQTT (`ATH`, `OK`, `+IPD`, `CIPSTART`, типы пакетов) не переводятся. Имя модуля `AT` не переводится: интерфейс ищет `] [AT] `.
 - Длина строки — до `Logging::MAX_MESSAGE_LENGTH - 1` символов, длиннее обрезается.
 
 Модули журнала и файлы, которые их используют:
@@ -69,7 +69,6 @@
 - `OtaHandler`: `ota/OtaHandler.*.cpp`
 - `ProgramExecutor`: `program/ProgramExecutor.*.cpp`, `program/internal/ProgramExecutorInternal.h`
 - `RelayController`: `io/RelayController.cpp`
-- `ScheduleTriggerManager`: `core/ScheduleTriggerManager.cpp`
 - `SensorsController`: `io/SensorsController.cpp`
 - `Sim800TcpTransport`: `modem/Sim800TcpTransport.cpp`
 - `Starter`: `program/ProgramExecutor.Starter.cpp`

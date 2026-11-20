@@ -85,7 +85,7 @@ static void test_tail_rejects_config_and_program() {
         OtaHandler ota;
         TEST_ASSERT_FALSE(feed(ota, pkt));
         TEST_ASSERT_FALSE(ota.streamSucceeded());
-        TEST_ASSERT_TRUE(test_log::contains("отклонён путь хвоста"));
+        TEST_ASSERT_TRUE(test_log::contains("UI tail path rejected"));
         TEST_ASSERT_TRUE(test_log::contains(path));
         TEST_ASSERT_FALSE(ram_fs::exists(path));
         TEST_ASSERT_FALSE(ram_fs::exists((std::string(path) + ".tmp").c_str()));

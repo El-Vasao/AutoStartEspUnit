@@ -73,7 +73,7 @@ GsmController::GsmController()
 
 void GsmController::stop() {
     if (_state == GsmState::IDLE) return;
-    logger.log(LogModule::GsmController, "вызов stop()\n");
+    logger.log(LogModule::GsmController, "calling stop()\n");
     voiceReset_();
     _voiceResultReady = false;
     _voicePendingProgramValid = false;
@@ -130,7 +130,7 @@ bool GsmController::sendAt(const char* cmd, const char* tag, AwaitKind kind, uin
         // Не включать await — иначе FSM зависнет до фантомного таймаута.
         resetAwait();
         _lastCommandTime = 0;
-        logger.log(LogModule::GsmController, "sendAt: очередь полна: %s\n", _atCmdBuf);
+        logger.log(LogModule::GsmController, "sendAt: queue full: %s\n", _atCmdBuf);
         return false;
     }
     if (kind != AwaitKind::NONE) {
@@ -158,7 +158,7 @@ static const char* gsmStateToString(GsmState s) {
 
 void GsmController::changeState(GsmState newState) {
     if (_state != newState) {
-        logger.log(LogModule::GsmController, "состояние: %s -> %s\n", getStateString(), gsmStateToString(newState));
+        logger.log(LogModule::GsmController, "state: %s -> %s\n", getStateString(), gsmStateToString(newState));
     }
     if (_state == GsmState::READY && newState != GsmState::READY && _timeStep != TimeStep::Idle) {
         timeFailStep_("left READY");
@@ -309,7 +309,7 @@ void GsmController::leaveReadyForReattach_(const char* why) {
     }
     _reattachCooldownUntilMs = now + delayMs;
     _reattachRequested = false;
-    logger.log(LogModule::GsmController, "переподключение (%s) пауза=%us rssi=%d\n",
+    logger.log(LogModule::GsmController, "reconnect (%s) pause=%us rssi=%d\n",
                why ? why : "?", (unsigned)(delayMs / 1000UL), (int)rssi);
     // Учётные данные APN могли смениться в конфиге — переписать Contype/APN перед подключением.
     if (_apnAppliedValid && !apnMatchesApplied_()) {

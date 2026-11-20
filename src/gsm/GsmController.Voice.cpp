@@ -34,7 +34,7 @@ void GsmController::voiceReset_() {
 
 void GsmController::voiceFinish_(bool ok) {
     const VoiceKind kind = _voiceKind;
-    logger.log(LogModule::GsmController, "конец голосовой эпохи ok=%u вид=%u\n", (unsigned)ok, (unsigned)kind);
+    logger.log(LogModule::GsmController, "voice epoch end ok=%u kind=%u\n", (unsigned)ok, (unsigned)kind);
     if (kind == VoiceKind::OutCall || kind == VoiceKind::OutSms) {
         _voiceResultOk = ok;
         _voiceResultReady = true;
@@ -45,12 +45,12 @@ void GsmController::voiceFinish_(bool ok) {
 void GsmController::notifyMqttDrainedForServiceEpoch() {
     if (_voicePhase != VoicePhase::NeedMqttDrain) return;
     _voicePhase = VoicePhase::StopTcp;
-    logger.log(LogModule::GsmController, "голос: MQTT слит, остановка TCP\n");
+    logger.log(LogModule::GsmController, "voice: MQTT flushed, stopping TCP\n");
 }
 
 void GsmController::abortModemServiceEpoch() {
     if (_voicePhase == VoicePhase::Idle) return;
-    logger.log(LogModule::GsmController, "голос: отмена (вытеснение/стоп)\n");
+    logger.log(LogModule::GsmController, "voice: cancelled (preempt/stop)\n");
     if (_voicePhase == VoicePhase::NeedMqttDrain || _voicePhase == VoicePhase::StopTcp ||
         _voicePhase == VoicePhase::FinishOk || _voicePhase == VoicePhase::FinishFail) {
         voiceFinish_(false);
@@ -82,7 +82,7 @@ bool GsmController::requestCallOwner() {
     _voiceResultReady = false;
     _voiceResultOk = false;
     _voiceNoCarrier = false;
-    logger.log(LogModule::GsmController, "голос: запрос CALL_OWNER таймаут=%lu\n",
+    logger.log(LogModule::GsmController, "voice: CALL_OWNER request timeout=%lu\n",
                (unsigned long)_voiceTimeoutMs);
     return true;
 }
@@ -107,7 +107,7 @@ bool GsmController::requestSmsOwner(const char* message) {
     _voiceResultReady = false;
     _voiceResultOk = false;
     _voicePromptSeen = false;
-    logger.log(LogModule::GsmController, "голос: запрос SMS_OWNER\n");
+    logger.log(LogModule::GsmController, "voice: SMS_OWNER request\n");
     return true;
 }
 
@@ -141,7 +141,7 @@ bool GsmController::voiceTryBeginInbound_(const char* clipDigits) {
     if (!gsmCfg.owner_phone[0]) return false;
     if (!clipDigits || !clipDigits[0]) return false;
     if (!gsm_at::phonesMatch(gsmCfg.owner_phone, clipDigits)) {
-        logger.log(LogModule::GsmController, "голос: CLIP отклонён (не владелец)\n");
+        logger.log(LogModule::GsmController, "voice: CLIP rejected (not owner)\n");
         return false;
     }
 
@@ -160,7 +160,7 @@ bool GsmController::voiceTryBeginInbound_(const char* clipDigits) {
     _voiceTimeoutMs = Gsm::VOICE_CALL_CEILING_MS;
     _voiceNoCarrier = false;
     voiceAbortInboundClipWait_();
-    logger.log(LogModule::GsmController, "голос: входящий совпал с владельцем, старт эпохи\n");
+    logger.log(LogModule::GsmController, "voice: incoming matched owner, epoch start\n");
     return true;
 }
 
@@ -189,11 +189,11 @@ void GsmController::voiceOnDtmfTone_(char tone) {
         const size_t pwLen = strlen(gsmCfg.dtmf_password);
         if (_voiceDtmfLen < pwLen) return;
         if (strcmp(_voiceDtmfBuf, gsmCfg.dtmf_password) != 0) {
-            logger.log(LogModule::GsmController, "голос: пароль DTMF не совпал\n");
+            logger.log(LogModule::GsmController, "voice: DTMF password mismatch\n");
             _voicePhase = VoicePhase::HangupSend;
             return;
         }
-        logger.log(LogModule::GsmController, "голос: пароль DTMF верен, жду id программы\n");
+        logger.log(LogModule::GsmController, "voice: DTMF password ok, waiting program id\n");
         _voiceProgDigitLen = 0;
         _voiceProgDigits[0] = '\0';
         _voicePhase = VoicePhase::CollectProgId;
@@ -216,13 +216,13 @@ void GsmController::voiceOnDtmfTone_(char tone) {
             id = id * 10UL + (unsigned long)(_voiceProgDigits[i] - '0');
         }
         if (id == 0 || id > 255UL) {
-            logger.log(LogModule::GsmController, "голос: неверный id программы\n");
+            logger.log(LogModule::GsmController, "voice: invalid program id\n");
             _voicePhase = VoicePhase::HangupSend;
             return;
         }
         _voicePendingProgramId = (uint8_t)id;
         _voicePendingProgramValid = true;
-        logger.log(LogModule::GsmController, "голос: входящий старт программы %u\n", (unsigned)id);
+        logger.log(LogModule::GsmController, "voice: incoming program %u start\n", (unsigned)id);
         _voicePhase = VoicePhase::HangupSend;
         _voiceResultOk = true; // сброс ещё выполнится; FinishOk после ATH
         return;
@@ -294,14 +294,14 @@ void GsmController::serviceVoice_(uint32_t now) {
     if (_voicePhase == VoicePhase::Idle) {
         if (_inboundRingSeen && _inboundClipDeadlineMs != 0 &&
             (int32_t)(now - _inboundClipDeadlineMs) >= 0) {
-            logger.log(LogModule::GsmController, "голос: таймаут ожидания CLIP\n");
+            logger.log(LogModule::GsmController, "voice: CLIP wait timeout\n");
             voiceAbortInboundClipWait_();
         }
         return;
     }
 
     if ((int32_t)(now - _voiceEpochStartMs) >= (int32_t)Gsm::VOICE_CALL_CEILING_MS) {
-        logger.log(LogModule::GsmController, "голос: потолок эпохи\n");
+        logger.log(LogModule::GsmController, "voice: epoch ceiling\n");
         if (_voicePhase != VoicePhase::HangupSend && _voicePhase != VoicePhase::HangupWait &&
             _voicePhase != VoicePhase::FinishOk && _voicePhase != VoicePhase::FinishFail) {
             _voicePhase = VoicePhase::HangupSend;
@@ -355,9 +355,9 @@ void GsmController::serviceVoice_(uint32_t now) {
     case VoicePhase::DialRing:
         if (_voiceNoCarrier || _voiceAnswered || (int32_t)(now - _voicePhaseDeadlineMs) >= 0) {
             if (_voiceAnswered) {
-                logger.log(LogModule::GsmController, "голос: владелец ответил\n");
+                logger.log(LogModule::GsmController, "voice: owner answered\n");
             } else if (!_voiceNoCarrier) {
-                logger.log(LogModule::GsmController, "голос: таймаут гудков\n");
+                logger.log(LogModule::GsmController, "voice: ring timeout\n");
             }
             _voicePhase = VoicePhase::HangupSend;
             return;
@@ -473,14 +473,14 @@ void GsmController::serviceVoice_(uint32_t now) {
 
     case VoicePhase::CollectPassword:
         if (_voiceNoCarrier || (int32_t)(now - _voicePhaseDeadlineMs) >= 0) {
-            logger.log(LogModule::GsmController, "голос: таймаут пароля\n");
+            logger.log(LogModule::GsmController, "voice: password timeout\n");
             _voicePhase = VoicePhase::HangupSend;
         }
         return;
 
     case VoicePhase::CollectProgId:
         if (_voiceNoCarrier || (int32_t)(now - _voicePhaseDeadlineMs) >= 0) {
-            logger.log(LogModule::GsmController, "голос: таймаут id программы\n");
+            logger.log(LogModule::GsmController, "voice: program id timeout\n");
             _voicePendingProgramValid = false;
             _voicePhase = VoicePhase::HangupSend;
         }

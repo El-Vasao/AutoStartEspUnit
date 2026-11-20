@@ -87,7 +87,7 @@ TimeSyncManager::TimeSyncManager(Config& config, GsmController& gsm)
     : _config(config), _gsm(gsm) {}
 
 void TimeSyncManager::begin() {
-    logger.log(LogModule::TimeSyncManager, "начало\n");
+    logger.log(LogModule::TimeSyncManager, "start\n");
     loadFromRtc_();
     _forceRequest = true;
     _nextAttemptMs = 0;
@@ -109,12 +109,12 @@ void TimeSyncManager::setLastSource_(const char* source) {
 void TimeSyncManager::markBootTimeSettled_(const char* why) {
     if (_bootTimeSettled) return;
     _bootTimeSettled = true;
-    logger.log(LogModule::TimeSyncManager, "время загрузки установилось (%s)\n", why ? why : "?");
+    logger.log(LogModule::TimeSyncManager, "boot time set (%s)\n", why ? why : "?");
 }
 
 void TimeSyncManager::clearYield_(const char* why) {
     if (_yieldPhase == YieldPhase::Idle) return;
-    logger.log(LogModule::TimeSyncManager, "конец уступки (%s)\n", why ? why : "?");
+    logger.log(LogModule::TimeSyncManager, "yield end (%s)\n", why ? why : "?");
     _yieldPhase = YieldPhase::Idle;
     _yieldDeadlineMs = 0;
     _yieldCascadeStarted = false;
@@ -123,7 +123,7 @@ void TimeSyncManager::clearYield_(const char* why) {
 void TimeSyncManager::armYieldDeadline_(uint32_t now) {
     if (_yieldDeadlineMs != 0) return;
     _yieldDeadlineMs = now + Gsm::BOOT_TIME_BUDGET_MS;
-    logger.log(LogModule::TimeSyncManager, "бюджет уступки %u мс\n", (unsigned)Gsm::BOOT_TIME_BUDGET_MS);
+    logger.log(LogModule::TimeSyncManager, "yield budget %u ms\n", (unsigned)Gsm::BOOT_TIME_BUDGET_MS);
 }
 
 void TimeSyncManager::resetFailBackoff_() {
@@ -134,7 +134,7 @@ void TimeSyncManager::resetFailBackoff_() {
 void TimeSyncManager::scheduleRetry_(uint32_t now) {
     const uint32_t delay = backoffDelayMs_(_failStep);
     _nextAttemptMs = now + delay;
-    logger.log(LogModule::TimeSyncManager, "повтор через %lu мс (шаг паузы %u, liteMisses=%u)\n",
+    logger.log(LogModule::TimeSyncManager, "retry in %lu ms (pause step %u, liteMisses=%u)\n",
                (unsigned long)delay, (unsigned)_failStep, (unsigned)_liteMisses);
     if (_failStep < Timing::TIME_SYNC_BACKOFF_MAX_STEP) {
         _failStep = static_cast<uint8_t>(_failStep + 1);
@@ -143,14 +143,14 @@ void TimeSyncManager::scheduleRetry_(uint32_t now) {
 
 void TimeSyncManager::scheduleLiteRetry_(uint32_t now) {
     _nextAttemptMs = now + Timing::TIME_SYNC_LITE_BUSY_RETRY_MS;
-    logger.log(LogModule::TimeSyncManager, "повтор lite через %lu мс (liteMisses=%u)\n",
+    logger.log(LogModule::TimeSyncManager, "lite retry in %lu ms (liteMisses=%u)\n",
                (unsigned long)Timing::TIME_SYNC_LITE_BUSY_RETRY_MS, (unsigned)_liteMisses);
 }
 
 void TimeSyncManager::notifyMqttDrainedForSync() {
     if (_yieldPhase != YieldPhase::NeedMqttDrain) return;
     _yieldPhase = YieldPhase::CascadeArmed;
-    logger.log(LogModule::TimeSyncManager, "MQTT слит, каскад взведён\n");
+    logger.log(LogModule::TimeSyncManager, "MQTT flushed, cascade armed\n");
 }
 
 bool TimeSyncManager::wantHeavyCascade_() const {
@@ -160,7 +160,7 @@ bool TimeSyncManager::wantHeavyCascade_() const {
 bool TimeSyncManager::tryStartCascade_(uint32_t now, const char* ntpServer, int8_t tzOffsetHours) {
     if (!_bootTimeSettled && _bootDeadlineMs == 0) {
         _bootDeadlineMs = now + Gsm::BOOT_TIME_BUDGET_MS;
-        logger.log(LogModule::TimeSyncManager, "бюджет времени загрузки %u мс\n", (unsigned)Gsm::BOOT_TIME_BUDGET_MS);
+        logger.log(LogModule::TimeSyncManager, "boot time budget %u ms\n", (unsigned)Gsm::BOOT_TIME_BUDGET_MS);
     }
 
     // ntp_server может быть пустым: CCLK и CIPGSMLOC всё равно идут; CNTP внутри GSM пропускается.
@@ -184,7 +184,7 @@ bool TimeSyncManager::tryStartCclkLite_(uint32_t now, int8_t tzOffsetHours) {
     _heavyAttempt = false;
     _cclkLiteStarted = true;
     _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
-    logger.log(LogModule::TimeSyncManager, "CCLK-lite запущен\n");
+    logger.log(LogModule::TimeSyncManager, "CCLK-lite started\n");
     return true;
 }
 
@@ -219,7 +219,7 @@ void TimeSyncManager::applyEpochUtc(time_t epochUtc, const char* source) {
 
 void TimeSyncManager::applyEpochInternal_(time_t epochUtc, const char* source, bool persistRtc) {
     if (epochUtc < TimeSync::MIN_SANE_EPOCH_UTC) { // проверка вменяемости: раньше ~2023-11
-        logger.log(LogModule::TimeSyncManager, "отклонено epoch=%ld источник=%s\n", (long)epochUtc, source ? source : "?");
+        logger.log(LogModule::TimeSyncManager, "rejected epoch=%ld source=%s\n", (long)epochUtc, source ? source : "?");
         return;
     }
     struct timeval tv;
@@ -234,7 +234,7 @@ void TimeSyncManager::applyEpochInternal_(time_t epochUtc, const char* source, b
     resetFailBackoff_();
     _cclkLiteStarted = false;
     _heavyAttempt = false;
-    logger.log(LogModule::TimeSyncManager, "синхронизировано epoch=%ld tz=%+dh источник=%s\n", (long)epochUtc, (int)tzOffsetHours(),
+    logger.log(LogModule::TimeSyncManager, "synced epoch=%ld tz=%+dh source=%s\n", (long)epochUtc, (int)tzOffsetHours(),
                source ? source : "?");
     markBootTimeSettled_("ok");
     clearYield_("ok");
@@ -254,7 +254,7 @@ void TimeSyncManager::loadFromRtc_() {
     _synced = true;
     _lastSyncMs = millis();
     setLastSource_("rtc");
-    logger.log(LogModule::TimeSyncManager, "восстановлено из RTC epoch=%ld\n", (long)rec.epoch);
+    logger.log(LogModule::TimeSyncManager, "restored from RTC epoch=%ld\n", (long)rec.epoch);
 }
 
 void TimeSyncManager::saveToRtc_() {
@@ -286,7 +286,7 @@ void TimeSyncManager::update() {
     if (_gsm.takeTimeEpochUtc(got, &src, &tzFromModem, &tzValid)) {
         if (tzValid) {
             if (!_config.setTzOffsetHours(tzFromModem)) {
-                logger.log(LogModule::TimeSyncManager, "setTzOffsetHours(%+d) не удалось; оставлен прежний TZ\n",
+                logger.log(LogModule::TimeSyncManager, "setTzOffsetHours(%+d) failed; previous TZ kept\n",
                            (int)tzFromModem);
             }
         }
@@ -323,7 +323,7 @@ void TimeSyncManager::update() {
     if (_cclkLiteStarted && !_gsm.timeSyncBusy()) {
         _cclkLiteStarted = false;
         if (_liteMisses < 255) _liteMisses++;
-        logger.log(LogModule::TimeSyncManager, "CCLK-lite мягкий промах (liteMisses=%u)\n", (unsigned)_liteMisses);
+        logger.log(LogModule::TimeSyncManager, "CCLK-lite soft miss (liteMisses=%u)\n", (unsigned)_liteMisses);
         scheduleLiteRetry_(now);
         return;
     }
@@ -388,7 +388,7 @@ void TimeSyncManager::update() {
         if (wantHeavyCascade_()) {
             _yieldPhase = YieldPhase::NeedMqttDrain;
             armYieldDeadline_(now);
-            logger.log(LogModule::TimeSyncManager, "уступка: нужен слив MQTT для каскада (liteMisses=%u force=%u)\n",
+            logger.log(LogModule::TimeSyncManager, "yield: MQTT flush needed for cascade (liteMisses=%u force=%u)\n",
                        (unsigned)_liteMisses, (unsigned)_forceRequest);
             return;
         }

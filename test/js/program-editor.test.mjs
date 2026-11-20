@@ -32,3 +32,18 @@ test('new WAIT step keeps the shared 1 second default', () => {
   ed.addStepFromSelect();
   assert.equal(ed.form.steps[0].ms, 1);
 });
+
+test('relay_id and input_id stay silk strings through round-trip', () => {
+  const ed = editor();
+  const relayStep = ed.stepFromServer({ step: 1, action: 'RELAY_ON', relay_id: 'K2' });
+  assert.equal(relayStep.relay_id, 'K2');
+  assert.equal(ed.stepToServer(relayStep).relay_id, 'K2');
+
+  const withInput = ed.$store.programStepsUiSchema.actionCategories
+    .flatMap((c) => c.actions)
+    .find((a) => Array.isArray(a.params) && a.params.includes('input_id'));
+  assert.ok(withInput, 'schema has an input_id action');
+  const inputStep = ed.stepFromServer({ step: 2, action: withInput.value, input_id: 'IN1' });
+  assert.equal(inputStep.input_id, 'IN1');
+  assert.equal(ed.stepToServer(inputStep).input_id, 'IN1');
+});

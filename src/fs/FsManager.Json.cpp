@@ -64,7 +64,7 @@ static bool commitTmpToPath_atomic_(const char* path, char* tmpPath, bool hadBac
         hadBackup = LittleFS.rename(path, bakPath);
         if (!hadBackup) {
             if (!LittleFS.remove(path)) {
-                logger.log(LogModule::FsManager, "атомарный поток: не удалить цель %s (errno=%d)\n", path, errno);
+                logger.log(LogModule::FsManager, "atomic stream: cannot remove target %s (errno=%d)\n", path, errno);
                 LittleFS.remove(tmpPath);
                 return false;
             }
@@ -73,7 +73,7 @@ static bool commitTmpToPath_atomic_(const char* path, char* tmpPath, bool hadBac
 
     espHalFeedWdt();
     if (!LittleFS.rename(tmpPath, path)) {
-        logger.log(LogModule::FsManager, "атомарный поток: переименование не удалось (errno=%d)\n", errno);
+        logger.log(LogModule::FsManager, "atomic stream: rename failed (errno=%d)\n", errno);
         LittleFS.remove(tmpPath);
         if (hadBackup) {
             (void)LittleFS.rename(bakPath, path);
@@ -99,7 +99,7 @@ bool FsManager::writeJsonAtomicStream(const char* path, JsonStreamEncodeFn encod
     }
 
     if (!ensurePath(path)) {
-        logger.log(LogModule::FsManager, "writeJsonAtomicStream: не удалось обеспечить путь %s\n", path);
+        logger.log(LogModule::FsManager, "writeJsonAtomicStream: failed to ensure path %s\n", path);
         errorCount++;
         return false;
     }
@@ -114,7 +114,7 @@ bool FsManager::writeJsonAtomicStream(const char* path, JsonStreamEncodeFn encod
 
     File f = LittleFS.open(tmpPath, "w");
     if (!f) {
-        logger.log(LogModule::FsManager, "writeJsonAtomicStream: не удалось создать временный %s\n", tmpPath);
+        logger.log(LogModule::FsManager, "writeJsonAtomicStream: failed to create tmp %s\n", tmpPath);
         errorCount++;
         return false;
     }
@@ -125,7 +125,7 @@ bool FsManager::writeJsonAtomicStream(const char* path, JsonStreamEncodeFn encod
     f.close();
 
     if (written == 0 || written >= maxBytes) {
-        logger.log(LogModule::FsManager, "writeJsonAtomicStream: неверное число байт (%u)\n", (unsigned)written);
+        logger.log(LogModule::FsManager, "writeJsonAtomicStream: invalid byte count (%u)\n", (unsigned)written);
         LittleFS.remove(tmpPath);
         errorCount++;
         return false;

@@ -80,7 +80,7 @@ flowchart TD
 Дополнение:
 - Для рантайм-исполнения программ — компактные шаги без строк (`CompiledStep`).
 - Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`).
-- MQTT: топики `online`/`state`/`programs`/`hwMap`/`trigMap`/`cmd`/`reply`; payload статуса ≤900; кадр ≤ `MQTT_CIPSEND_MAX` (1400), слот `TX_MAX` 3072. Birth: каталоги → full retained `state` → `online=true`. Период = full retain; край = delta. Норматив — `docs/modules/mqtt.md`.
+- MQTT: топики `online`/`state`/`programs`/`hwMap`/`trigMap`/`cmd`/`reply`; payload статуса ≤900; кадр ≤ `MQTT_CIPSEND_MAX` (1600), слот `TX_MAX` 3072. Birth: каталоги → full retained `state` → `online=true`. Период = full retain; край = delta. Норматив — `docs/modules/mqtt.md`.
 
 ## 3.0) Контракт MQTT (топики, сообщения, доставка)
 MQTT чувствителен к стабильности цикла (SIM800 + SoftAP).
@@ -93,7 +93,7 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
   - LWT `false` на `{prefix}/online`: QoS1 + retained
   - Birth: три retained-хэша каталогов → full retained `state` → один `online=true` (без keepalive-повтора)
   - Период/`status`: full retained `state`; край ~250 мс: delta без retain; каталоги retain = 8 hex (см. `docs/modules/mqtt.md`)
-  - Кадр ≤ `MQTT_CIPSEND_MAX` (1400)
+  - Кадр ≤ `MQTT_CIPSEND_MAX` (1600)
 - **Anti-hang**: чтение/запись режутся `MqttFsmClient::Budgets`. Локальное время encode+stage (~10 мс) только логируется.
   SIM800: send-epoch до `SEND OK`, `mqtt.loop()` всегда при READY (см. [`modules/gsm.md`](modules/gsm.md)).
   MQTT outbound: Ctrl/Tele (`TX_Q_DEPTH=3`, sticky Full/Catalog, Delta coalesce), атомарный CIPSEND. RX overflow → reconnect.

@@ -58,12 +58,12 @@ void GsmController::handleInit() {
                 _baudSearchRound > Gsm::BAUD_SEARCH_MAX_PASSES) {
                 changeState(GsmState::ERROR);
                 core.getErrorManager().set(ErrorCode::GSM_NO_RESPONSE);
-                logger.log(LogModule::GsmController, "поиск скорости: превышен предел раундов\n");
+                logger.log(LogModule::GsmController, "baud search: round limit exceeded\n");
                 return;
             }
             // UART_BAUD уже пробовали в hypothesis — начинаем со следующего кандидата.
             _baudSearchBaudIdx = (Gsm::UART_BAUD_CANDIDATE_COUNT > 1) ? 1 : 0;
-            logger.log(LogModule::GsmController, "поиск скорости, раунд %u старт (с %lu)\n",
+            logger.log(LogModule::GsmController, "baud search, round %u start (from %lu)\n",
                        (unsigned)_baudSearchRound,
                        (unsigned long)baudCandidates()[_baudSearchBaudIdx]);
             gsmOpenUart(baudCandidates()[_baudSearchBaudIdx]);
@@ -82,10 +82,10 @@ void GsmController::handleInit() {
                 _baudSearchRound > Gsm::BAUD_SEARCH_MAX_PASSES) {
                 changeState(GsmState::ERROR);
                 core.getErrorManager().set(ErrorCode::GSM_NO_RESPONSE);
-                logger.log(LogModule::GsmController, "поиск скорости: превышен предел раундов\n");
+                logger.log(LogModule::GsmController, "baud search: round limit exceeded\n");
                 return;
             }
-            logger.log(LogModule::GsmController, "поиск скорости, раунд %u старт\n", (unsigned)_baudSearchRound);
+            logger.log(LogModule::GsmController, "baud search, round %u start\n", (unsigned)_baudSearchRound);
             _baudSearchBaudIdx = 0;
             gsmOpenUart(Gsm::UART_BAUD);
             _baudSearchDeadlineMs = now + Gsm::UART_SETTLE_MS;
@@ -500,7 +500,7 @@ void GsmController::handleInit() {
             clearResponse();
             if (_initCgattBusyRetries < Gsm::INIT_CGATT_RETRY_MAX) {
                 _initCgattBusyRetries++;
-                logger.log(LogModule::GsmController, "INIT AT+CGATT? сбой (повтор %u/%u), ожидание %lums\n",
+                logger.log(LogModule::GsmController, "INIT AT+CGATT? failed (retry %u/%u), waiting %lums\n",
                            (unsigned)_initCgattBusyRetries,
                            (unsigned)Gsm::INIT_CGATT_RETRY_MAX,
                            (unsigned long)Gsm::INIT_CGATT_RETRY_DELAY_MS);

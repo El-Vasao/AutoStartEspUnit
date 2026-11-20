@@ -23,7 +23,7 @@ void GsmController::handleGprsSetup() {
         if (_retryCount >= Gsm::MAX_RETRIES) {
             changeState(GsmState::ERROR);
             core.getErrorManager().set(classifyBearerFail_());
-            logger.log(LogModule::GsmController, "настройка APN не удалась\n");
+            logger.log(LogModule::GsmController, "APN setup failed\n");
             return;
         }
         // Повтор текущего шага.
@@ -71,7 +71,7 @@ void GsmController::handleGprsSetup() {
         if (_retryCount >= Gsm::MAX_RETRIES) {
             changeState(GsmState::ERROR);
             core.getErrorManager().set(classifyBearerFail_());
-            logger.log(LogModule::GsmController, "настройка APN не удалась\n");
+            logger.log(LogModule::GsmController, "APN setup failed\n");
             return;
         }
         // Повтор текущего шага.
@@ -99,7 +99,7 @@ void GsmController::handleGprsAttach() {
             clearResponse();
             _retryCount = 0;
             core.getErrorManager().clear(ErrorCode::GSM_APN_FAIL);
-            logger.log(LogModule::GsmController, "SAPBR уже поднят (тёплый), open пропущен\n");
+            logger.log(LogModule::GsmController, "SAPBR already up (warm), open skipped\n");
             changeState(GsmState::READY);
             updateSignalQuality();
             return;
@@ -138,7 +138,7 @@ void GsmController::handleGprsAttach() {
         clearResponse();
         _retryCount = 0;
         core.getErrorManager().clear(ErrorCode::GSM_APN_FAIL);
-        logger.log(LogModule::GsmController, "SAPBR open не удался, но IP есть (уже поднят)\n");
+        logger.log(LogModule::GsmController, "SAPBR open failed, but IP present (already up)\n");
         changeState(GsmState::READY);
         updateSignalQuality();
         return;
@@ -150,7 +150,7 @@ void GsmController::handleGprsAttach() {
         if (_retryCount >= Gsm::MAX_RETRIES) {
             changeState(GsmState::ERROR);
             core.getErrorManager().set(classifyBearerFail_());
-            logger.log(LogModule::GsmController, "SAPBR open не удался\n");
+            logger.log(LogModule::GsmController, "SAPBR open failed\n");
             return;
         }
         _attachProbeStep = 1;
@@ -193,7 +193,7 @@ void GsmController::handleGprsGetIp() {
         if (_retryCount >= Gsm::MAX_RETRIES) {
             changeState(GsmState::ERROR);
             core.getErrorManager().set(classifyBearerFail_());
-            logger.log(LogModule::GsmController, "не удалось получить IP\n");
+            logger.log(LogModule::GsmController, "failed to get IP\n");
             return;
         }
         sendAt("AT+SAPBR=2,1", nullptr, AwaitKind::IP, Gsm::GET_IP_TIMEOUT_MS);
@@ -215,7 +215,7 @@ void GsmController::handleGprsGetIp() {
         if (_retryCount >= Gsm::MAX_RETRIES) {
             changeState(GsmState::ERROR);
             core.getErrorManager().set(classifyBearerFail_());
-            logger.log(LogModule::GsmController, "не удалось получить IP\n");
+            logger.log(LogModule::GsmController, "failed to get IP\n");
             return;
         }
         sendAt("AT+SAPBR=2,1", nullptr, AwaitKind::IP, Gsm::GET_IP_TIMEOUT_MS);

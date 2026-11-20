@@ -209,7 +209,7 @@ void MqttFsmClient::commitReplaceTeleSlot_(uint8_t slotIdx, uint16_t len, TeleKi
 
 void MqttFsmClient::setError_(const char* reason) {
     _lastErrorReason = reason ? reason : "?";
-    logger.log(LogModule::MqttFsmClient, "закрытие tcp: %s\n", _lastErrorReason);
+    logger.log(LogModule::MqttFsmClient, "closing tcp: %s\n", _lastErrorReason);
     _state = State::Error;
     _net.stop();
     resetSession_();
@@ -353,11 +353,11 @@ void MqttFsmClient::tickQos1Reply_(uint32_t now) {
             commitQueueSlot_(_qos1ReplyLen, OutClass::Ctrl);
             _qos1ReplyDupSent = true;
             _qos1ReplySentMs = now;
-            logger.log(LogModule::MqttFsmClient, "ответ QoS1 DUP pid=%u\n", (unsigned)_qos1ReplyPacketId);
+            logger.log(LogModule::MqttFsmClient, "QoS1 reply DUP pid=%u\n", (unsigned)_qos1ReplyPacketId);
             return;
         }
     }
-    logger.log(LogModule::MqttFsmClient, "ответ QoS1 исчерпан pid=%u\n", (unsigned)_qos1ReplyPacketId);
+    logger.log(LogModule::MqttFsmClient, "QoS1 reply exhausted pid=%u\n", (unsigned)_qos1ReplyPacketId);
     clearQos1Reply_();
 }
 
@@ -520,7 +520,7 @@ void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uin
         uint32_t need = 0;
         if (mqtt_wire::isValidIncomplete(_rx, _rxLen, (uint16_t)sizeof(_rx), need)) {
             // Жёсткий отказ: не искать по байтам от настоящей головы PUBLISH (иначе «car/...» съедается навсегда).
-            logger.log(LogModule::MqttFsmClient, "застой RX, кадр неполон тип=%u есть=%u нужно=%u — пересинхронизация сессии\n",
+            logger.log(LogModule::MqttFsmClient, "RX stall, frame incomplete type=%u have=%u need=%u — resyncing session\n",
                        (unsigned)(_rx[0] >> 4), (unsigned)_rxLen, (unsigned)need);
             // Hex-голова для разбора обрезки (до очистки буфера).
             {
@@ -532,7 +532,7 @@ void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uin
                     if (i + 1u < n && hp + 1 < sizeof(hex)) hex[hp++] = ' ';
                 }
                 hex[hp < sizeof(hex) ? hp : sizeof(hex) - 1] = '\0';
-                logger.log(LogModule::MqttFsmClient, "застой RX hex[%u]=%s\n", (unsigned)n, hex);
+                logger.log(LogModule::MqttFsmClient, "RX stall hex[%u]=%s\n", (unsigned)n, hex);
             }
             if (_budgets.onRxIncomplete) {
                 _budgets.onRxIncomplete(_budgets.onRxIncompleteCtx, _rx, _rxLen, need);
@@ -543,7 +543,7 @@ void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uin
             return;
         }
         // Мусор впереди / рассинхрон: выбросить байт и искать верный тип MQTT.
-        logger.log(LogModule::MqttFsmClient, "застой RX rxLen=%u — синхропропуск 0x%02X\n", (unsigned)_rxLen,
+        logger.log(LogModule::MqttFsmClient, "RX stall rxLen=%u — sync skip 0x%02X\n", (unsigned)_rxLen,
                    (unsigned)_rx[0]);
         memmove(_rx, _rx + 1, (size_t)(_rxLen - 1u));
         _rxLen--;
@@ -553,7 +553,7 @@ void MqttFsmClient::pumpReadAndParse_(uint16_t maxBytes, uint16_t maxFrames, uin
 
 bool MqttFsmClient::resyncDropOne_(const char* why) {
     if (_rxLen == 0) return false;
-    logger.log(LogModule::MqttFsmClient, "пересинхронизация RX (%s) сброс 0x%02X rxLen=%u\n", why ? why : "?", (unsigned)_rx[0],
+    logger.log(LogModule::MqttFsmClient, "RX resync (%s) reset 0x%02X rxLen=%u\n", why ? why : "?", (unsigned)_rx[0],
                (unsigned)_rxLen);
     memmove(_rx, _rx + 1, (size_t)(_rxLen - 1u));
     _rxLen--;
@@ -596,7 +596,7 @@ bool MqttFsmClient::parseOneFrame_() {
             (void)resyncDropOne_("short_connack");
             return false;
         }
-        logger.log(LogModule::MqttFsmClient, "CONNACK код=%u\n", (unsigned)rc);
+        logger.log(LogModule::MqttFsmClient, "CONNACK code=%u\n", (unsigned)rc);
         if (rc == 0) {
             _state = State::Connected;
             _mqttHandshakeStartMs = 0;
@@ -611,12 +611,12 @@ bool MqttFsmClient::parseOneFrame_() {
         uint8_t rc = 0;
         if (mqtt_wire::parseSuback(p, h.remLen, pid, rc)) {
             if (_awaitingSuback && pid != _subPacketId) {
-                logger.log(LogModule::MqttFsmClient, "SUBACK pid %u != %u — пропуск\n", (unsigned)pid,
+                logger.log(LogModule::MqttFsmClient, "SUBACK pid %u != %u — skipped\n", (unsigned)pid,
                            (unsigned)_subPacketId);
             } else {
                 _awaitingSuback = false;
                 _subPacketId = 0;
-                logger.log(LogModule::MqttFsmClient, "SUBACK код=%u\n", (unsigned)rc);
+                logger.log(LogModule::MqttFsmClient, "SUBACK code=%u\n", (unsigned)rc);
                 if (rc == 0x80) {
                     _subscribeConfirmed = false;
                     _subRequested = true;
@@ -692,12 +692,12 @@ bool MqttFsmClient::buildConnect_() {
     o.keepAliveSec = _cfg.keepAliveSec;
     o.cleanSession = _cfg.cleanSession;
     if (_cfg.password && _cfg.password[0] && !(_cfg.username && _cfg.username[0])) {
-        logger.log(LogModule::MqttFsmClient, "CONNECT: пароль без имени пользователя не отправляется (MQTT 3.1.1)\n");
+        logger.log(LogModule::MqttFsmClient, "CONNECT: password without username not sent (MQTT 3.1.1)\n");
     }
 
     const uint16_t n = mqtt_wire::buildConnect(slot, cap, o);
     if (n == 0) {
-        logger.log(LogModule::MqttFsmClient, "сборка CONNECT не удалась (пустой client id или поля слишком длинные)\n");
+        logger.log(LogModule::MqttFsmClient, "CONNECT build failed (empty client id or fields too long)\n");
         return false;
     }
     commitQueueSlot_(n, OutClass::Ctrl);
@@ -765,13 +765,13 @@ bool MqttFsmClient::buildPublish_(const char* topic, const uint8_t* payload, uin
 
     const uint16_t n = mqtt_wire::buildPublish(slot, cap, topic, payload, len, retained, qos, packetId, false);
     if (n == 0) {
-        logger.log(LogModule::MqttFsmClient, "PUBLISH слишком велик: нужно=%u txMax=%u (topicLen=%u payloadLen=%u qos=%u)\n",
+        logger.log(LogModule::MqttFsmClient, "PUBLISH too large: need=%u txMax=%u (topicLen=%u payloadLen=%u qos=%u)\n",
                    (unsigned)(mqtt_wire::publishHeadLength(topicLen, len, qos) + len), (unsigned)cap,
                    (unsigned)topicLen, (unsigned)len, (unsigned)qos);
         return false;
     }
     if (n > NetTiming::MQTT_CIPSEND_MAX) {
-        logger.log(LogModule::MqttFsmClient, "PUBLISH выше предела CIPSEND %u > %u\n", (unsigned)n,
+        logger.log(LogModule::MqttFsmClient, "PUBLISH above CIPSEND limit %u > %u\n", (unsigned)n,
                    (unsigned)NetTiming::MQTT_CIPSEND_MAX);
         return false;
     }
@@ -791,7 +791,7 @@ bool MqttFsmClient::buildPublish_(const char* topic, const uint8_t* payload, uin
             _qos1ReplySentMs = millis();
         } else {
             // Кадр не влезает в копию QoS1 — всё равно в очереди как Ctrl в духе QoS0, без подтверждения.
-            logger.log(LogModule::MqttFsmClient, "копия ответа QoS1 пропущена длина=%u\n", (unsigned)n);
+            logger.log(LogModule::MqttFsmClient, "QoS1 reply copy skipped len=%u\n", (unsigned)n);
         }
     }
     return true;
@@ -823,7 +823,7 @@ bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn 
         if (!beginQueueSlot_(cls, slot, cap)) return false;
     }
     if (hdrMax >= cap) {
-        logger.log(LogModule::MqttFsmClient, "publishJson: запас заголовка %u >= предел %u\n", (unsigned)hdrMax, (unsigned)cap);
+        logger.log(LogModule::MqttFsmClient, "publishJson: header margin %u >= limit %u\n", (unsigned)hdrMax, (unsigned)cap);
         return false;
     }
 
@@ -846,7 +846,7 @@ bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn 
         *measuredBytesOut = mj;
     }
     if (jp.overflowed() || mj == 0 || mj > maxPayloadBytes) {
-        logger.log(LogModule::MqttFsmClient, "publishJson: encode=%u maxPayload=%u переполнение=%u%s\n", (unsigned)mj,
+        logger.log(LogModule::MqttFsmClient, "publishJson: encode=%u maxPayload=%u overflow=%u%s\n", (unsigned)mj,
                    (unsigned)maxPayloadBytes, jp.overflowed() ? 1U : 0U,
                    mj == 0 ? " (empty)" : (mj > maxPayloadBytes ? " (oversize)" : ""));
         return failDeltaSlot();
@@ -858,12 +858,12 @@ bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn 
     const uint16_t hdrExact = mqtt_wire::publishHeadLength(topicLen, (uint32_t)mj, qos);
     const uint32_t total = (uint32_t)hdrExact + (uint32_t)mj;
     if (hdrExact == 0 || total > cap) {
-        logger.log(LogModule::MqttFsmClient, "publishJson: пакет слишком велик всего=%u txMax=%u\n", (unsigned)total,
+        logger.log(LogModule::MqttFsmClient, "publishJson: packet too large total=%u txMax=%u\n", (unsigned)total,
                    (unsigned)cap);
         return failDeltaSlot();
     }
     if (total > NetTiming::MQTT_CIPSEND_MAX) {
-        logger.log(LogModule::MqttFsmClient, "publishJson: выше предела CIPSEND %u > %u\n", (unsigned)total,
+        logger.log(LogModule::MqttFsmClient, "publishJson: above CIPSEND limit %u > %u\n", (unsigned)total,
                    (unsigned)NetTiming::MQTT_CIPSEND_MAX);
         return failDeltaSlot();
     }

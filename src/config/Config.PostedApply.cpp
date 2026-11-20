@@ -44,36 +44,36 @@ bool Config::applyPostedConfigJsonFile(const char* tmpPath, SensorsController& s
     f.close();
     fileSystem.deleteFile(tmpPath);
     if (!parsed) {
-        logger.log(LogModule::Config, "принятый конфиг отклонён: это не полный объект JSON\n");
+        logger.log(LogModule::Config, "received config rejected: not a complete JSON object\n");
         return false;
     }
 
     if (hasAdcCalibrate) {
         float coeff = 0.0f;
         if (!sensors.computeAdcVoltageCoeff(adcCalibrateVoltage, coeff)) {
-            logger.log(LogModule::Config, "калибровка АЦП отклонена: V=%.3f (датчики не готовы)\n",
+            logger.log(LogModule::Config, "ADC calibration rejected: V=%.3f (sensors not ready)\n",
                        adcCalibrateVoltage);
             return false;
         }
         tmp.vehicle.adc_voltage_coeff = coeff;
-        logger.log(LogModule::Config, "калибровка АЦП: V=%.3f коэф.=%.6f\n",
+        logger.log(LogModule::Config, "ADC calibration: V=%.3f coef=%.6f\n",
                    adcCalibrateVoltage, tmp.vehicle.adc_voltage_coeff);
     } else {
         if (!(tmp.vehicle.adc_voltage_coeff > 0.0f) || !isfinite(tmp.vehicle.adc_voltage_coeff)) {
-            logger.log(LogModule::Config, "принятый adc_voltage_coeff неверен; берётся DEFAULT_COEFF\n");
+            logger.log(LogModule::Config, "received adc_voltage_coeff invalid; using DEFAULT_COEFF\n");
             tmp.vehicle.adc_voltage_coeff = Adc::DEFAULT_COEFF;
         }
     }
 
     if (!validateCross(tmp)) {
-        logger.log(LogModule::Config, "принятый конфиг не прошёл перекрёстную проверку\n");
+        logger.log(LogModule::Config, "received config failed cross-check\n");
         return false;
     }
 
     prepareFlashWriteLogGcAndWdt();
 
     if (!fileSystem.writeJsonAtomicStream("/config.json", encodePostedBaseConfig, &tmp, Limits::CONFIG_JSON_SIZE)) {
-        logger.log(LogModule::Config, "не удалось записать config.json\n");
+        logger.log(LogModule::Config, "failed to write config.json\n");
         return false;
     }
 
@@ -85,7 +85,7 @@ bool Config::applyPostedConfigJsonFile(const char* tmpPath, SensorsController& s
     // GET /config/get сериализует RAM, поэтому кэш должен совпасть с только что записанным файлом.
     baseCache = tmp;
     loaded = true;
-    logger.log(LogModule::Config, "принятый конфиг записан в /config.json, CRC=%04X\n", configCRC);
+    logger.log(LogModule::Config, "received config written to /config.json, CRC=%04X\n", configCRC);
     return true;
 }
 
@@ -128,7 +128,7 @@ bool Config::commitPostedProgramFile(const char* tmpPath, uint8_t* outId, ErrorC
         const program_validate::Issue issue =
             program_validate::checkStep(actionIdFromString(s.action), ch, starterRelayId, tables);
         if (issue != program_validate::Issue::None) {
-            logger.log(LogModule::Config, "программа %u отклонена: шаг %u (%s) %s\n", prog.id, (unsigned)(i + 1),
+            logger.log(LogModule::Config, "program %u rejected: step %u (%s) %s\n", prog.id, (unsigned)(i + 1),
                        s.action, program_validate::issueToString(issue));
             if (outErr) *outErr = ErrorCode::PROGRAM_INVALID_REF;
             return false;
@@ -144,10 +144,10 @@ bool Config::commitPostedProgramFile(const char* tmpPath, uint8_t* outId, ErrorC
     prepareFlashWriteLogGcAndWdt();
 
     if (!fileSystem.writeJsonAtomicStream(path, encodePostedProgram, &prog, Limits::CONFIG_JSON_SIZE)) {
-        logger.log(LogModule::Config, "не удалось записать файл программы\n");
+        logger.log(LogModule::Config, "failed to write program file\n");
         return false;
     }
 
-    logger.log(LogModule::Config, "файл программы %u записан\n", prog.id);
+    logger.log(LogModule::Config, "program file %u written\n", prog.id);
     return true;
 }

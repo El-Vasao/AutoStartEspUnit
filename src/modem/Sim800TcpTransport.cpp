@@ -87,7 +87,7 @@ void Sim800TcpTransport::logRxForensic(const char* why) const {
     RxForensic snap;
     fillRxForensic(snap);
     logger.log(LogModule::Sim800TcpTransport,
-        "разбор RX (%s): ipState=%u ipLen=%u ipRead=%u rxRing=%u send=%u txLock=%u conn=%u ciphead=%u\n",
+        "RX parse (%s): ipState=%u ipLen=%u ipRead=%u rxRing=%u send=%u txLock=%u conn=%u ciphead=%u\n",
         why ? why : "?", (unsigned)snap.ipState, (unsigned)snap.ipLen, (unsigned)snap.ipRead,
         (unsigned)snap.rxCount, (unsigned)snap.sendInProgress, (unsigned)snap.modemTxLocked,
         (unsigned)snap.connected, (unsigned)snap.ipConfigDone);
@@ -118,15 +118,15 @@ void Sim800TcpTransport::forceStackRecover_(const char* reason) {
     if (!_recoverQueued) {
         if (_at.enqueueHigh({ "AT+CIPSHUT", Sim800Tcp::CIPSHUT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
             _recoverQueued = true;
-            logger.log(LogModule::Sim800TcpTransport, "восстановление стека CIPSHUT (%s)\n", reason ? reason : "?");
+            logger.log(LogModule::Sim800TcpTransport, "stack recovery CIPSHUT (%s)\n", reason ? reason : "?");
         } else {
-            logger.log(LogModule::Sim800TcpTransport, "восстановление стека: CIPSHUT не поставлен в очередь (%s)\n", reason ? reason : "?");
+            logger.log(LogModule::Sim800TcpTransport, "stack recovery: CIPSHUT not queued (%s)\n", reason ? reason : "?");
         }
     }
     if (_stackRecoverCount < 255) _stackRecoverCount++;
     if (_stackRecoverCount >= Sim800Tcp::STACK_RECOVER_REATTACH_THRESHOLD) {
         _needsBearerReattach = true;
-        logger.log(LogModule::Sim800TcpTransport, "порог восстановления стека -> переподключение bearer\n");
+        logger.log(LogModule::Sim800TcpTransport, "stack recovery threshold -> bearer reconnect\n");
     }
 }
 
@@ -151,11 +151,11 @@ bool Sim800TcpTransport::connectStart(const char* host, uint16_t port) {
     _connectStartMs = now;
     _lastConnectAttemptMs = now;
     clearTx_(); // не протечь нагрузкой прошлого CIPSEND в новый сеанс TCP
-    logger.logSerialOnly(LogModule::Sim800TcpTransport, "connectStart хост=%s порт=%u\n", _host, (unsigned)_port);
+    logger.logSerialOnly(LogModule::Sim800TcpTransport, "connectStart host=%s port=%u\n", _host, (unsigned)_port);
     if (!startConnect_()) {
         _connecting = false;
         _connectStartMs = 0;
-        logger.log(LogModule::Sim800TcpTransport, "connectStart не поставлен в очередь\n");
+        logger.log(LogModule::Sim800TcpTransport, "connectStart not queued\n");
         return false;
     }
     return true;
@@ -173,7 +173,7 @@ void Sim800TcpTransport::stop(const char* reason) {
     if (reason && reason[0]) {
         logger.log(LogModule::Sim800TcpTransport, "stop(): %s\n", reason);
     } else {
-        logger.logSerialOnly(LogModule::Sim800TcpTransport, "вызов stop()\n");
+        logger.logSerialOnly(LogModule::Sim800TcpTransport, "calling stop()\n");
     }
     // CIPCLOSE только если сокет ещё считается живым (URC CLOSED его уже снёс).
     if (wasConnectedOrConnecting && !_closeQueued) {
@@ -192,7 +192,7 @@ void Sim800TcpTransport::noteExternalCipShut() {
     _connecting = false;
     _closeQueued = false;
     endSendEpoch_();
-    logger.log(LogModule::Sim800TcpTransport, "noteExternalCipShut (синхронизация времени)\n");
+    logger.log(LogModule::Sim800TcpTransport, "noteExternalCipShut (time sync)\n");
 }
 
 bool Sim800TcpTransport::enqueueIpConfig_() {
@@ -210,7 +210,7 @@ bool Sim800TcpTransport::enqueueIpConfig_() {
     _ipConfigEnqueued = true;
     _ipConfigOkMask = 0;
     _ipConfigDone = false;
-    logger.log(LogModule::Sim800TcpTransport, "IP-конфиг в очереди (жду CIPHEAD OK)\n");
+    logger.log(LogModule::Sim800TcpTransport, "IP config queued (waiting CIPHEAD OK)\n");
     return true;
 }
 
@@ -232,7 +232,7 @@ bool Sim800TcpTransport::startConnect_() {
         }
         _didInitialCipShut = true;
         clearIpConfigFlags_();
-        logger.log(LogModule::Sim800TcpTransport, "CIPSHUT (первый, безопасен при тёплом старте)\n");
+        logger.log(LogModule::Sim800TcpTransport, "CIPSHUT (first, safe on warm start)\n");
         // CIPSTART после CIPSHUT OK → consumeAtResult продолжает конфиг.
         return true;
     }
@@ -255,7 +255,7 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
     // Сторожа соединения и отправки (зависание модема / застрявшие флаги).
     if (_connecting && _connectStartMs != 0 &&
         (nowMs - _connectStartMs) >= Sim800Tcp::CONNECT_WATCHDOG_MS) {
-        logger.log(LogModule::Sim800TcpTransport, "сторож подключения\n");
+        logger.log(LogModule::Sim800TcpTransport, "connect watchdog\n");
         _connecting = false;
         _connected = false;
         _connectStartMs = 0;
@@ -264,7 +264,7 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
     }
     if (_sendInProgress && _sendWatchMs != 0 &&
         (nowMs - _sendWatchMs) >= Sim800Tcp::SEND_WATCHDOG_MS) {
-        logger.log(LogModule::Sim800TcpTransport, "сторож отправки\n");
+        logger.log(LogModule::Sim800TcpTransport, "send watchdog\n");
         endSendEpoch_();
         _connected = false;
         _connecting = false;
@@ -293,7 +293,7 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
         if (_connecting && !_ipConfigDone) {
             if (!enqueueIpConfig_()) {
                 _connecting = false;
-                logger.log(LogModule::Sim800TcpTransport, "IP-конфиг не поставлен в очередь после CIPSHUT\n");
+                logger.log(LogModule::Sim800TcpTransport, "IP config not queued after CIPSHUT\n");
             }
         }
         return true;
@@ -301,7 +301,7 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
     if (strcmp(r.tag, "CIPSTART") == 0) {
         // Команда принята; само соединение сигналит URC CONNECT OK / CONNECT FAIL.
         if (r.timedOut || r.error) {
-            logger.log(LogModule::Sim800TcpTransport, "CIPSTART не принят (таймаут=%u ошибка=%u)\n",
+            logger.log(LogModule::Sim800TcpTransport, "CIPSTART not accepted (timeout=%u error=%u)\n",
                        (unsigned)r.timedOut, (unsigned)r.error);
             _connecting = false;
             _connected = false;
@@ -310,7 +310,7 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
             forceStackRecover_("cipstart_accept");
         } else if (r.ok) {
             if (kTcpWantVerbose) {
-                logger.log(LogModule::Sim800TcpTransport, "CIPSTART принят (ожидание URC)\n");
+                logger.log(LogModule::Sim800TcpTransport, "CIPSTART accepted (waiting URC)\n");
             }
         }
         return true;
@@ -323,7 +323,7 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
             _sendWatchMs = _lastNowMs ? _lastNowMs : millis(); // ждать SEND OK / SEND FAIL
             // Держать _modemTxLocked и _sendInProgress до SEND OK (после '>' AtSession уже Idle).
         } else if (r.timedOut || r.error) {
-            logger.log(LogModule::Sim800TcpTransport, "CIPSEND не принят (таймаут=%u ошибка=%u)\n",
+            logger.log(LogModule::Sim800TcpTransport, "CIPSEND not accepted (timeout=%u error=%u)\n",
                        (unsigned)r.timedOut, (unsigned)r.error);
             endSendEpoch_();
             _connected = false;
@@ -340,7 +340,7 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
         else bit = 0x04;
 
         if (r.timedOut || r.error || !r.ok) {
-            logger.log(LogModule::Sim800TcpTransport, "сбой IP-конфига метка=%s таймаут=%u ошибка=%u ok=%u\n", r.tag,
+            logger.log(LogModule::Sim800TcpTransport, "IP config failed label=%s timeout=%u error=%u ok=%u\n", r.tag,
                        (unsigned)r.timedOut, (unsigned)r.error, (unsigned)r.ok);
             clearIpConfigFlags_();
             _connecting = false;
@@ -353,10 +353,10 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
         if (_ipConfigOkMask == 0x07) {
             _ipConfigDone = true;
             _ipConfigEnqueued = false;
-            logger.log(LogModule::Sim800TcpTransport, "IP-конфиг OK (CIPHEAD=1 подтверждён)\n");
+            logger.log(LogModule::Sim800TcpTransport, "IP config ok (CIPHEAD=1 confirmed)\n");
             if (_connecting) {
                 if (!enqueueCipStart_()) {
-                    logger.log(LogModule::Sim800TcpTransport, "CIPSTART не поставлен в очередь после IP-конфига\n");
+                    logger.log(LogModule::Sim800TcpTransport, "CIPSTART not queued after IP config\n");
                     _connecting = false;
                     forceStackRecover_("cipstart_after_cfg");
                 }
@@ -372,7 +372,7 @@ void Sim800TcpTransport::onLine(const char* line) {
     // URC соединения — голый ERROR не считать им (UART общий с AT GSM).
     if (strstr(line, "CONNECT OK") != nullptr) {
         _lastConnectOkMs = _lastNowMs;
-        logger.log(LogModule::Sim800TcpTransport, "TCP подключён\n");
+        logger.log(LogModule::Sim800TcpTransport, "TCP connected\n");
         _connected = true;
         _connecting = false;
         _connectStartMs = 0;
@@ -381,7 +381,7 @@ void Sim800TcpTransport::onLine(const char* line) {
         return;
     }
     if (strstr(line, "ALREADY CONNECT") != nullptr) {
-        logger.log(LogModule::Sim800TcpTransport, "TCP уже подключён\n");
+        logger.log(LogModule::Sim800TcpTransport, "TCP already connected\n");
         _connected = true;
         _connecting = false;
         _connectStartMs = 0;
@@ -391,7 +391,7 @@ void Sim800TcpTransport::onLine(const char* line) {
     }
     if (strcmp(line, "CLOSED") == 0) {
         const uint32_t dt = (_lastConnectOkMs != 0) ? (_lastNowMs - _lastConnectOkMs) : 0;
-        logger.log(LogModule::Sim800TcpTransport, "TCP закрыт (время работы=%ums)\n", (unsigned)dt);
+        logger.log(LogModule::Sim800TcpTransport, "TCP closed (uptime=%ums)\n", (unsigned)dt);
         const bool wasSending = _modemTxLocked || _sendInProgress;
         _connected = false;
         _connecting = false;
@@ -410,9 +410,9 @@ void Sim800TcpTransport::onLine(const char* line) {
         if (s_lastFailLogMs == 0 ||
             (int32_t)(now - s_lastFailLogMs) >= (int32_t)Sim800Tcp::CONNECT_RETRY_COOLDOWN_MS) {
             s_lastFailLogMs = now;
-            logger.log(LogModule::Sim800TcpTransport, "подключение TCP не удалось\n");
+            logger.log(LogModule::Sim800TcpTransport, "TCP connect failed\n");
         } else {
-            logger.logSerialOnly(LogModule::Sim800TcpTransport, "подключение TCP не удалось\n");
+            logger.logSerialOnly(LogModule::Sim800TcpTransport, "TCP connect failed\n");
         }
         _connected = false;
         _connecting = false;
@@ -427,7 +427,7 @@ void Sim800TcpTransport::onLine(const char* line) {
         return;
     }
     if (strstr(line, "SEND FAIL") != nullptr) {
-        logger.log(LogModule::Sim800TcpTransport, "SEND FAIL — восстановление стека\n");
+        logger.log(LogModule::Sim800TcpTransport, "SEND FAIL — stack recovery\n");
         endSendEpoch_();
         _connected = false;
         _connecting = false;
@@ -537,7 +537,7 @@ void Sim800TcpTransport::onByte(char c) {
             return;
         case Ev::DataStart:
             if (kTcpWantVerbose) {
-                logger.log(LogModule::Sim800TcpTransport, "+IPD длина=%u\n", (unsigned)_ipd.length());
+                logger.log(LogModule::Sim800TcpTransport, "+IPD len=%u\n", (unsigned)_ipd.length());
             }
             if (_ipd.length() == 0) {
                 _at.uart().setDataMode(false);
@@ -572,7 +572,7 @@ void Sim800TcpTransport::pushRx_(uint8_t b, bool fromIpd) {
     if (_rxCount >= RX_SIZE) {
         if (!_rxOverflow) {
             _rxOverflow = true;
-            logger.log(LogModule::Sim800TcpTransport, "переполнение RX — риск рассинхрона потока MQTT\n");
+            logger.log(LogModule::Sim800TcpTransport, "RX overflow — risk of MQTT stream desync\n");
         }
         return; // не выбрасывать старейшее (это рассинхронизирует кадры MQTT)
     }
@@ -629,7 +629,7 @@ void Sim800TcpTransport::startSend_() {
     snprintf(_cmdSend, sizeof(_cmdSend), "AT+CIPSEND=%u", (unsigned)_sendLen);
     // Ждать приглашение; когда оно придёт, байты пишутся по зафиксированному _sendLen.
     if (!_at.enqueue({ _cmdSend, Sim800Tcp::CIPSEND_PROMPT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Prompt), nullptr, "CIPSEND" })) {
-        logger.log(LogModule::Sim800TcpTransport, "CIPSEND не поставлен в очередь\n");
+        logger.log(LogModule::Sim800TcpTransport, "CIPSEND not queued\n");
         _sendLen = 0;
         return;
     }

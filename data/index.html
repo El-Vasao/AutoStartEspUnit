@@ -8,27 +8,33 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
     <style>
       [x-cloak] { display: none !important; }
-      /* Header toast area (does not affect layout) */
+      /* Header toast: full-bleed strip over header (does not affect layout) */
+      body { overflow-x: clip; }
       .site-header { position: relative; }
       .header-toast {
         position: absolute;
-        inset: 0;
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 100vw;
+        transform: translateX(-50%);
         z-index: 5;
         pointer-events: none;
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 12px;
+        padding: 0;
       }
       .header-toast-card {
         pointer-events: none;
-        max-width: 520px;
-        width: min(520px, calc(100% - 24px));
+        width: 100%;
         background: rgba(17, 26, 46, 0.96);
         color: #e6edf3;
         border: 1px solid rgba(34, 48, 85, 0.85);
+        border-left: none;
+        border-right: none;
         box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
-        border-radius: 14px;
+        border-radius: 0;
         padding: 12px 14px;
         transform: translateY(-6px);
         opacity: 0;
@@ -362,7 +368,7 @@
                     <div class="tile-grid" x-show="$store.deviceStatus.loaded">
                             <template x-for="(state, index) in $store.deviceStatus.relays" :key="index">
                                 <div class="tile relay-tile" :class="state ? 'relay-on' : 'relay-off'">
-                                    <div class="tile-name" x-text="(String($store.deviceStatus.hwMap?.relays?.[index]?.label || $store.deviceStatus.hwMap?.relays?.[index]?.name || '').trim() || $store.deviceStatus.hwMap?.relays?.[index]?.id || (index + 1))"></div>
+                                    <div class="tile-name" x-text="$store.uiFormat.relayName(index)"></div>
                                     <div class="tile-sub" x-text="state ? 'Вкл' : 'Выкл'"></div>
                                 </div>
                             </template>
@@ -665,6 +671,7 @@
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'vehicle', invalid: $store.settingsForm.subtabHasErrors('vehicle'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('vehicle') && !$store.settingsForm.subtabHasErrors('vehicle') }" @click="$store.uiState.activeSubTab = 'vehicle'" :disabled="$store.deviceOta.started">Автомобиль</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'sensors', invalid: $store.settingsForm.subtabHasErrors('sensors'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('sensors') && !$store.settingsForm.subtabHasErrors('sensors') }" @click="$store.uiState.activeSubTab = 'sensors'" :disabled="$store.deviceOta.started">Датчики</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'inputs', invalid: $store.settingsForm.subtabHasErrors('inputs'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('inputs') && !$store.settingsForm.subtabHasErrors('inputs') }" @click="$store.uiState.activeSubTab = 'inputs'" :disabled="$store.deviceOta.started">Входы</button>
+                    <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'relays', invalid: $store.settingsForm.subtabHasErrors('relays'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('relays') && !$store.settingsForm.subtabHasErrors('relays') }" @click="$store.uiState.activeSubTab = 'relays'" :disabled="$store.deviceOta.started">Реле</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'triggers', invalid: $store.settingsForm.subtabHasErrors('triggers'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('triggers') && !$store.settingsForm.subtabHasErrors('triggers') }" @click="$store.uiState.activeSubTab = 'triggers'" :disabled="$store.deviceOta.started">Триггеры</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'thermostat', invalid: $store.settingsForm.subtabHasErrors('thermostat'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('thermostat') && !$store.settingsForm.subtabHasErrors('thermostat') }" @click="$store.uiState.activeSubTab = 'thermostat'" :disabled="$store.deviceOta.started">Термостат</button>
                     <button class="settings-subtab-button" :class="{ active: $store.uiState.activeSubTab === 'battery', invalid: $store.settingsForm.subtabHasErrors('battery'), unsaved: $store.uiState.unsavedHint && $store.settings.subtabHasChanges('battery') && !$store.settingsForm.subtabHasErrors('battery') }" @click="$store.uiState.activeSubTab = 'battery'" :disabled="$store.deviceOta.started">Защита АКБ</button>
@@ -778,7 +785,7 @@
                                 <p class="loading-placeholder" x-show="!($store.deviceStatus.sensorSlots > 0)">Нет датчиков</p>
                                 <template x-for="i in ($store.deviceStatus.sensorSlots || 0)" :key="i">
                                     <div class="sensor-config-item" :id="'settings-sensor-' + (i-1)">
-                                        <h4 x-text="(String($store.settings.sensors?.[i-1]?.name || '').trim() || $store.settings.sensors?.[i-1]?.id || i)"></h4>
+                                        <h4 x-text="$store.uiFormat.sensorName(i-1)"></h4>
                                         <template x-for="field in ($store.settingsUiSchema.settings?.sensors?.fields || [])" :key="field.key">
                                             <div class="form-group" x-data="$store.settingsForm.fieldRow(field, String(field.pathTmpl).replace('{i}', String(i-1)))" x-show="!field.hidden">
                                                 <label class="form-label" x-text="field.label"></label>
@@ -852,7 +859,7 @@
                                 <p class="loading-placeholder" x-show="!($store.deviceStatus.inputSlots > 0)">Нет входов</p>
                                 <template x-for="i in ($store.deviceStatus.inputSlots || 0)" :key="i">
                                     <div class="input-config-item" :id="'settings-input-' + (i-1)">
-                                        <h4 x-text="'Вход ' + i"></h4>
+                                        <h4 x-text="$store.uiFormat.inputName(i-1)"></h4>
                                         <template x-for="field in ($store.settingsUiSchema.settings?.inputs?.fields || [])" :key="field.pathTmpl + ':' + field.bind">
                                             <div class="form-group" x-data="$store.settingsForm.fieldRow(field, String(field.pathTmpl).replace('{i}', String(i-1)))" x-show="(!field.hidden) && (!field.showIf || field.showIf($store, i-1))">
                                                 <label class="form-label" x-text="field.label"></label>
@@ -934,6 +941,105 @@
                                                 </div>
                                             </div>
                                         </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Реле -->
+                        <div :class="{ active: $store.uiState.activeSubTab === 'relays' }" class="settings-subtab-pane">
+                            <div class="card">
+                                <p class="loading-placeholder" x-show="!($store.deviceStatus.relaySlots > 0)">Нет реле</p>
+                                <template x-for="i in ($store.deviceStatus.relaySlots || 0)" :key="i">
+                                    <div class="relay-config-item" :id="'settings-relay-' + (i-1)">
+                                        <h4 x-text="$store.uiFormat.relayName(i-1)"></h4>
+                                        <template x-for="field in ($store.settingsUiSchema.settings?.relays?.fields || [])" :key="field.pathTmpl + ':' + field.bind">
+                                            <div class="form-group" x-data="$store.settingsForm.fieldRow(field, String(field.pathTmpl).replace('{i}', String(i-1)))" x-show="!field.hidden">
+                                                <label class="form-label" x-text="field.label"></label>
+                                                <div class="control-row">
+                                                    <div class="control-main">
+                                                        <template x-if="field.type === 'text'">
+                                                            <input
+                                                                type="text"
+                                                                class="form-control"
+                                                                :inputmode="field.inputmode || null"
+                                                                :autocomplete="field.autocomplete || null"
+                                                                :value="(value ?? '')"
+                                                                :class="inputClass()"
+                                                                @input="onTextInput"
+                                                            >
+                                                        </template>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        class="help-btn"
+                                                        :class="helpBtnClass()"
+                                                        x-ref="btn"
+                                                        @click="openHelp = !openHelp"
+                                                        @keydown.escape.prevent.stop="openHelp = false"
+                                                        @keydown="onHelpKeydown"
+                                                        aria-label="Справка"
+                                                    >?</button>
+                                                </div>
+                                                <div class="help-inline-wrap" x-show="openHelp && (field.help || hasError())" x-collapse x-transition.opacity.duration.120ms @click.outside="openHelp = false" x-cloak>
+                                                    <div class="help-popover">
+                                                        <div class="help-popover-title help-popover-title-error" x-show="hasError()">Ошибка</div>
+                                                        <p class="help-popover-text-error" x-show="hasError()" x-text="errorText()"></p>
+                                                        <div class="help-popover-title" x-text="field.helpTitle || 'Справка'"></div>
+                                                        <p x-text="field.help || (field.label || '')"></p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <div class="form-group" x-data="{
+                                            get relayId() {
+                                              const item = $store.settings.relays?.[i-1];
+                                              return String(item?.id || $store.deviceStatus.hwMap?.relays?.[i-1]?.id || '').trim();
+                                            },
+                                            get checked() {
+                                              return this.relayId && String($store.settings.vehicle?.starter_relay_id || '') === this.relayId;
+                                            },
+                                            openHelp: false,
+                                            onHelpKeydown(e) {
+                                              if (e.key === 'Escape') { this.openHelp = false; e.preventDefault(); e.stopPropagation(); }
+                                            }
+                                          }">
+                                            <label class="form-label">Стартер</label>
+                                            <div class="control-row" style="align-items: center;">
+                                                <div class="control-main">
+                                                    <label class="toggle-row">
+                                                        <button
+                                                            type="button"
+                                                            class="toggle-switch"
+                                                            role="switch"
+                                                            :aria-checked="checked"
+                                                            :class="{ on: checked, 'field-changed': $store.settings.isPathChanged('vehicle.starter_relay_id') && checked }"
+                                                            :disabled="$store.deviceOta.started || !relayId"
+                                                            @click="if (!checked && relayId) $store.settings.setStarterRelayId(relayId)"
+                                                        ></button>
+                                                        <span x-text="checked ? 'Да' : 'Нет'"></span>
+                                                    </label>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    class="help-btn help-btn-toggle"
+                                                    :class="$store.settingsForm.hasError('vehicle.starter_relay_id') ? 'has-error' : ''"
+                                                    x-ref="btn"
+                                                    @click="openHelp = !openHelp"
+                                                    @keydown.escape.prevent.stop="openHelp = false"
+                                                    @keydown="onHelpKeydown"
+                                                    aria-label="Справка"
+                                                >?</button>
+                                            </div>
+                                            <div class="help-inline-wrap" x-show="openHelp || $store.settingsForm.hasError('vehicle.starter_relay_id')" x-collapse x-transition.opacity.duration.120ms @click.outside="openHelp = false" x-cloak>
+                                                <div class="help-popover">
+                                                    <div class="help-popover-title help-popover-title-error" x-show="$store.settingsForm.hasError('vehicle.starter_relay_id')">Ошибка</div>
+                                                    <p class="help-popover-text-error" x-show="$store.settingsForm.hasError('vehicle.starter_relay_id')" x-text="$store.settingsForm.getError('vehicle.starter_relay_id')"></p>
+                                                    <div class="help-popover-title">Стартер</div>
+                                                    <p>Этим реле управляет только шаг «Запуск двигателя»; в шагах «Реле» его выбрать нельзя. Стартер один и обязателен — снять галочку нельзя, отметьте другое реле.</p>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </template>
                             </div>
@@ -1084,65 +1190,6 @@
                                     </template>
                                 </div>
                                 <div class="button-group mt-16"><button class="btn" type="button" @click="$store.settings.addTempTrigger()">Добавить триггер температуры</button></div>
-                            </div>
-                            <div class="card">
-                                <div id="settings-schedule-triggers-config">
-                                    <h4 class="mt-0">Расписание</h4>
-                                    <template x-for="(trigger, idx) in $store.settings.schedule_triggers" :key="idx">
-                                        <div class="temp-trigger-item" :id="'settings-schedule-trigger-' + idx">
-                                            <div class="trigger-header">
-                                                <h4 x-text="'Расписание ' + (idx+1)"></h4>
-                                                <button class="btn danger trigger-delete" type="button" @click="$store.settings.removeScheduleTrigger(idx)">✕</button>
-                                            </div>
-                                            <template x-for="field in ($store.settingsUiSchema.settings?.triggers?.scheduleFields || [])" :key="field.bind">
-                                                <div class="form-group" x-data="$store.settingsForm.fieldRow(field, 'schedule_triggers.' + String(idx) + '.' + String(field.bind))" x-show="!field.hidden">
-                                                    <label class="form-label" x-text="field.label"></label>
-                                                    <div class="control-row" :style="field.type === 'toggle' ? 'align-items: center;' : ''">
-                                                        <div class="control-main">
-                                                            <template x-if="field.type === 'toggle'">
-                                                                <label class="toggle-row">
-                                                                    <button
-                                                                        type="button"
-                                                                        class="toggle-switch"
-                                                                        role="switch"
-                                                                        :aria-checked="value"
-                                                                        :class="{ on: value }"
-                                                                        :disabled="$store.deviceOta.started"
-                                                                        @click="onToggleClick"
-                                                                    ></button>
-                                                                    <span x-text="toggleText()"></span>
-                                                                </label>
-                                                            </template>
-                                                            <template x-if="field.type === 'number'">
-                                                                <input type="text" :inputmode="(field.valueType === 'int') ? 'numeric' : 'decimal'" class="form-control"
-                                                                       :step="field.step || '1'"
-                                                                       :value="APP.utils.numberToPlainString(value)"
-                                                                       @input="onNumberInput">
-                                                            </template>
-                                                            <template x-if="field.type === 'select'">
-                                                                <select class="form-control" :value="value" @change="onSelectChange">
-                                                                    <template x-for="opt in options()" :key="String(opt.value)">
-                                                                        <option :value="opt.value" x-text="opt.label"></option>
-                                                                    </template>
-                                                                </select>
-                                                            </template>
-                                                        </div>
-                                                        <button type="button" class="help-btn" :class="helpBtnClass()" @click="openHelp = !openHelp" aria-label="Справка">?</button>
-                                                    </div>
-                                                    <div class="help-inline-wrap" x-show="openHelp && (field.help || hasError())" x-collapse x-transition.opacity.duration.120ms @click.outside="openHelp = false" x-cloak>
-                                                        <div class="help-popover">
-                                                            <div class="help-popover-title help-popover-title-error" x-show="hasError()">Ошибка</div>
-                                                            <p class="help-popover-text-error" x-show="hasError()" x-text="errorText()"></p>
-                                                            <div class="help-popover-title" x-text="field.helpTitle || 'Справка'"></div>
-                                                            <p x-text="field.help || (field.label || '')"></p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </template>
-                                        </div>
-                                    </template>
-                                </div>
-                                <div class="button-group mt-16"><button class="btn" type="button" @click="$store.settings.addScheduleTrigger()">Добавить расписание</button></div>
                             </div>
                         </div>
 

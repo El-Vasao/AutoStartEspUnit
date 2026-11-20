@@ -65,13 +65,13 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                           (static_cast<uint32_t>(_hdrBuf[1]) << 8) |
                           (static_cast<uint32_t>(_hdrBuf[2]) << 16) |
                           (static_cast<uint32_t>(_hdrBuf[3]) << 24);
-                logger.log(LogModule::OtaHandler, "размер прошивки: %u байт\n", (unsigned)_fwSize);
+                logger.log(LogModule::OtaHandler, "firmware size: %u bytes\n", (unsigned)_fwSize);
                 if (_fwSize == 0 || _fwSize > Ota::APP_IMAGE_MAX) {
                     failStream("fwSize вне диапазона");
                     return false;
                 }
                 yield();
-                logger.log(LogModule::OtaHandler, "куча перед Update.begin: свободно=%u maxBlk=%u\n",
+                logger.log(LogModule::OtaHandler, "heap before Update.begin: free=%u maxBlk=%u\n",
                            (unsigned)espHalFreeHeap(), (unsigned)espHalMaxBlock());
                 if (!Update.begin(_fwSize)) {
                     core.logHeapSnapshot("ota_update_begin_failed");
@@ -159,7 +159,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                 }
                 // Иначе хвост может перезаписать config или программы.
                 if (!isAllowedOtaTailPath(_nameBuf)) {
-                    logger.log(LogModule::OtaHandler, "отклонён путь хвоста: %s\n", _nameBuf);
+                    logger.log(LogModule::OtaHandler, "UI tail path rejected: %s\n", _nameBuf);
                     failStream("путь хвоста не ассет UI");
                     return false;
                 }
@@ -181,7 +181,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                             (static_cast<uint32_t>(_metaBuf[1]) << 8) |
                             (static_cast<uint32_t>(_metaBuf[2]) << 16) |
                             (static_cast<uint32_t>(_metaBuf[3]) << 24);
-                logger.log(LogModule::OtaHandler, "извлечение %s (%u байт)\n", _nameBuf, (unsigned)_fileSize);
+                logger.log(LogModule::OtaHandler, "extract %s (%u bytes)\n", _nameBuf, (unsigned)_fileSize);
 
                 if (_fileSize == 0) {
                     // Пустой файл: всё равно создать через open/close.
@@ -312,6 +312,6 @@ bool OtaHandler::streamFinish() {
     }
 
     _streamDoneOk = true;
-    logger.log(LogModule::OtaHandler, "поток завершён успешно, всего=%u\n", (unsigned)_totalAccepted);
+    logger.log(LogModule::OtaHandler, "stream completed ok, total=%u\n", (unsigned)_totalAccepted);
     return true;
 }

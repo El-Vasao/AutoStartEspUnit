@@ -92,9 +92,9 @@
 
           const params = actionDef?.params || [];
           for (const p of params) {
-            if (p === 'relay_id') base.relay_id = (s.relay_id !== undefined) ? (Number(s.relay_id) || 0) : 0;
+            if (p === 'relay_id') base.relay_id = (s.relay_id !== undefined) ? String(s.relay_id || '') : '';
             else if (p === 'ms') base.ms = s.ms ? (s.ms / 1000) : 0;
-            else if (p === 'input_id') base.input_id = (s.input_id !== undefined) ? (Number(s.input_id) || 0) : 0;
+            else if (p === 'input_id') base.input_id = (s.input_id !== undefined) ? String(s.input_id || '') : '';
             else if (p === 'input_trigger_id') base.input_trigger_id = (s.input_trigger_id !== undefined) ? (Number(s.input_trigger_id) || 0) : 0;
             else if (p === 'temp_trigger_id') base.temp_trigger_id = (s.temp_trigger_id !== undefined) ? (Number(s.temp_trigger_id) || 0) : 0;
             else if (p === 'message') base.message = (s.message !== undefined) ? String(s.message || '') : '';
@@ -128,9 +128,9 @@
           };
 
           for (const p of params) {
-            if (p === 'relay_id') add('relay_id', toInt(step.relay_id, 0));
+            if (p === 'relay_id') add('relay_id', String(step.relay_id || ''));
             else if (p === 'ms') add('ms', step.ms ? Math.round(step.ms * 1000) : 0);
-            else if (p === 'input_id') add('input_id', toInt(step.input_id, 0));
+            else if (p === 'input_id') add('input_id', String(step.input_id || ''));
             else if (p === 'input_trigger_id') add('input_trigger_id', (step.input_trigger_id !== undefined) ? (Number(step.input_trigger_id) || 0) : 0);
             else if (p === 'temp_trigger_id') add('temp_trigger_id', (step.temp_trigger_id !== undefined) ? (Number(step.temp_trigger_id) || 0) : 0);
             else if (p === 'message') add('message', (step.message !== undefined) ? String(step.message || '') : '');

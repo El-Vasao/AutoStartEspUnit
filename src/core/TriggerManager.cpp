@@ -51,14 +51,14 @@ void TriggerManager::syncEnabledFromConfig() {
 }
 
 void TriggerManager::begin() {
-    logger.log(LogModule::TriggerManager, "начало\n");
+    logger.log(LogModule::TriggerManager, "start\n");
     syncEnabledFromConfig();
     for (uint8_t i = 0; i < Limits::MAX_TRIGGERS; i++) {
         _inputLatch[i].reset();
         _tempLatch[i].reset();
     }
     const auto& full = _config.getBase();
-    logger.log(LogModule::TriggerManager, "успех (входы %u, температура %u)\n",
+    logger.log(LogModule::TriggerManager, "ok (inputs %u, temperature %u)\n",
                full.input_triggers_count, full.temperature_triggers_count);
 }
 
@@ -94,7 +94,7 @@ void TriggerManager::update() {
         }
         const bool active = (_inputs.getState((uint8_t)inIdx) == (t.trigger_level == 1));
         if (_inputLatch[i].update(active) && t.program_id != 0) {
-            logger.log(LogModule::TriggerManager, "входной триггер %d (input_id=%u idx=%d) сработал, старт программы %u\n",
+            logger.log(LogModule::TriggerManager, "input trigger %d (input_id=%u idx=%d) fired, program %u start\n",
                        i, (unsigned)t.input_id, (int)inIdx, t.program_id);
             _executor.start(t.program_id);
         }
@@ -124,7 +124,7 @@ void TriggerManager::update() {
         const float temp = _sensors.getTemperature((uint8_t)idx);
         const auto cmp = trigger_rules::compareFromString(t.comparison);
         if (_tempLatch[i].update(temp, t.threshold, cmp, DS18B20::RELEASE_HYSTERESIS_C) && t.program_id != 0) {
-            logger.log(LogModule::TriggerManager, "температурный триггер %d сработал, старт программы %u\n", i, t.program_id);
+            logger.log(LogModule::TriggerManager, "temperature trigger %d fired, program %u start\n", i, t.program_id);
             _executor.start(t.program_id);
         }
     }
@@ -137,7 +137,7 @@ void TriggerManager::setInputTriggerEnabled(uint8_t index, bool en) {
     if (index < Limits::MAX_TRIGGERS) {
         _inputEnabled[index] = en;
         if (!en) _inputLatch[index].reset();
-        logger.log(LogModule::TriggerManager, "входной триггер %u рантайм включён: %d\n", index, en);
+        logger.log(LogModule::TriggerManager, "input trigger %u runtime on: %d\n", index, en);
     }
 }
 
@@ -149,7 +149,7 @@ void TriggerManager::setTempTriggerEnabled(uint8_t index, bool en) {
     if (index < Limits::MAX_TRIGGERS) {
         _tempEnabled[index] = en;
         if (!en) _tempLatch[index].reset();
-        logger.log(LogModule::TriggerManager, "температурный триггер %u рантайм включён: %d\n", index, en);
+        logger.log(LogModule::TriggerManager, "temperature trigger %u runtime on: %d\n", index, en);
     }
 }
 

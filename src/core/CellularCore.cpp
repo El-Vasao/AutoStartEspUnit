@@ -50,7 +50,7 @@ void CellularCore::init(GsmController& gsm, MqttClient& mqtt, WebServer& web, Ti
             self->_gsm->logTcpRxForensic("rx_incomplete");
             const bool ap = self->_web && self->_web->isActive();
             const uint16_t ui = self->_web ? self->_web->activeUiSessionCount() : 0;
-            logger.log(LogModule::CellularCore, "rx_incomplete softap=%u ui_sessions=%u есть=%u нужно=%u\n",
+            logger.log(LogModule::CellularCore, "rx_incomplete softap=%u ui_sessions=%u have=%u need=%u\n",
                        (unsigned)ap, (unsigned)ui, (unsigned)have, (unsigned)need);
         },
         this);
@@ -86,18 +86,18 @@ void CellularCore::service() {
         const uint32_t now = millis();
         if (_bootSettleUntilMs == 0) {
             _bootSettleUntilMs = now + Gsm::POST_BOOT_SETTLE_MS;
-            logger.log(LogModule::CellularCore, "GSM пауза после старта %u мс\n", (unsigned)Gsm::POST_BOOT_SETTLE_MS);
+            logger.log(LogModule::CellularCore, "GSM pause after start %u ms\n", (unsigned)Gsm::POST_BOOT_SETTLE_MS);
         }
         if ((int32_t)(now - _bootSettleUntilMs) < 0) {
             if (_lastSettleLogMs == 0 || (now - _lastSettleLogMs) >= Cellular::SETTLE_LOG_INTERVAL_MS) {
                 _lastSettleLogMs = now;
                 const uint32_t left = _bootSettleUntilMs - now;
-                logger.log(LogModule::CellularCore, "GSM пауза, осталось ~%u мс\n", (unsigned)left);
+                logger.log(LogModule::CellularCore, "GSM pause, ~%u ms left\n", (unsigned)left);
             }
             return;
         }
         _bootSettlePending = false;
-        logger.log(LogModule::CellularCore, "GSM пауза кончилась, старт модема\n");
+        logger.log(LogModule::CellularCore, "GSM pause over, starting modem\n");
     }
 
     if (!_gsmStarted) {
@@ -111,7 +111,7 @@ void CellularCore::service() {
     if (_gsm->serviceEpochNeedsMqttDrain()) {
         if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
             if (_mqttStarted) {
-                logger.log(LogModule::CellularCore, "слив MQTT для эпохи голос/SMS\n");
+                logger.log(LogModule::CellularCore, "MQTT flush for voice/SMS epoch\n");
             }
             if (!drainMqttDisconnect_()) return;
         } else if (_mqtt) {
@@ -126,7 +126,7 @@ void CellularCore::service() {
         !_gsm->serviceEpochNeedsMqttDrain()) {
         if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
             if (_mqttStarted) {
-                logger.log(LogModule::CellularCore, "слив MQTT для уступки синхронизации времени\n");
+                logger.log(LogModule::CellularCore, "MQTT flush for time-sync yield\n");
             }
             if (!drainMqttDisconnect_()) return;
         } else if (_mqtt) {
@@ -155,13 +155,13 @@ void CellularCore::service() {
         if (_timeSync && !_timeSync->isBootTimeSettled()) {
             if (!_loggedBootNtpWait) {
                 _loggedBootNtpWait = true;
-                logger.log(LogModule::CellularCore, "ожидание времени загрузки перед MQTT\n");
+                logger.log(LogModule::CellularCore, "waiting boot time before MQTT\n");
             }
             return;
         }
         if (_loggedBootNtpWait) {
             _loggedBootNtpWait = false;
-            logger.log(LogModule::CellularCore, "время загрузки установилось, старт MQTT\n");
+            logger.log(LogModule::CellularCore, "boot time set, starting MQTT\n");
         }
 
         if (!_mqttStarted) {
@@ -199,7 +199,7 @@ void CellularCore::service() {
             if (failStreak != _lastLoggedFailStreak) {
                 _lastLoggedFailStreak = failStreak;
                 const char* why = _mqtt->getLastConnectFailReason();
-                logger.log(LogModule::CellularCore, "сбои подключения MQTT=%u причина=%s, запрос переподключения GSM%s\n",
+                logger.log(LogModule::CellularCore, "MQTT connect failures=%u reason=%s, GSM reconnect requested%s\n",
                            (unsigned)failStreak, (why && why[0]) ? why : "?",
                            canRequest ? "" : " (cooldown)");
                 core.logHeapSnapshot("mqtt_connect_fail");
@@ -209,7 +209,7 @@ void CellularCore::service() {
         }
     } else if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
         // Выход из READY (повторное присоединение/ERROR): слить offline+DISCONNECT, как suspend (C1).
-        logger.log(LogModule::CellularCore, "GSM вышел из READY — слив MQTT\n");
+        logger.log(LogModule::CellularCore, "GSM left READY — flushing MQTT\n");
         (void)drainMqttDisconnect_();
     }
 }

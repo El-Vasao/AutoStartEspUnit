@@ -35,7 +35,7 @@ bool writeOneProgram(const Program& prog) {
     prepareFlashWriteLogGcAndWdt();
     if (!fileSystem.writeJsonAtomicStream(path, encodeFactoryProgram, const_cast<Program*>(&prog),
                                           Limits::CONFIG_JSON_SIZE)) {
-        logger.log(LogModule::Config, "не удалось записать заводскую программу %u\n", prog.id);
+        logger.log(LogModule::Config, "failed to write factory program %u\n", prog.id);
         return false;
     }
     return true;
@@ -44,7 +44,7 @@ bool writeOneProgram(const Program& prog) {
 } // namespace
 
 bool Config::writeFactoryPrograms() {
-    logger.log(LogModule::Config, "запись заводских программ\n");
+    logger.log(LogModule::Config, "writing factory programs\n");
     if (!ensureProgramsDir()) return false;
 
     // K5 bypass, K2 ignition, K1 ACC — номера шёлка 5/2/1.
@@ -73,10 +73,10 @@ bool Config::writeFactoryPrograms() {
     if (!writeOneProgram(start)) return false;
     if (!writeOneProgram(stop)) return false;
     if (!rebuildProgramIndex()) {
-        logger.log(LogModule::Config, "заводские программы записаны, индекс не пересобрался\n");
+        logger.log(LogModule::Config, "factory programs written, index not rebuilt\n");
         return false;
     }
-    logger.log(LogModule::Config, "заводские программы 1 и 2 записаны\n");
+    logger.log(LogModule::Config, "factory programs 1 and 2 written\n");
     return true;
 }
 
@@ -89,7 +89,7 @@ bool Config::loadProgramCompiled(uint8_t id, CompiledStep* outSteps, uint8_t max
 
     File f = fileSystem.openRead(path);
     if (!f) {
-        logger.log(LogModule::Config, "не удалось прочитать программу %u\n", id);
+        logger.log(LogModule::Config, "failed to read program %u\n", id);
         return false;
     }
 
@@ -114,12 +114,6 @@ bool Config::isProgramUsed(uint8_t id) const {
     for (uint8_t i = 0; i < nTemp; i++) {
         if (baseCache.temperature_triggers[i].enabled && baseCache.temperature_triggers[i].program_id == id) return true;
     }
-    const uint8_t nSched = (baseCache.schedule_triggers_count < Limits::MAX_SCHEDULE_TRIGGERS)
-                               ? baseCache.schedule_triggers_count
-                               : Limits::MAX_SCHEDULE_TRIGGERS;
-    for (uint8_t i = 0; i < nSched; i++) {
-        if (baseCache.schedule_triggers[i].enabled && baseCache.schedule_triggers[i].program_id == id) return true;
-    }
     if (baseCache.thermostat.enabled) {
         if (baseCache.thermostat.program_id_lower == id || baseCache.thermostat.program_id_upper == id) return true;
     }
@@ -129,7 +123,7 @@ bool Config::isProgramUsed(uint8_t id) const {
 
 bool Config::deleteProgram(uint8_t id) {
     if (isProgramUsed(id)) {
-        logger.log(LogModule::Config, "программа %u используется, удалить нельзя\n", id);
+        logger.log(LogModule::Config, "program %u in use, cannot delete\n", id);
         return false;
     }
 
@@ -138,15 +132,15 @@ bool Config::deleteProgram(uint8_t id) {
     if (!fileSystem.deleteFile(path)) return false;
 
     if (!rebuildProgramIndex()) {
-        logger.log(LogModule::Config, "файл программы %u удалён, пересборка индекса не удалась\n", id);
+        logger.log(LogModule::Config, "program file %u deleted, index rebuild failed\n", id);
         return false;
     }
-    logger.log(LogModule::Config, "программа %u удалена\n", id);
+    logger.log(LogModule::Config, "program %u deleted\n", id);
     return true;
 }
 
 bool Config::resetPrograms() {
-    logger.log(LogModule::Config, "resetPrograms: старт\n");
+    logger.log(LogModule::Config, "resetPrograms: start\n");
     if (!ensureProgramsDir()) return false;
 
     bool ok = true;
@@ -197,6 +191,6 @@ bool Config::resetPrograms() {
 
     if (!writeFactoryPrograms()) ok = false;
 
-    logger.log(LogModule::Config, "resetPrograms: %s\n", ok ? "успех" : "сбой");
+    logger.log(LogModule::Config, "resetPrograms: %s\n", ok ? "ok" : "failed");
     return ok;
 }
