@@ -15,7 +15,7 @@
 Правило: не использовать `LittleFS.*` напрямую из модулей приложения. Всё через `fileSystem`.
 Исключение: если библиотека требует `FS&` — использовать `fileSystem.webFs()`.
 
-## Deferred flash
+## Отложенная запись flash
 Зачем: не пересекать flash-commit с hot-path (программа / SoftAP loop) на ESP32-C3.
 
 Типовой сценарий (web):
@@ -29,7 +29,7 @@
 Используются temp файлы рядом с целевым, затем rename/replace (с учётом особенностей LittleFS).
 
 ## `gc()` на ESP32
-Arduino LittleFS **не** даёт `LittleFS.gc()`. `FsManager::gc()` = reclaim известных orphan temp
+Arduino LittleFS **не** даёт `LittleFS.gc()`. `FsManager::gc()` = освобождение известных осиротевших temp
 (`/__http/*.tmp`) + `refreshFsInfo()`. После вызова всегда проверяйте `getFreeSpace()`.
 
 OTA пишет UI-файлы в хвост `POST /upload` напрямую в LittleFS (раскладка gzip-ассетов), без промежуточного образа прошивки на диске.

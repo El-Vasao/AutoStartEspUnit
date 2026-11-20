@@ -24,12 +24,12 @@ bool FsManager::readFile(const char* path, char* buffer, size_t& len, size_t max
 #endif
 
     if (!initialized) {
-        logger.log(LogModule::FsManager, "  FS not initialized\n");
+        logger.log(LogModule::FsManager, "  ФС не инициализирована\n");
         errorCount++;
         return false;
     }
     if (!buffer || maxLen == 0) {
-        logger.log(LogModule::FsManager, "  Invalid buffer\n");
+        logger.log(LogModule::FsManager, "  неверный буфер\n");
         errorCount++;
         return false;
     }
@@ -47,7 +47,7 @@ bool FsManager::readFile(const char* path, char* buffer, size_t& len, size_t max
 
     File f = LittleFS.open(path, "r");
     if (!f) {
-        logger.log(LogModule::FsManager, "  Failed to open file\n");
+        logger.log(LogModule::FsManager, "  не удалось открыть файл\n");
         errorCount++;
         return false;
     }
@@ -61,14 +61,14 @@ bool FsManager::readFile(const char* path, char* buffer, size_t& len, size_t max
         return true;
     }
 
-    logger.log(LogModule::FsManager, "  File is empty\n");
+    logger.log(LogModule::FsManager, "  файл пуст\n");
     errorCount++;
     return false;
 }
 
 bool FsManager::atomicWrite(const char* path, const char* data, size_t len) {
 #ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "atomicWrite(%s, %u bytes)\n", path, len);
+    logger.log(LogModule::FsManager, "atomicWrite(%s, %u байт)\n", path, len);
 #endif
 
     auto meta = getMetadata(path);
@@ -76,14 +76,14 @@ bool FsManager::atomicWrite(const char* path, const char* data, size_t len) {
         FileMetadata m;
         memcpy_P(&m, meta, sizeof(FileMetadata));
         if (len > m.maxSize) {
-            logger.log(LogModule::FsManager, "Exceeds maxSize (%u > %u) for %s\n", (unsigned)len, (unsigned)m.maxSize, path);
+            logger.log(LogModule::FsManager, "превышен maxSize (%u > %u) для %s\n", (unsigned)len, (unsigned)m.maxSize, path);
             errorCount++;
             return false;
         }
     }
 
     if (!ensurePath(path)) {
-        logger.log(LogModule::FsManager, "Failed to ensure parent directory for %s\n", path);
+        logger.log(LogModule::FsManager, "не удалось создать родительский каталог для %s\n", path);
         errorCount++;
         return false;
     }
@@ -91,7 +91,7 @@ bool FsManager::atomicWrite(const char* path, const char* data, size_t len) {
     fsInfo.totalBytes = LittleFS.totalBytes();
     fsInfo.usedBytes = LittleFS.usedBytes();
     if (fsInfo.usedBytes + len + FsSpace::GC_SPACE_MARGIN > fsInfo.totalBytes) {
-        logger.log(LogModule::FsManager, "Low space before atomicWrite, reclaim orphans…\n");
+        logger.log(LogModule::FsManager, "мало места перед atomicWrite, освобождаю осиротевшие…\n");
         gc();
         espHalFeedWdt();
     }
@@ -104,7 +104,7 @@ bool FsManager::atomicWrite(const char* path, const char* data, size_t len) {
 
     File f = LittleFS.open(pathBuffer, "w");
     if (!f) {
-        logger.log(LogModule::FsManager, "Failed to create temp file %s\n", pathBuffer);
+        logger.log(LogModule::FsManager, "не удалось создать временный файл %s\n", pathBuffer);
         errorCount++;
         return false;
     }
@@ -114,7 +114,7 @@ bool FsManager::atomicWrite(const char* path, const char* data, size_t len) {
     espHalFeedWdt();
 
     if (written != len) {
-        logger.log(LogModule::FsManager, "atomicWrite short write %s (%u/%u)\n", pathBuffer, (unsigned)written, (unsigned)len);
+        logger.log(LogModule::FsManager, "atomicWrite короткая запись %s (%u/%u)\n", pathBuffer, (unsigned)written, (unsigned)len);
         LittleFS.remove(pathBuffer);
         errorCount++;
         return false;
@@ -128,7 +128,7 @@ bool FsManager::atomicWrite(const char* path, const char* data, size_t len) {
         if (LittleFS.exists(bakPath)) LittleFS.remove(bakPath);
         hadBackup = LittleFS.rename(path, bakPath);
         if (!hadBackup && !LittleFS.remove(path)) {
-            logger.log(LogModule::FsManager, "atomicWrite cannot free target %s\n", path);
+            logger.log(LogModule::FsManager, "atomicWrite не может освободить цель %s\n", path);
             LittleFS.remove(pathBuffer);
             errorCount++;
             return false;
@@ -137,7 +137,7 @@ bool FsManager::atomicWrite(const char* path, const char* data, size_t len) {
     espHalFeedWdt();
 
     if (!LittleFS.rename(pathBuffer, path)) {
-        logger.log(LogModule::FsManager, "atomicWrite rename failed %s -> %s\n", pathBuffer, path);
+        logger.log(LogModule::FsManager, "atomicWrite переименование не удалось %s -> %s\n", pathBuffer, path);
         LittleFS.remove(pathBuffer);
         if (hadBackup) (void)LittleFS.rename(bakPath, path);
         errorCount++;
@@ -171,7 +171,7 @@ bool FsManager::copyFileAtomic_(const char* srcPath, const char* destPath) {
         FileMetadata m;
         memcpy_P(&m, meta, sizeof(FileMetadata));
         if (total > m.maxSize) {
-            logger.log(LogModule::FsManager, "copyFileAtomic_: size %u > max %u for %s\n",
+            logger.log(LogModule::FsManager, "copyFileAtomic_: размер %u > макс. %u для %s\n",
                        (unsigned)total, (unsigned)m.maxSize, destPath);
             src.close();
             errorCount++;
@@ -259,29 +259,29 @@ bool FsManager::deleteFile(const char* path) {
 
 File FsManager::openWriteStream(const char* path, size_t expectedSize) {
     if (!initialized) {
-        logger.log(LogModule::FsManager, "openWriteStream: FS not initialized\n");
+        logger.log(LogModule::FsManager, "openWriteStream: ФС не инициализирована\n");
         errorCount++;
         return File();
     }
 
     // Убедимся, что родительская директория существует
     if (!ensurePath(path)) {
-        logger.log(LogModule::FsManager, "openWriteStream: cannot create parent directory for %s\n", path);
+        logger.log(LogModule::FsManager, "openWriteStream: не удалось создать родительский каталог для %s\n", path);
         errorCount++;
         return File();
     }
 
     size_t freeSpace = getFreeSpace();
 #ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "openWriteStream: free=%u, expected=%u\n", (unsigned)freeSpace, (unsigned)expectedSize);
+    logger.log(LogModule::FsManager, "openWriteStream: свободно=%u, ожидалось=%u\n", (unsigned)freeSpace, (unsigned)expectedSize);
 #endif
     if (freeSpace < expectedSize + FsSpace::STREAM_SPACE_MARGIN) {
-        logger.log(LogModule::FsManager, "Low free space, reclaiming orphans…\n");
+        logger.log(LogModule::FsManager, "мало места, освобождаю осиротевшие…\n");
         gc();
         espHalFeedWdt();
         freeSpace = getFreeSpace();
         if (freeSpace < expectedSize + FsSpace::STREAM_SPACE_MARGIN) {
-            logger.log(LogModule::FsManager, "Still low space, aborting\n");
+            logger.log(LogModule::FsManager, "места всё ещё мало, отмена\n");
             errorCount++;
             return File();
         }
@@ -299,20 +299,20 @@ File FsManager::openWriteStream(const char* path, size_t expectedSize) {
 
     File f = LittleFS.open(pathBuffer, "w");
     if (!f) {
-        logger.log(LogModule::FsManager, "openWriteStream: failed to open %s\n", pathBuffer);
+        logger.log(LogModule::FsManager, "openWriteStream: не удалось открыть %s\n", pathBuffer);
         errorCount++;
         return File();
     }
 
 #ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "openWriteStream: created %s\n", pathBuffer);
+    logger.log(LogModule::FsManager, "openWriteStream: создан %s\n", pathBuffer);
 #endif
     return f;
 }
 
 File FsManager::openDirectWrite(const char* path, size_t expectedMaxBytes) {
     if (!initialized) {
-        logger.log(LogModule::FsManager, "openDirectWrite: FS not initialized\n");
+        logger.log(LogModule::FsManager, "openDirectWrite: ФС не инициализирована\n");
         errorCount++;
         return File();
     }
@@ -321,18 +321,18 @@ File FsManager::openDirectWrite(const char* path, size_t expectedMaxBytes) {
         return File();
     }
     if (!ensurePath(path)) {
-        logger.log(LogModule::FsManager, "openDirectWrite: cannot create parent directory for %s\n", path);
+        logger.log(LogModule::FsManager, "openDirectWrite: не удалось создать родительский каталог для %s\n", path);
         errorCount++;
         return File();
     }
 
     size_t freeSpace = getFreeSpace();
     if (freeSpace < expectedMaxBytes + FsSpace::STREAM_SPACE_MARGIN) {
-        logger.log(LogModule::FsManager, "openDirectWrite: low free space, reclaiming orphans…\n");
+        logger.log(LogModule::FsManager, "openDirectWrite: мало места, освобождаю осиротевшие…\n");
         gc();
         freeSpace = getFreeSpace();
         if (freeSpace < expectedMaxBytes + FsSpace::STREAM_SPACE_MARGIN) {
-            logger.log(LogModule::FsManager, "openDirectWrite: still low space, abort\n");
+            logger.log(LogModule::FsManager, "openDirectWrite: места всё ещё мало, отмена\n");
             errorCount++;
             return File();
         }
@@ -344,11 +344,11 @@ File FsManager::openDirectWrite(const char* path, size_t expectedMaxBytes) {
 
     File f = LittleFS.open(path, "w");
     if (!f) {
-        logger.log(LogModule::FsManager, "openDirectWrite: failed to open %s\n", path);
+        logger.log(LogModule::FsManager, "openDirectWrite: не удалось открыть %s\n", path);
         errorCount++;
         return File();
     }
-    logger.log(LogModule::FsManager, "openDirectWrite: opened %s\n", path);
+    logger.log(LogModule::FsManager, "openDirectWrite: открыт %s\n", path);
     return f;
 }
 
@@ -372,20 +372,20 @@ bool FsManager::closeWriteStream(File& f, const char* originalPath, bool commit)
     if (!commit) {
         bool removed = LittleFS.remove(tempPath);
 #ifdef SERIAL_DEBUG
-        logger.log(LogModule::FsManager, "closeWriteStream: temp %s removed: %d\n", tempPath, (int)removed);
+        logger.log(LogModule::FsManager, "closeWriteStream: временный %s удалён: %d\n", tempPath, (int)removed);
 #endif
         return removed;
     }
 
     if (!originalPath || !originalPath[0]) {
-        logger.log(LogModule::FsManager, "closeWriteStream: missing target\n");
+        logger.log(LogModule::FsManager, "closeWriteStream: нет цели\n");
         LittleFS.remove(tempPath);
         errorCount++;
         return false;
     }
 
 #ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "closeWriteStream: temp=%s, target=%s\n", tempPath, originalPath);
+    logger.log(LogModule::FsManager, "closeWriteStream: временный=%s, цель=%s\n", tempPath, originalPath);
 #endif
 
     // Сначала .bak, потом rename: если rename не удался, цель не остаётся дырой.
@@ -398,7 +398,7 @@ bool FsManager::closeWriteStream(File& f, const char* originalPath, bool commit)
         if (exists(bakPath)) LittleFS.remove(bakPath);
         hadBackup = LittleFS.rename(originalPath, bakPath);
         if (!hadBackup && !LittleFS.remove(originalPath)) {
-            logger.log(LogModule::FsManager, "closeWriteStream: cannot free target %s\n", originalPath);
+            logger.log(LogModule::FsManager, "closeWriteStream: не может освободить цель %s\n", originalPath);
             LittleFS.remove(tempPath);
             errorCount++;
             return false;
@@ -407,7 +407,7 @@ bool FsManager::closeWriteStream(File& f, const char* originalPath, bool commit)
 
     espHalFeedWdt();
     if (!LittleFS.rename(tempPath, originalPath)) {
-        logger.log(LogModule::FsManager, "closeWriteStream: rename FAILED %s\n", tempPath);
+        logger.log(LogModule::FsManager, "closeWriteStream: переименование НЕ УДАЛОСЬ %s\n", tempPath);
         LittleFS.remove(tempPath);
         if (hadBackup) (void)LittleFS.rename(bakPath, originalPath);
         errorCount++;
@@ -418,7 +418,7 @@ bool FsManager::closeWriteStream(File& f, const char* originalPath, bool commit)
 
     espHalFeedWdt();
 #ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "closeWriteStream: rename OK\n");
+    logger.log(LogModule::FsManager, "closeWriteStream: переименование успешно\n");
 #endif
     writeCount++;
     return true;

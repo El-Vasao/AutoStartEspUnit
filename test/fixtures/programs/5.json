@@ -1,0 +1,9 @@
+{
+  "id": 5,
+  "name": "Импульс K5",
+  "steps": [
+    { "step": 1, "action": "RELAY_PULSE_OFF_ON_OFF", "relay_id": "K5", "ms": 500 },
+    { "step": 2, "action": "RELAY_PULSE_ON_OFF_ON", "relay_id": "K5", "ms": 1000 },
+    { "step": 3, "action": "RELAY_TOGGLE", "relay_id": "K5" }
+  ]
+}

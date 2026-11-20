@@ -99,7 +99,7 @@ void WebServer::setupRoutes() {
     setupApiRoutes_();
 
     // ---------- СТАТИЧЕСКИЕ ФАЙЛЫ (после API, до onNotFound) ----------
-    // Аксиома: ассеты UI на LittleFS только *.gz; onNotFound отображает URL → URL.gz.
+    // Аксиома: на ФС UI только *.gz; колбэк отдаёт RAM-копию или окно, не beginResponse(FS).
     setupCaptivePortalRoutes_();
 }
 

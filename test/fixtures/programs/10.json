@@ -1,0 +1,7 @@
+{
+  "id": 10,
+  "name": "Термостат",
+  "steps": [
+    { "step": 1, "action": "THERMOSTAT_ON" }
+  ]
+}

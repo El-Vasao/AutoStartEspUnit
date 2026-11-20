@@ -391,6 +391,10 @@ def patch_settings_schema_with_hw_limits(schema: dict, hw: dict) -> dict:
         sc["properties"]["inputs"]["maxItems"] = inputs
     except Exception:
         pass
+    try:
+        sc["properties"]["relays"]["maxItems"] = relays
+    except Exception:
+        pass
 
     return sc
 

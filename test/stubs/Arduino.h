@@ -1,7 +1,7 @@
 #pragma once
 
-// Minimal host stubs so firmware headers compile under [env:native].
-// Time is controllable from tests: test_clock::set(ms) / test_clock::advance(ms).
+// Минимальные заглушки хоста, чтобы заголовки прошивки собирались в [env:native].
+// Время задают тесты: test_clock::set(ms) / test_clock::advance(ms).
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
@@ -16,6 +16,8 @@ using std::min;
 #include "Print.h"
 #include "HardwareSerial.h"
 
+extern HardwareSerial Serial;
+
 #ifndef PROGMEM
 #define PROGMEM
 #endif
@@ -27,6 +29,12 @@ using std::min;
 #endif
 #ifndef pgm_read_byte
 #define pgm_read_byte(addr) (*(const uint8_t*)(addr))
+#endif
+#ifndef memcpy_P
+#define memcpy_P(dest, src, n) memcpy((dest), (src), (n))
+#endif
+#ifndef strcmp_P
+#define strcmp_P(a, b) strcmp((a), (b))
 #endif
 #ifndef RTC_DATA_ATTR
 #define RTC_DATA_ATTR
@@ -72,14 +80,14 @@ inline void set(unsigned long m) {
     us() = m * 1000UL;
 }
 inline void advance(unsigned long d) { set(ms() + d); }
-} // namespace test_clock
+} // пространство имён test_clock
 
 inline unsigned long millis() { return test_clock::ms(); }
 inline unsigned long micros() { return test_clock::us(); }
 inline void delay(unsigned long d) { test_clock::advance(d); }
 inline void yield() {}
 
-// MinGW and glibc < 2.38 have no strlcpy/strlcat.
+// В MinGW и glibc < 2.38 нет strlcpy/strlcat.
 #if !defined(__APPLE__) && !(defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 38)))
 inline size_t strlcpy(char* dst, const char* src, size_t size) {
     const size_t n = strlen(src);

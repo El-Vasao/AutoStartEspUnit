@@ -33,6 +33,8 @@ enum class GsmState : uint8_t {
  * - RX ответа модема — кольцевой буфер `char[_responseBuffer]` фиксированного размера (без Arduino `String`).
  */
 class GsmController {
+    friend struct GsmVoiceTestAccess;
+
 public:
     enum class VoiceKind : uint8_t { None = 0, OutCall, OutSms, Inbound };
     enum class VoicePhase : uint8_t {

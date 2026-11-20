@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <FS.h>
+#include <esp_partition.h>
 
 /**
  * @brief OTA: поток HTTP → Update (прошивка) + хвост файлов LittleFS.
@@ -63,8 +64,11 @@ private:
 
     Phase _phase{Phase::Idle};
     bool _updateBegun{false};
-    // Update.end уже переключил boot; abort после этого слот не возвращает.
+    // Прошивка записана (Update.end). Boot при этом держим на running, пока
+    // streamFinish не подтвердит хвост: иначе обрыв питания загрузит новый слот
+    // с нецелым UI. abort после end слот не возвращает.
     bool _fwCommitted{false};
+    const esp_partition_t* _pendingBoot{nullptr};
     bool _streamDoneOk{false};
     size_t _totalAccepted{0};
 
@@ -88,6 +92,10 @@ private:
 
     void resetStreamState();
     void failStream(const char* why);
+    // end уже выставил boot на новый слот — запомнить его и вернуть running.
+    bool pinBootToRunningAfterEnd();
+    // Хвост цел: только теперь новый слот можно сделать загрузочным.
+    bool activatePendingBoot();
     bool closeOutFile(bool commit);
     bool feedOne(const uint8_t* data, size_t len, size_t& consumed);
 };

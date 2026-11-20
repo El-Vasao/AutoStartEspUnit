@@ -1,6 +1,6 @@
 # `common`: Logger и устойчивость hot-path
 
-## Logger (SSE-only)
+## Logger (только SSE)
 Файлы:
 - `include/common/Logger.h`
 - `src/common/Logger.cpp`

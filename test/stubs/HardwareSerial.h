@@ -1,6 +1,6 @@
 #pragma once
 
-// Host stand-in for HardwareSerial: records TX, lets tests inject RX bytes.
+// Замена HardwareSerial на хосте: пишет TX и принимает RX из теста.
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -37,7 +37,7 @@ public:
     int peek() override { return rxPos_ < rxLen_ ? (uint8_t)rx_[rxPos_] : -1; }
     void flush() {}
 
-    // --- test helpers ---
+    // --- помощники теста ---
     void injectRx(const char* s) { injectRx(reinterpret_cast<const uint8_t*>(s), strlen(s)); }
     void injectRx(const uint8_t* b, size_t n) {
         if (rxPos_ == rxLen_) rxPos_ = rxLen_ = 0;

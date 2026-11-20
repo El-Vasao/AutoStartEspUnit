@@ -18,7 +18,6 @@
 #include <stdlib.h>
 
 #include "web/WebServer.h"
-#include "fs/FsManager.h"
 #include "core/Core.h"
 #include "common/Logger.h"
 #include "common/Constants.h"
@@ -113,25 +112,6 @@ static inline bool parseUint32Param(AsyncWebServerRequest* request, const char* 
     const unsigned long parsed = strtoul(value.c_str(), &end, 10);
     if (!end || *end != '\0') return false;
     *out = static_cast<uint32_t>(parsed);
-    return true;
-}
-
-// JSON по контракту всегда отдаётся без gzip.
-static inline bool sendJsonFromFs(AsyncWebServerRequest* request, const char* path,
-                                  const char* cacheControl) {
-    if (!path || path[0] != '/') {
-        request->send(500, kContentTypeText, "Bad path");
-        return false;
-    }
-    if (!fileSystem.exists(path)) {
-        request->send(404, kContentTypeJson, "{\"success\":false,\"error\":\"FILE_NOT_FOUND\"}");
-        return false;
-    }
-    AsyncWebServerResponse* resp = request->beginResponse(fileSystem.webFs(), path, kContentTypeJson);
-    resp->addHeader("Cache-Control", cacheControl ? cacheControl : "no-cache");
-    resp->addHeader("Pragma", "no-cache");
-    resp->addHeader("Expires", "0");
-    request->send(resp);
     return true;
 }
 

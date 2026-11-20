@@ -32,7 +32,7 @@ size_t FsManager::reclaimOrphans() {
         if (!exists(path)) continue;
         if (deleteFile(path)) {
             ++removed;
-            logger.log(LogModule::FsManager, "Reclaimed orphan %s\n", path);
+            logger.log(LogModule::FsManager, "осиротевший удалён %s\n", path);
         }
     }
     return removed;
@@ -63,7 +63,7 @@ bool FsManager::healthCheck() {
         if (unreadable && exists("/config.bak")) {
             if (copyFileAtomic_("/config.bak", "/config.json")) {
                 recoveryCount++;
-                logger.log(LogModule::FsManager, "healthCheck restored /config.json from .bak\n");
+                logger.log(LogModule::FsManager, "healthCheck восстановил /config.json из .bak\n");
             } else {
                 errorCount++;
                 return false;
@@ -85,15 +85,15 @@ void FsManager::printStats() {
 #ifdef SERIAL_DEBUG
     fsInfo.totalBytes = LittleFS.totalBytes();
     fsInfo.usedBytes = LittleFS.usedBytes();
-    logger.log(LogModule::FsManager, "=== stats ===\n");
-    logger.log(LogModule::FsManager, "Total: %u KB\n", fsInfo.totalBytes / 1024);
-    logger.log(LogModule::FsManager, "Used: %u KB\n", fsInfo.usedBytes / 1024);
-    logger.log(LogModule::FsManager, "Free: %u KB\n", (fsInfo.totalBytes - fsInfo.usedBytes) / 1024);
-    logger.log(LogModule::FsManager, "Reads: %u\n", readCount);
-    logger.log(LogModule::FsManager, "Writes: %u\n", writeCount);
-    logger.log(LogModule::FsManager, "FS info refresh: %u\n", fsInfoRefreshCount);
-    logger.log(LogModule::FsManager, "Errors: %u\n", errorCount);
-    logger.log(LogModule::FsManager, "Recoveries: %u\n", recoveryCount);
-    logger.log(LogModule::FsManager, "=== end stats ===\n");
+    logger.log(LogModule::FsManager, "=== статистика ===\n");
+    logger.log(LogModule::FsManager, "всего: %u КБ\n", fsInfo.totalBytes / 1024);
+    logger.log(LogModule::FsManager, "занято: %u КБ\n", fsInfo.usedBytes / 1024);
+    logger.log(LogModule::FsManager, "свободно: %u КБ\n", (fsInfo.totalBytes - fsInfo.usedBytes) / 1024);
+    logger.log(LogModule::FsManager, "чтений: %u\n", readCount);
+    logger.log(LogModule::FsManager, "записей: %u\n", writeCount);
+    logger.log(LogModule::FsManager, "обновлений сведений ФС: %u\n", fsInfoRefreshCount);
+    logger.log(LogModule::FsManager, "ошибок: %u\n", errorCount);
+    logger.log(LogModule::FsManager, "восстановлений: %u\n", recoveryCount);
+    logger.log(LogModule::FsManager, "=== конец статистики ===\n");
 #endif
 }

@@ -90,17 +90,17 @@ struct VehicleConfig {
     uint16_t wait_after_start_sec;
     float engine_running_voltage_threshold;
     float engine_stopped_voltage_threshold;
-    uint16_t starter_relay_id;
+    uint8_t starter_relay_id; ///< номер реле 1…n (K1…); 0 недопустим для стартера
 
     StartMethod start_method;
-    uint16_t start_input_id;          ///< вход оборотов (rpm) или дискретный вход (input)
+    uint8_t start_input_id;           ///< номер входа 1…n или 0 = нет
     float starter_crank_time_sec;     ///< длительность прокрутки для timed
     uint16_t starter_retry_pause_sec;
     uint8_t starter_attempts;
-    uint16_t start_block_input_id;    ///< 0 = нет; активное состояние запрещает запуск
+    uint8_t start_block_input_id;     ///< номер входа 1…n или 0 = нет
 
     char engine_detection_source[TextBytes::Vehicle::ENGINE_DETECTION_SOURCE];
-    uint16_t engine_input_id;
+    uint8_t engine_input_id;          ///< номер входа 1…n (IN1…)
 
     VehicleConfig()
         : adc_voltage_coeff(Adc::DEFAULT_COEFF),
@@ -108,14 +108,14 @@ struct VehicleConfig {
           wait_after_start_sec(StarterLimits::WAIT_AFTER_START_DEFAULT_SEC),
           engine_running_voltage_threshold(StarterLimits::RUNNING_VOLTAGE_DEFAULT),
           engine_stopped_voltage_threshold(StarterLimits::STOPPED_VOLTAGE_DEFAULT),
-          starter_relay_id(2002),
+          starter_relay_id(3), ///< K3
           start_method(StartMethod::Timed),
           start_input_id(0),
           starter_crank_time_sec(StarterLimits::CRANK_TIME_DEFAULT_SEC),
           starter_retry_pause_sec(StarterLimits::RETRY_PAUSE_DEFAULT_SEC),
           starter_attempts(StarterLimits::ATTEMPTS_DEFAULT),
           start_block_input_id(0),
-          engine_input_id(1001) {
+          engine_input_id(2) { ///< IN2
         strcpy(engine_detection_source, "voltage");
     }
 };
@@ -124,7 +124,7 @@ struct VehicleConfig {
 // Конфигурация датчика температуры
 // ------------------------------------------------------------------
 struct SensorConfig {
-    uint16_t id;
+    uint8_t id; ///< номер 1…n (T1…); 0 = слот ещё не заполнен
     float coeff;
     char name[TextBytes::Sensors::NAME];
     char rom[TextBytes::Sensors::ROM];
@@ -148,7 +148,7 @@ struct PulseCounterConfig {
 };
 
 struct InputConfig {
-    uint16_t id;
+    uint8_t id; ///< номер 1…n (IN1…)
     bool enabled;
     InputType type;
     bool active_state;
@@ -161,12 +161,22 @@ struct InputConfig {
 };
 
 // ------------------------------------------------------------------
+// Реле (публичный id K1…, имя редактируется)
+// ------------------------------------------------------------------
+struct RelayConfig {
+    uint8_t id; ///< номер 1…n (K1…)
+    char name[TextBytes::Relays::NAME];
+
+    RelayConfig() : id(0) { name[0] = '\0'; }
+};
+
+// ------------------------------------------------------------------
 // Триггеры на входах (статические массивы)
 // ------------------------------------------------------------------
 struct TriggerConfig {
     uint16_t id;
     bool enabled;
-    uint16_t input_id;
+    uint8_t input_id; ///< номер входа 1…n или 0
     uint8_t trigger_level;
     uint8_t program_id;
 
@@ -179,7 +189,7 @@ struct TriggerConfig {
 struct TempTriggerConfig {
     bool enabled;
     uint16_t id;
-    uint16_t sensor_id;
+    uint8_t sensor_id; ///< номер датчика 1…n (T1…) или 0
     char comparison[TextBytes::Triggers::COMPARISON];
     float threshold;
     uint8_t program_id;
@@ -194,7 +204,7 @@ struct TempTriggerConfig {
 // ------------------------------------------------------------------
 struct ThermostatConfig {
     bool enabled;
-    uint16_t sensor_id;
+    uint8_t sensor_id; ///< номер датчика 1…n (T1…) или 0
     char comparison[TextBytes::Triggers::COMPARISON];
     float lower_threshold;
     float upper_threshold;
@@ -203,11 +213,11 @@ struct ThermostatConfig {
 
     ThermostatConfig()
         : enabled(false),
-          sensor_id(0),
+          sensor_id(1), ///< T1
           lower_threshold(5.0f),
           upper_threshold(10.0f),
-          program_id_lower(0),
-          program_id_upper(0) {
+          program_id_lower(1),
+          program_id_upper(2) {
         strcpy(comparison, "above");
     }
 };
@@ -233,7 +243,7 @@ struct BatterySaverConfig {
           min_low_voltage_duration_sec(180),
           min_time_between_attempts_sec(1800),
           max_attempts_per_day(3),
-          program_id(0) {}
+          program_id(1) {}
 };
 
 // ------------------------------------------------------------------
@@ -281,9 +291,9 @@ struct ScheduleTriggerConfig {
 struct Step {
     uint8_t step;
     char action[TextBytes::Programs::STEP_ACTION];
-    uint16_t relay_id;
+    uint8_t relay_id; ///< номер реле 1…n (K1…) или 0
     uint32_t ms;
-    uint16_t input_id;
+    uint8_t input_id; ///< номер входа 1…n (IN1…) или 0
     uint16_t input_trigger_id;
     uint16_t temp_trigger_id;
     char message[TextBytes::Programs::STEP_MESSAGE];
@@ -328,6 +338,7 @@ struct BaseConfig {
 
     SensorConfig sensors[HardwareLimits::SENSORS];
     InputConfig inputs[HardwareLimits::INPUTS];
+    RelayConfig relays[HardwareLimits::RELAYS];
 
     TriggerConfig input_triggers[Limits::MAX_TRIGGERS];
     uint8_t input_triggers_count;

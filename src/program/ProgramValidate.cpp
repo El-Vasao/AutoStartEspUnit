@@ -13,18 +13,22 @@ bool containsId(IdTable table, uint16_t id) {
     return false;
 }
 
+bool numberInRange(uint8_t number, uint8_t count) {
+    return number >= 1 && number <= count;
+}
+
 } // namespace
 
-Issue checkStep(ActionId action, const ChannelRef& ch, uint16_t starterRelayId, const ChannelTables& tables) {
+Issue checkStep(ActionId action, const ChannelRef& ch, uint8_t starterRelayNumber, const ChannelTables& tables) {
     if (action == ActionId::UNKNOWN) return Issue::UnknownAction;
     if (isRelayAction(action)) {
-        if (!containsId(tables.relays, ch.relay_id)) return Issue::InvalidRef;
-        if (starterRelayId != 0 && ch.relay_id == starterRelayId) {
+        if (!numberInRange(ch.relay_id, tables.relayCount)) return Issue::InvalidRef;
+        if (starterRelayNumber != 0 && ch.relay_id == starterRelayNumber) {
             return Issue::DrivesStarterRelay;
         }
     }
     if (action == ActionId::INPUT_ENABLE || action == ActionId::INPUT_DISABLE) {
-        if (!containsId(tables.inputs, ch.input_id)) return Issue::InvalidRef;
+        if (!numberInRange(ch.input_id, tables.inputCount)) return Issue::InvalidRef;
     }
     if (action == ActionId::INPUT_TRIGGER_ENABLE || action == ActionId::INPUT_TRIGGER_DISABLE) {
         if (!containsId(tables.inputTriggers, ch.input_trigger_id)) return Issue::InvalidRef;

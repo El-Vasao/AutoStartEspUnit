@@ -25,14 +25,14 @@ static void test_edge_latch_fires_once_per_activation() {
 
 static void test_threshold_below_with_hysteresis() {
     ThresholdLatch t;
-    // Cold start: below -10 fires once.
+    // Холодный старт: ниже −10 срабатывает один раз.
     TEST_ASSERT_FALSE(t.update(-9.0f, -10.0f, Compare::Below, 0.5f));
     TEST_ASSERT_TRUE(t.update(-10.1f, -10.0f, Compare::Below, 0.5f));
-    // Sensor noise around the threshold does not re-fire.
+    // Шум датчика у порога не вызывает повтор.
     TEST_ASSERT_FALSE(t.update(-9.9f, -10.0f, Compare::Below, 0.5f));
     TEST_ASSERT_FALSE(t.update(-10.1f, -10.0f, Compare::Below, 0.5f));
     TEST_ASSERT_FALSE(t.update(-9.6f, -10.0f, Compare::Below, 0.5f));
-    // Warmed past threshold + hysteresis: re-armed.
+    // Прогрев выше порога + гистерезис: снова взведено.
     TEST_ASSERT_FALSE(t.update(-9.5f, -10.0f, Compare::Below, 0.5f));
     TEST_ASSERT_TRUE(t.update(-10.2f, -10.0f, Compare::Below, 0.5f));
 }
@@ -60,26 +60,26 @@ static void test_threshold_invalid_compare_never_fires() {
 }
 
 static void test_weekday_bits() {
-    TEST_ASSERT_EQUAL_HEX8(0x40, weekdayBit(0));  // Sunday
-    TEST_ASSERT_EQUAL_HEX8(0x01, weekdayBit(1));  // Monday
-    TEST_ASSERT_EQUAL_HEX8(0x20, weekdayBit(6));  // Saturday
+    TEST_ASSERT_EQUAL_HEX8(0x40, weekdayBit(0));  // воскресенье
+    TEST_ASSERT_EQUAL_HEX8(0x01, weekdayBit(1));  // понедельник
+    TEST_ASSERT_EQUAL_HEX8(0x20, weekdayBit(6));  // суббота
     TEST_ASSERT_EQUAL_HEX8(0x00, weekdayBit(7));
     TEST_ASSERT_EQUAL_HEX8(0x00, weekdayBit(-1));
 }
 
 static void test_schedule_due() {
-    // Weekdays only (Mon..Fri = 0x1F), 07:30.
+    // Только будни (пн..пт = 0x1F), 07:30.
     TEST_ASSERT_TRUE(scheduleDue(7, 30, 0x1F, 7, 30, 1));
-    TEST_ASSERT_FALSE(scheduleDue(7, 30, 0x1F, 7, 30, 0));   // Sunday
+    TEST_ASSERT_FALSE(scheduleDue(7, 30, 0x1F, 7, 30, 0));   // воскресенье
     TEST_ASSERT_FALSE(scheduleDue(7, 30, 0x1F, 7, 31, 1));
-    TEST_ASSERT_TRUE(scheduleDue(7, 30, 0x00, 7, 30, 0));    // 0 = every day
-    TEST_ASSERT_FALSE(scheduleDue(24, 0, 0x7F, 0, 0, 1));    // invalid hour
+    TEST_ASSERT_TRUE(scheduleDue(7, 30, 0x00, 7, 30, 0));    // 0 = каждый день
+    TEST_ASSERT_FALSE(scheduleDue(24, 0, 0x7F, 0, 0, 1));    // неверный час
 }
 
 static void test_schedule_fires_once_per_day_after_success() {
     const uint32_t today = 20261014;
     TEST_ASSERT_TRUE(scheduleShouldFire(true, today, 0));
-    // Caller records today only after a successful start; a rejected start retries.
+    // Вызывающий отмечает сегодня только после успешного старта; отклонённый старт повторяется.
     TEST_ASSERT_TRUE(scheduleShouldFire(true, today, 20261013));
     TEST_ASSERT_FALSE(scheduleShouldFire(true, today, today));
     TEST_ASSERT_FALSE(scheduleShouldFire(false, today, 0));

@@ -1,0 +1,8 @@
+{
+  "id": 7,
+  "name": "Функции вкл",
+  "steps": [
+    { "step": 1, "action": "BATTERY_SAVER_ON" },
+    { "step": 2, "action": "THERMOSTAT_ON" }
+  ]
+}

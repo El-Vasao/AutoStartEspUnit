@@ -1,5 +1,6 @@
 #include "mqtt/HwMapJson.h"
 
+#include "common/ChannelSilk.h"
 #include "common/Fnv1a.h"
 #include "common/JsonEscape.h"
 #include "common/Pins.h"
@@ -11,15 +12,18 @@ void comma(Print& p, bool* started) {
     *started = true;
 }
 
-void emitRelays(Print& p, const BaseConfig&) {
+void emitRelays(Print& p, const BaseConfig& cfg) {
     p.print('[');
     bool any = false;
     for (uint8_t i = 0; i < HardwareLimits::RELAYS; i++) {
-        if (Pin::RELAY_IDS[i] == 0) continue;
+        const uint8_t n = ChannelSilk::numberFromSlot(i, ChannelSilk::Kind::Relay);
+        if (n == ChannelSilk::NONE) continue;
         if (any) p.print(',');
         any = true;
         p.print("{\"id\":");
-        p.print(static_cast<unsigned>(Pin::RELAY_IDS[i]));
+        ChannelSilk::printQuotedId(p, n, ChannelSilk::Kind::Relay);
+        p.print(",\"name\":");
+        json_escape::writeQuoted(p, cfg.relays[i].name);
         p.print('}');
     }
     p.print(']');
@@ -33,7 +37,7 @@ void emitInputs(Print& p, const BaseConfig& cfg) {
         if (any) p.print(',');
         any = true;
         p.print("{\"id\":");
-        p.print(static_cast<unsigned>(cfg.inputs[i].id));
+        ChannelSilk::printQuotedId(p, cfg.inputs[i].id, ChannelSilk::Kind::Input);
         p.print(",\"name\":");
         json_escape::writeQuoted(p, cfg.inputs[i].name);
         p.print('}');
@@ -49,7 +53,7 @@ void emitSensors(Print& p, const BaseConfig& cfg) {
         if (any) p.print(',');
         any = true;
         p.print("{\"id\":");
-        p.print(static_cast<unsigned>(cfg.sensors[i].id));
+        ChannelSilk::printQuotedId(p, cfg.sensors[i].id, ChannelSilk::Kind::Sensor);
         p.print(",\"name\":");
         json_escape::writeQuoted(p, cfg.sensors[i].name);
         p.print('}');
@@ -70,7 +74,7 @@ void emitInputTriggers(Print& p, const BaseConfig& cfg) {
         p.print("{\"id\":");
         p.print(static_cast<unsigned>(t.id));
         p.print(",\"inputId\":");
-        p.print(static_cast<unsigned>(t.input_id));
+        ChannelSilk::printQuotedId(p, t.input_id, ChannelSilk::Kind::Input);
         p.print(",\"programId\":");
         p.print(static_cast<unsigned>(t.program_id));
         p.print(",\"level\":");
@@ -93,7 +97,7 @@ void emitTempTriggers(Print& p, const BaseConfig& cfg) {
         p.print("{\"id\":");
         p.print(static_cast<unsigned>(t.id));
         p.print(",\"sensorId\":");
-        p.print(static_cast<unsigned>(t.sensor_id));
+        ChannelSilk::printQuotedId(p, t.sensor_id, ChannelSilk::Kind::Sensor);
         p.print(",\"programId\":");
         p.print(static_cast<unsigned>(t.program_id));
         p.print(",\"comparison\":");

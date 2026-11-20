@@ -1,6 +1,7 @@
 // src/config/Config.BaseJsonEmit.cpp
 #include "config/internal/BaseConfigJsonIo.h"
 
+#include "common/ChannelSilk.h"
 #include "common/Constants.h"
 #include "common/JsonEscape.h"
 #include "common/Utils.h"
@@ -31,7 +32,7 @@ inline void comma(Print& p, bool* needComma) {
     *needComma = true;
 }
 
-const char* findSensorNameById(const BaseConfig& cfg, uint16_t sensorId) {
+const char* findSensorNameById(const BaseConfig& cfg, uint8_t sensorId) {
     if (sensorId == 0) return "";
     for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
         const SensorConfig& s = cfg.sensors[i];
@@ -104,16 +105,20 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         printJsonFloat(o, cfg.vehicle.engine_running_voltage_threshold);
     comma(o, &c), o.print("\"engine_stopped_voltage_threshold\":"),
         printJsonFloat(o, cfg.vehicle.engine_stopped_voltage_threshold);
-    comma(o, &c), o.print("\"starter_relay_id\":"), o.print(cfg.vehicle.starter_relay_id);
+    comma(o, &c), o.print("\"starter_relay_id\":"),
+        ChannelSilk::printQuotedId(o, cfg.vehicle.starter_relay_id, ChannelSilk::Kind::Relay);
     comma(o, &c), o.print("\"start_method\":"),
         json_escape::writeQuoted(o, vehicle_rules::startMethodToString(cfg.vehicle.start_method));
-    comma(o, &c), o.print("\"start_input_id\":"), o.print(cfg.vehicle.start_input_id);
+    comma(o, &c), o.print("\"start_input_id\":"),
+        ChannelSilk::printQuotedId(o, cfg.vehicle.start_input_id, ChannelSilk::Kind::Input);
     comma(o, &c), o.print("\"starter_crank_time_sec\":"), printJsonFloat(o, cfg.vehicle.starter_crank_time_sec);
     comma(o, &c), o.print("\"starter_retry_pause_sec\":"), o.print(cfg.vehicle.starter_retry_pause_sec);
     comma(o, &c), o.print("\"starter_attempts\":"), o.print(cfg.vehicle.starter_attempts);
-    comma(o, &c), o.print("\"start_block_input_id\":"), o.print(cfg.vehicle.start_block_input_id);
+    comma(o, &c), o.print("\"start_block_input_id\":"),
+        ChannelSilk::printQuotedId(o, cfg.vehicle.start_block_input_id, ChannelSilk::Kind::Input);
     comma(o, &c), o.print("\"engine_detection_source\":"), json_escape::writeQuoted(o, cfg.vehicle.engine_detection_source);
-    comma(o, &c), o.print("\"engine_input_id\":"), o.print(cfg.vehicle.engine_input_id);
+    comma(o, &c), o.print("\"engine_input_id\":"),
+        ChannelSilk::printQuotedId(o, cfg.vehicle.engine_input_id, ChannelSilk::Kind::Input);
     o.print('}');
 
     comma(o, &c), o.print("\"sensors\":[");
@@ -121,7 +126,10 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         if (i != 0) o.print(',');
         o.print('{'), c = false;
         const SensorConfig& sc = cfg.sensors[i];
-        if (sc.id != 0) comma(o, &c), o.print("\"id\":"), o.print(sc.id);
+        if (sc.id != 0) {
+            comma(o, &c), o.print("\"id\":");
+            ChannelSilk::printQuotedId(o, sc.id, ChannelSilk::Kind::Sensor);
+        }
         comma(o, &c), o.print("\"coeff\":"), printJsonFloat(o, sc.coeff);
         if (sc.rom[0] != '\0') comma(o, &c), o.print("\"rom\":"), json_escape::writeQuoted(o, sc.rom);
         if (sc.name[0] != '\0') comma(o, &c), o.print("\"name\":"), json_escape::writeQuoted(o, sc.name);
@@ -134,7 +142,10 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         if (i != 0) o.print(',');
         const InputConfig& ic = cfg.inputs[i];
         o.print('{'), c = false;
-        if (ic.id != 0) comma(o, &c), o.print("\"id\":"), o.print(ic.id);
+        if (ic.id != 0) {
+            comma(o, &c), o.print("\"id\":");
+            ChannelSilk::printQuotedId(o, ic.id, ChannelSilk::Kind::Input);
+        }
         comma(o, &c), o.print("\"enabled\":"), ic.enabled ? o.print("true") : o.print("false");
         comma(o, &c), o.print("\"type\":"), o.print(static_cast<int>(ic.type));
         if (ic.name[0] != '\0') comma(o, &c), o.print("\"name\":"), json_escape::writeQuoted(o, ic.name);
@@ -151,10 +162,27 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
     }
     o.print(']');
 
+    comma(o, &c), o.print("\"relays\":[");
+    for (uint8_t i = 0; i < HardwareLimits::RELAYS; i++) {
+        if (i != 0) o.print(',');
+        const RelayConfig& rc = cfg.relays[i];
+        bool rcComma = false;
+        o.print('{');
+        if (rc.id != 0) {
+            comma(o, &rcComma), o.print("\"id\":");
+            ChannelSilk::printQuotedId(o, rc.id, ChannelSilk::Kind::Relay);
+        }
+        if (rc.name[0] != '\0') comma(o, &rcComma), o.print("\"name\":"), json_escape::writeQuoted(o, rc.name);
+        o.print('}');
+    }
+    o.print(']');
+    c = true;
+
     comma(o, &c), o.print("\"thermostat\":");
     o.print('{'), c = false;
     comma(o, &c), o.print("\"enabled\":"), cfg.thermostat.enabled ? o.print("true") : o.print("false");
-    comma(o, &c), o.print("\"sensor_id\":"), o.print(cfg.thermostat.sensor_id);
+    comma(o, &c), o.print("\"sensor_id\":"),
+        ChannelSilk::printQuotedId(o, cfg.thermostat.sensor_id, ChannelSilk::Kind::Sensor);
     comma(o, &c), o.print("\"sensor_name\":"), json_escape::writeQuoted(o, findSensorNameById(cfg, cfg.thermostat.sensor_id));
     comma(o, &c), o.print("\"comparison\":"), json_escape::writeQuoted(o, cfg.thermostat.comparison);
     comma(o, &c), o.print("\"lower_threshold\":"), printJsonFloat(o, cfg.thermostat.lower_threshold);
@@ -195,7 +223,10 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         o.print('{'), c = false;
         if (tc.id) comma(o, &c), o.print("\"id\":"), o.print(tc.id);
         comma(o, &c), o.print("\"enabled\":"), tc.enabled ? o.print("true") : o.print("false");
-        if (tc.input_id) comma(o, &c), o.print("\"input_id\":"), o.print(tc.input_id);
+        if (tc.input_id) {
+            comma(o, &c), o.print("\"input_id\":");
+            ChannelSilk::printQuotedId(o, tc.input_id, ChannelSilk::Kind::Input);
+        }
         comma(o, &c), o.print("\"trigger_level\":"), o.print(tc.trigger_level);
         comma(o, &c), o.print("\"program_id\":"), o.print(tc.program_id);
         o.print('}');
@@ -209,7 +240,8 @@ size_t serializeBaseConfigToPrint(const BaseConfig& cfg, Print& out) {
         o.print('{'), c = false;
         if (tt.id) comma(o, &c), o.print("\"id\":"), o.print(tt.id);
         comma(o, &c), o.print("\"enabled\":"), tt.enabled ? o.print("true") : o.print("false");
-        comma(o, &c), o.print("\"sensor_id\":"), o.print(tt.sensor_id);
+        comma(o, &c), o.print("\"sensor_id\":");
+        ChannelSilk::printQuotedId(o, tt.sensor_id, ChannelSilk::Kind::Sensor);
         comma(o, &c), o.print("\"sensor_name\":"), json_escape::writeQuoted(o, findSensorNameById(cfg, tt.sensor_id));
         comma(o, &c), o.print("\"comparison\":"), json_escape::writeQuoted(o, tt.comparison);
         comma(o, &c), o.print("\"threshold\":"), printJsonFloat(o, tt.threshold);

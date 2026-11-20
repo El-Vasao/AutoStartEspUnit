@@ -32,7 +32,7 @@ void GsmController::handleRegistering() {
             changeState(GsmState::ERROR);
             core.getErrorManager().set(ErrorCode::GSM_REG_FAIL);
             logRxSnippet("CREG error");
-            logger.log(LogModule::GsmController, "CREG returned ERROR\n");
+            logger.log(LogModule::GsmController, "CREG вернул ERROR\n");
             return;
         }
         (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, Gsm::REG_POLL_INTERVAL_MS);
@@ -59,7 +59,7 @@ void GsmController::handleRegistering() {
             changeState(GsmState::ERROR);
             core.getErrorManager().set(ErrorCode::GSM_REG_FAIL);
             logRxSnippet("CREG timeout");
-            logger.log(LogModule::GsmController, "Registration failed\n");
+            logger.log(LogModule::GsmController, "регистрация не удалась\n");
             return;
         }
         (void)sendAt("AT+CREG?", nullptr, AwaitKind::CREG, Gsm::REG_POLL_INTERVAL_MS);

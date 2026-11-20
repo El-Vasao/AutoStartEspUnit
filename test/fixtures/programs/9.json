@@ -1,0 +1,8 @@
+{
+  "id": 9,
+  "name": "Пауза 30с",
+  "steps": [
+    { "step": 1, "action": "WAIT", "ms": 30000 },
+    { "step": 2, "action": "RELAY_PULSE_OFF_ON_OFF", "relay_id": "K5", "ms": 300 }
+  ]
+}

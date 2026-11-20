@@ -23,6 +23,8 @@
  * - пока идёт шаг ENGINE_START, `start()` другой программы отклоняется.
  */
 class ProgramExecutor {
+    friend struct ProgramExecutorTestFlags;
+
 public:
     ProgramExecutor();
 

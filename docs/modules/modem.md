@@ -25,7 +25,7 @@ stateDiagram-v2
   Idle --> WaitPrompt: CIPSEND
   Idle --> WaitResult: AT
   WaitPrompt --> WaitResult: prompt
-  WaitResult --> Idle: OK / ERROR / timeout
+  WaitResult --> Idle: OK / ERROR / таймаут
 ```
 
 ## `+IPD` и TCP

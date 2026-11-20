@@ -18,7 +18,7 @@ void GsmController::handleReady() {
         // Управляемая перезагрузка из UI: закрыть bearer (по возможности), затем CFUN=1,1 и тихая пауза.
         if (_rebootStep == 0) {
             _rebootStep = 1;
-            logger.log(LogModule::GsmController, "User requested modem reboot\n");
+            logger.log(LogModule::GsmController, "пользователь запросил перезагрузку модема\n");
             if (!sendAt("AT+SAPBR=0,1", "SAPBR", AwaitKind::OK, Gsm::SAPBR_DEACT_TIMEOUT_MS)) {
                 _rebootStep = 0; // повтор на следующем тике
             }
@@ -42,13 +42,13 @@ void GsmController::handleReady() {
 
     // Восстановление стека TCP исчерпано — опрос/reattach bearer (сначала статус в GPRS_ATTACH).
     if (_stack.tcp.consumeNeedsBearerReattach()) {
-        logger.log(LogModule::GsmController, "TCP stack recover exhausted, requesting reattach\n");
+        logger.log(LogModule::GsmController, "восстановление стека TCP исчерпано, запрос переподключения\n");
         _reattachRequested = true;
     }
 
     // APN* в конфиге сменился при ещё открытом bearer — переписать Contype/APN через reattach.
     if (!_reattachRequested && _apnAppliedValid && !apnMatchesApplied_()) {
-        logger.log(LogModule::GsmController, "APN config changed, requesting reattach\n");
+        logger.log(LogModule::GsmController, "конфиг APN изменился, запрос переподключения\n");
         _reattachRequested = true;
     }
 
@@ -56,7 +56,7 @@ void GsmController::handleReady() {
     // Оба идут тем же путём паузы, что и requestReattach (без немедленного GPRS_ATTACH).
     if (_pdpDeactSeen) {
         _pdpDeactSeen = false;
-        logger.log(LogModule::GsmController, "PDP DEACT seen (URC), requesting reattach\n");
+        logger.log(LogModule::GsmController, "виден PDP DEACT (URC), запрос переподключения\n");
         _reattachRequested = true;
     }
     if (_closedSeen) {
@@ -68,9 +68,9 @@ void GsmController::handleReady() {
         } else if (_tcpClosedStreak < 255) {
             _tcpClosedStreak++;
         }
-        logger.log(LogModule::GsmController, "TCP CLOSED (URC) streak=%u\n", (unsigned)_tcpClosedStreak);
+        logger.log(LogModule::GsmController, "TCP CLOSED (URC) серия=%u\n", (unsigned)_tcpClosedStreak);
         if (_tcpClosedStreak >= Gsm::TCP_CLOSED_REATTACH_THRESHOLD) {
-            logger.log(LogModule::GsmController, "TCP CLOSED threshold reached, requesting reattach\n");
+            logger.log(LogModule::GsmController, "порог TCP CLOSED достигнут, запрос переподключения\n");
             _reattachRequested = true;
         }
         // Иначе: MQTT/TCP переподключаются без дёрганья SAPBR.
@@ -137,7 +137,7 @@ void GsmController::handleError() {
         if (core.getErrorManager().get() != ErrorCode::GSM_NO_RESPONSE) {
             core.getErrorManager().set(ErrorCode::GSM_NO_RESPONSE);
         }
-        logger.log(LogModule::GsmController, "Recovering exhausted (cycles=%u) — wait %us or UI reboot\n",
+        logger.log(LogModule::GsmController, "восстановление исчерпано (циклы=%u) — ждать %us или перезагрузка из UI\n",
                    (unsigned)_errorRecoveryCycles,
                    (unsigned)(Gsm::ERROR_RECOVERY_EXHAUSTED_MS / 1000UL));
         _cooldownUntilMs = now + Gsm::ERROR_RECOVERY_EXHAUSTED_MS;
@@ -161,7 +161,7 @@ void GsmController::handleError() {
 
     // L1: дешёвый перезапуск FSM.
     if (_recoveryLevel == 1) {
-        logger.log(LogModule::GsmController, "Recovering (level 1): restart FSM\n");
+        logger.log(LogModule::GsmController, "восстановление (уровень 1): перезапуск FSM\n");
         _cooldownUntilMs = now + Gsm::ERROR_RECOVERY_DELAY_MS;
         _recoveryLevel = 2;
         _restartPending = true;
@@ -171,7 +171,7 @@ void GsmController::handleError() {
     // L2: сброс стека TCP/IP (CIPSHUT), ждать свободную шину, затем запланировать перезапуск.
     if (_recoveryLevel == 2) {
         if (!_errorRecoveryCmdPending) {
-            logger.log(LogModule::GsmController, "Recovering (level 2): CIPSHUT\n");
+            logger.log(LogModule::GsmController, "восстановление (уровень 2): CIPSHUT\n");
             _stack.tcp.stop("recover");
             if (!_stack.at.enqueueHigh(
                     { "AT+CIPSHUT", Sim800Tcp::CIPSHUT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
@@ -194,7 +194,7 @@ void GsmController::handleError() {
     // L3: сброс bearer (закрытие SAPBR), ждать результат, затем запланировать перезапуск.
     if (_recoveryLevel == 3) {
         if (!_errorRecoveryCmdPending) {
-            logger.log(LogModule::GsmController, "Recovering (level 3): SAPBR reset\n");
+            logger.log(LogModule::GsmController, "восстановление (уровень 3): сброс SAPBR\n");
             if (!_stack.at.enqueueHigh(
                     { "AT+SAPBR=0,1", Gsm::SAPBR_DEACT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "SAPBR0" })) {
                 return;
@@ -216,7 +216,7 @@ void GsmController::handleError() {
     }
 
     // L4: сброс CFUN, затем перезапуск — считается одним полным циклом восстановления.
-    logger.log(LogModule::GsmController, "Recovering (level 4): CFUN reset (cycle %u/%u)\n",
+    logger.log(LogModule::GsmController, "восстановление (уровень 4): сброс CFUN (цикл %u/%u)\n",
                (unsigned)(_errorRecoveryCycles + 1), (unsigned)Gsm::ERROR_RECOVERY_MAX_CYCLES);
     if (!_stack.at.enqueueHigh(
             { "AT+CFUN=1,1", Gsm::CFUN_ACCEPT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CFUN" })) {

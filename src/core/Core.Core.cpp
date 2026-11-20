@@ -121,7 +121,7 @@ static bool otaIsModeThunk(void* ctx) {
 }
 
 static void logHeapTag_(const char* tag) {
-    logger.log(LogModule::Core, "heap %s: free=%u maxBlk=%u frag=%u%%\n", tag, (unsigned)espHalFreeHeap(),
+    logger.log(LogModule::Core, "куча %s: свободно=%u maxBlk=%u фраг=%u%%\n", tag, (unsigned)espHalFreeHeap(),
                (unsigned)espHalMaxBlock(), (unsigned)0 /* фрагментация кучи неприменима на ESP32 */);
 }
 
@@ -158,13 +158,13 @@ bool Core::begin() {
     impl.bootConfigLoaded = false;
     impl.bootHwMapBad = false;
 
-    logger.log(LogModule::Core, "begin\n");
-    logger.log(LogModule::Core, "Reset reason: %s\n", getResetReason());
+    logger.log(LogModule::Core, "начало\n");
+    logger.log(LogModule::Core, "причина сброса: %s\n", getResetReason());
 
     // На этом изделии BLE не используется: отпустить контроллер и хост, чтобы радио не стартовало в эту загрузку.
     {
         const esp_err_t btErr = esp_bt_mem_release(ESP_BT_MODE_BLE);
-        logger.log(LogModule::Core, "BT mem_release: %s\n", esp_err_to_name(btErr));
+        logger.log(LogModule::Core, "освобождение памяти BT: %s\n", esp_err_to_name(btErr));
     }
 
     if (!espHalChipIdValid()) return false;
@@ -201,7 +201,7 @@ bool Core::begin() {
     };
     impl.mqtt.setAppPorts(&impl.ports);
     webServer.setAppPorts(&impl.ports);
-    logger.log(LogModule::Core, "begin() done\n");
+    logger.log(LogModule::Core, "begin() завершён\n");
     impl.modeManager.init(webServer, impl.gsm, impl.mqtt, config, impl.otaHandler);
     impl.modeManager.switchMode(CoreMode::BOOT);
     return true;
@@ -268,7 +268,7 @@ void Core::update() {
                 static uint32_t lastDeferredBusyLog = 0;
                 if (now - lastDeferredBusyLog >= Timing::DEFERRED_FLASH_BUSY_LOG_MS) {
                     lastDeferredBusyLog = now;
-                    logger.log(LogModule::Core, "Deferred flash commit paused: program is running\n");
+                    logger.log(LogModule::Core, "отложенная запись flash на паузе: программа выполняется\n");
                 }
             }
         }
@@ -305,7 +305,7 @@ void Core::update() {
             static uint32_t lastDeferredBusyLog = 0;
             if (now - lastDeferredBusyLog >= Timing::DEFERRED_FLASH_BUSY_LOG_MS) {
                 lastDeferredBusyLog = now;
-                logger.log(LogModule::Core, "Deferred flash commit paused: program is running\n");
+                logger.log(LogModule::Core, "отложенная запись flash на паузе: программа выполняется\n");
             }
         }
     } else {
@@ -332,7 +332,7 @@ void Core::update() {
 }
 
 void Core::reboot() {
-    logger.log(LogModule::Core, "Rebooting...\n");
+    logger.log(LogModule::Core, "перезагрузка...\n");
     // Не yield()/delay() здесь: ранний reboot после укороченного begin() ломает __yield().
     coreHardRestartNow();
 }

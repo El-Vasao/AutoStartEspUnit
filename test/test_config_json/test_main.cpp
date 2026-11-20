@@ -75,7 +75,7 @@ int8_t tzOf(const char* literal) {
     return cfg.time.tz_offset_hours;
 }
 
-} // namespace
+} // пространство имён
 
 void setUp() {}
 void tearDown() {}
@@ -84,10 +84,10 @@ static void test_emit_parse_keeps_hidden_fields() {
     BaseConfig cfg;
     cfg.wifi.ap_timeout_sec = 90;
     cfg.vehicle.starter_crank_time_sec = 1.25f;
-    cfg.vehicle.starter_relay_id = 2004;
-    cfg.vehicle.start_block_input_id = 1003;
+    cfg.vehicle.starter_relay_id = 4; // K4
+    cfg.vehicle.start_block_input_id = 3; // IN3
     cfg.vehicle.start_method = StartMethod::Rpm;
-    for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) cfg.inputs[i].id = Pin::INPUT_IDS[i];
+    for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) cfg.inputs[i].id = static_cast<uint8_t>(i + 1);
     cfg.inputs[1].type = InputType::PULSE_COUNTER;
     cfg.inputs[1].pulse.pulses_per_rev = 4;
     cfg.inputs[1].pulse.threshold_rpm = 800;
@@ -96,6 +96,8 @@ static void test_emit_parse_keeps_hidden_fields() {
     const size_t n = config_internal::serializeBaseConfigToPrint(cfg, out);
     TEST_ASSERT_EQUAL_UINT32(out.s.size(), n);
     TEST_ASSERT_NULL(strstr(out.s.c_str(), "adc_calibrate_voltage"));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"starter_relay_id\":\"K4\""));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"start_block_input_id\":\"IN3\""));
 
     BaseConfig back;
     bool hasCal = true;
@@ -104,14 +106,14 @@ static void test_emit_parse_keeps_hidden_fields() {
     TEST_ASSERT_FALSE(hasCal);
     TEST_ASSERT_EQUAL_UINT16(90, back.wifi.ap_timeout_sec);
     TEST_ASSERT_EQUAL_FLOAT(1.25f, back.vehicle.starter_crank_time_sec);
-    TEST_ASSERT_EQUAL_UINT16(2004, back.vehicle.starter_relay_id);
-    TEST_ASSERT_EQUAL_UINT16(1003, back.vehicle.start_block_input_id);
+    TEST_ASSERT_EQUAL_UINT8(4, back.vehicle.starter_relay_id);
+    TEST_ASSERT_EQUAL_UINT8(3, back.vehicle.start_block_input_id);
     TEST_ASSERT_EQUAL((int)StartMethod::Rpm, (int)back.vehicle.start_method);
     TEST_ASSERT_EQUAL_UINT16(4, back.inputs[1].pulse.pulses_per_rev);
     TEST_ASSERT_EQUAL_UINT16(800, back.inputs[1].pulse.threshold_rpm);
     TEST_ASSERT_EQUAL((int)InputType::PULSE_COUNTER, (int)back.inputs[1].type);
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
-        TEST_ASSERT_EQUAL_UINT16(Pin::INPUT_IDS[i], back.inputs[i].id);
+        TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(i + 1), back.inputs[i].id);
     }
 }
 
@@ -135,9 +137,10 @@ static void test_unknown_keys_and_extra_arrays_trim() {
     std::string json =
         "{\"not_a_field\":1,\"nested_unknown\":{\"x\":[1,{\"y\":true}]},"
         "\"wifi\":{\"ssid\":\"Kept\",\"mystery\":false},"
-        "\"sensors\":[{\"id\":11,\"name\":\"a\"},{\"id\":12,\"name\":\"b\"},"
-        "{\"id\":13,\"name\":\"c\"},{\"id\":14,\"name\":\"d\"},{\"id\":15,\"name\":\"e\"}],"
-        "\"inputs\":[{\"name\":\"i0\"},{\"name\":\"i1\"},{\"name\":\"i2\"},{\"name\":\"i3\"}]";
+        "\"sensors\":[{\"id\":\"T1\",\"name\":\"a\"},{\"id\":\"T2\",\"name\":\"b\"},"
+        "{\"id\":\"T3\",\"name\":\"c\"},{\"id\":\"T1\",\"name\":\"d\"},{\"id\":\"T2\",\"name\":\"e\"}],"
+        "\"inputs\":[{\"id\":\"IN1\",\"name\":\"i0\"},{\"id\":\"IN2\",\"name\":\"i1\"},"
+        "{\"id\":\"IN3\",\"name\":\"i2\"},{\"id\":\"IN1\",\"name\":\"i3\"}]";
     json += triggerArray("input_triggers", Limits::MAX_TRIGGERS + 1);
     json += triggerArray("temperature_triggers", Limits::MAX_TRIGGERS + 1);
     json += triggerArray("schedule_triggers", Limits::MAX_SCHEDULE_TRIGGERS + 1);
@@ -147,9 +150,9 @@ static void test_unknown_keys_and_extra_arrays_trim() {
     TEST_ASSERT_TRUE(parseCfg(json, cfg, config_internal::ParseMode::Strict));
     TEST_ASSERT_EQUAL_STRING("Kept", cfg.wifi.ssid);
     TEST_ASSERT_EQUAL_STRING("12345678", cfg.wifi.password);
-    TEST_ASSERT_EQUAL_UINT16(11, cfg.sensors[0].id);
-    TEST_ASSERT_EQUAL_UINT16(12, cfg.sensors[1].id);
-    TEST_ASSERT_EQUAL_UINT16(13, cfg.sensors[2].id);
+    TEST_ASSERT_EQUAL_UINT8(1, cfg.sensors[0].id);
+    TEST_ASSERT_EQUAL_UINT8(2, cfg.sensors[1].id);
+    TEST_ASSERT_EQUAL_UINT8(3, cfg.sensors[2].id);
     TEST_ASSERT_EQUAL_STRING("c", cfg.sensors[2].name);
     TEST_ASSERT_EQUAL_STRING("i0", cfg.inputs[0].name);
     TEST_ASSERT_EQUAL_STRING("i2", cfg.inputs[2].name);
@@ -167,12 +170,12 @@ static void test_digital_active_state_defaults_and_pulse_type() {
     BaseConfig cfg;
     const char* json =
         "{\"inputs\":["
-        "{\"id\":9999,\"enabled\":true,\"type\":0,\"name\":\"door\"},"
-        "{\"id\":9999,\"type\":1,\"pulse\":{\"pulses_per_rev\":3,\"threshold_rpm\":450}}"
+        "{\"id\":\"IN1\",\"enabled\":true,\"type\":0,\"name\":\"door\"},"
+        "{\"id\":\"IN2\",\"type\":1,\"pulse\":{\"pulses_per_rev\":3,\"threshold_rpm\":450}}"
         "]}";
     TEST_ASSERT_TRUE(parseCfg(json, cfg, config_internal::ParseMode::Strict));
-    TEST_ASSERT_EQUAL_UINT16(Pin::INPUT_IDS[0], cfg.inputs[0].id);
-    TEST_ASSERT_EQUAL_UINT16(Pin::INPUT_IDS[1], cfg.inputs[1].id);
+    TEST_ASSERT_EQUAL_UINT8(1, cfg.inputs[0].id);
+    TEST_ASSERT_EQUAL_UINT8(2, cfg.inputs[1].id);
     TEST_ASSERT_TRUE(cfg.inputs[0].active_state);
     TEST_ASSERT_EQUAL((int)InputType::DIGITAL, (int)cfg.inputs[0].type);
     TEST_ASSERT_EQUAL((int)InputType::PULSE_COUNTER, (int)cfg.inputs[1].type);
@@ -181,11 +184,11 @@ static void test_digital_active_state_defaults_and_pulse_type() {
 }
 
 static void test_truncated_json_strict_fails_lenient_keeps() {
-    // Posted settings are Strict. Boot of a damaged /config.json is Lenient and keeps
-    // fields the parser already accepted.
+    // Принятые настройки — Strict. Загрузка повреждённого /config.json — Lenient и сохраняет
+    // поля, которые парсер уже принял.
     const char* json =
         "{\"setup_required\":true,\"wifi\":{\"ssid\":\"Kept\",\"ap_timeout_sec\":42},"
-        "\"vehicle\":{\"starter_relay_id\":2005,\"starter_crank_time_sec\":1.5}";
+        "\"vehicle\":{\"starter_relay_id\":\"K5\",\"starter_crank_time_sec\":1.5}";
     BaseConfig strictCfg;
     TEST_ASSERT_FALSE(parseCfg(json, strictCfg, config_internal::ParseMode::Strict));
 
@@ -195,7 +198,7 @@ static void test_truncated_json_strict_fails_lenient_keeps() {
     TEST_ASSERT_TRUE(cfg.setup_required);
     TEST_ASSERT_EQUAL_STRING("Kept", cfg.wifi.ssid);
     TEST_ASSERT_EQUAL_UINT16(42, cfg.wifi.ap_timeout_sec);
-    TEST_ASSERT_EQUAL_UINT16(2005, cfg.vehicle.starter_relay_id);
+    TEST_ASSERT_EQUAL_UINT8(5, cfg.vehicle.starter_relay_id);
     TEST_ASSERT_EQUAL_FLOAT(1.5f, cfg.vehicle.starter_crank_time_sec);
     TEST_ASSERT_EQUAL_STRING("keep-me", cfg.mqtt.broker);
 }
@@ -245,7 +248,7 @@ static void test_program_step_round_trip() {
 
     p.steps[0].step = 1;
     strcpy(p.steps[0].action, "RELAY_ON");
-    p.steps[0].relay_id = 2003;
+    p.steps[0].relay_id = 3; // K3
 
     p.steps[1].step = 2;
     strcpy(p.steps[1].action, "WAIT");
@@ -253,7 +256,7 @@ static void test_program_step_round_trip() {
 
     p.steps[2].step = 3;
     strcpy(p.steps[2].action, "INPUT_ENABLE");
-    p.steps[2].input_id = 1002;
+    p.steps[2].input_id = 2; // IN2
 
     p.steps[3].step = 4;
     strcpy(p.steps[3].action, "INPUT_TRIGGER_ENABLE");
@@ -269,13 +272,13 @@ static void test_program_step_round_trip() {
 
     p.steps[6].step = 7;
     strcpy(p.steps[6].action, "ENGINE_START");
-    p.steps[6].relay_id = 2002;
+    p.steps[6].relay_id = 2;
 
     MemPrint out;
     program_json::emitProgramToPrint(p, out);
-    TEST_ASSERT_TRUE(stepHas(out.s, "RELAY_ON", "\"relay_id\":2003"));
+    TEST_ASSERT_TRUE(stepHas(out.s, "RELAY_ON", "\"relay_id\":\"K3\""));
     TEST_ASSERT_TRUE(stepHas(out.s, "WAIT", "\"ms\":1500"));
-    TEST_ASSERT_TRUE(stepHas(out.s, "INPUT_ENABLE", "\"input_id\":1002"));
+    TEST_ASSERT_TRUE(stepHas(out.s, "INPUT_ENABLE", "\"input_id\":\"IN2\""));
     TEST_ASSERT_TRUE(stepHas(out.s, "INPUT_TRIGGER_ENABLE", "\"input_trigger_id\":7"));
     TEST_ASSERT_TRUE(stepHas(out.s, "TEMP_TRIGGER_ENABLE", "\"temp_trigger_id\":9"));
     TEST_ASSERT_TRUE(stepHas(out.s, "SMS_OWNER", "\"message\":\"say \\\"hi\\\"\""));
@@ -300,18 +303,18 @@ static void test_program_step_round_trip() {
     TEST_ASSERT_NOT_NULL(tempTrig);
     TEST_ASSERT_NOT_NULL(sms);
     TEST_ASSERT_NOT_NULL(start);
-    TEST_ASSERT_EQUAL_UINT16(2003, relay->relay_id);
+    TEST_ASSERT_EQUAL_UINT8(3, relay->relay_id);
     TEST_ASSERT_EQUAL_UINT32(1500, wait->ms);
-    TEST_ASSERT_EQUAL_UINT16(1002, input->input_id);
+    TEST_ASSERT_EQUAL_UINT8(2, input->input_id);
     TEST_ASSERT_EQUAL_UINT16(7, inTrig->input_trigger_id);
     TEST_ASSERT_EQUAL_UINT16(9, tempTrig->temp_trigger_id);
     TEST_ASSERT_EQUAL_STRING("say \"hi\"", sms->message);
-    TEST_ASSERT_EQUAL_UINT16(0, start->relay_id);
+    TEST_ASSERT_EQUAL_UINT8(0, start->relay_id);
 }
 
 static void test_tz_offset_out_of_range_keeps_previous() {
-    // parseI16 clamps into int16. A cast to int8_t would wrap 300→44, 256→0, 128→-128, 32767→-1.
-    // Outside -12..14 the value already stored stays (init default, or an earlier key).
+    // parseI16 ограничивает значение int16. Приведение к int8_t завернуло бы 300→44, 256→0, 128→-128, 32767→-1.
+    // Вне -12..14 остаётся уже записанное значение (начальный default или более ранний ключ).
     TEST_ASSERT_EQUAL_INT8(3, tzOf("15"));
     TEST_ASSERT_EQUAL_INT8(3, tzOf("-13"));
     TEST_ASSERT_EQUAL_INT8(3, tzOf("300"));

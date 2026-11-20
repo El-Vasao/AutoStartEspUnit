@@ -3,7 +3,7 @@
 #include "IPAddress.h"
 #include "Print.h"
 
-// Host stand-in for the Arduino Client interface.
+// Замена интерфейса Arduino Client на хосте.
 class Client : public Stream {
 public:
     virtual int connect(IPAddress ip, uint16_t port) = 0;

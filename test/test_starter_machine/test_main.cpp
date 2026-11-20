@@ -40,7 +40,7 @@ void test_timed_success_after_settle() {
     TEST_ASSERT_TRUE(t.resetVoltageWindow);
     TEST_ASSERT_EQUAL((int)Phase::Settling, (int)m.phase());
 
-    // Voltage already high during settle is not checked before settleMs.
+    // Высокое напряжение во время settle не проверяется до settleMs.
     t = m.tick(at(4999, 14.0f));
     TEST_ASSERT_EQUAL((int)Outcome::Running, (int)t.outcome);
     t = m.tick(at(5000, 14.0f));
@@ -106,7 +106,7 @@ void test_timed_retries_then_failure() {
         if (attempt < p.attempts) {
             TEST_ASSERT_EQUAL((int)Outcome::Running, (int)t.outcome);
             TEST_ASSERT_EQUAL((int)Phase::Resting, (int)m.phase());
-            // Rest is respected.
+            // Пауза rest соблюдается.
             t = m.tick(at(now + p.restMs - 1));
             TEST_ASSERT_EQUAL((int)RelayCmd::None, (int)t.relay);
             now += p.restMs;
@@ -215,7 +215,7 @@ void test_input_already_active_does_not_crank() {
 void test_input_method_ignores_voltage() {
     Machine m;
     m.begin(condParams(StartMethod::Input), 0);
-    // High voltage does not mean "running" for the input method.
+    // Высокое напряжение не значит «работает» для метода input.
     Tick t = m.tick(at(0, 14.0f));
     TEST_ASSERT_EQUAL((int)RelayCmd::On, (int)t.relay);
 }

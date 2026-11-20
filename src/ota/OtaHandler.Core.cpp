@@ -16,6 +16,7 @@ void OtaHandler::resetStreamState() {
     _phase = Phase::Idle;
     _updateBegun = false;
     _fwCommitted = false;
+    _pendingBoot = nullptr;
     _streamDoneOk = false;
     _totalAccepted = 0;
     _hdrHave = 0;
@@ -30,6 +31,35 @@ void OtaHandler::resetStreamState() {
     _fileRemaining = 0;
 }
 
+bool OtaHandler::pinBootToRunningAfterEnd() {
+    // end записал в otadata слот, выбранный в begin через
+    // esp_ota_get_next_update_partition(NULL). Читаем boot сразу: это он.
+    _pendingBoot = esp_ota_get_boot_partition();
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    _fwCommitted = true;
+    if (!_pendingBoot || !running || _pendingBoot == running) {
+        logger.log(LogModule::OtaHandler, "нет отдельного слота после Update.end\n");
+        _pendingBoot = nullptr;
+        return false;
+    }
+    if (esp_ota_set_boot_partition(running) != ESP_OK) {
+        logger.log(LogModule::OtaHandler, "не удалось закрепить boot на текущем образе\n");
+        return false;
+    }
+    logger.log(LogModule::OtaHandler, "boot закреплён на текущем образе (%s), ожидается %s\n",
+               running->label, _pendingBoot->label);
+    return true;
+}
+
+bool OtaHandler::activatePendingBoot() {
+    if (!_pendingBoot || esp_ota_set_boot_partition(_pendingBoot) != ESP_OK) {
+        logger.log(LogModule::OtaHandler, "не удалось активировать новый слот boot\n");
+        return false;
+    }
+    logger.log(LogModule::OtaHandler, "boot переключён на обновлённый слот (%s)\n", _pendingBoot->label);
+    return true;
+}
+
 bool OtaHandler::closeOutFile(bool commit) {
     if (!_outOpen) return true;
     bool ok = true;
@@ -42,22 +72,26 @@ bool OtaHandler::closeOutFile(bool commit) {
 
 void OtaHandler::failStream(const char* why) {
     if (why && why[0]) {
-        logger.log(LogModule::OtaHandler, "stream fail: %s\n", why);
+        logger.log(LogModule::OtaHandler, "сбой потока: %s\n", why);
     }
     closeOutFile(false);
+    // Сессия ещё открыта только до Update.end. После end abort слот не возвращает.
     if (_updateBegun) {
         Update.abort();
         _updateBegun = false;
     }
-    // rollBack() этого ядра берёт следующий слот после boot, а не выполняемый образ.
+    // Boot уже должен быть на running (pin сразу после end). Закрепить ещё раз:
+    // rollBack() здесь нельзя — next_update(NULL) на этом IDF считается от running,
+    // то есть снова указывает на новый слот, а не на выполняемый образ.
     if (_fwCommitted) {
         const esp_partition_t* running = esp_ota_get_running_partition();
         const bool restored = running && esp_ota_set_boot_partition(running) == ESP_OK;
         if (restored) {
-            logger.log(LogModule::OtaHandler, "boot restored to running image\n");
+            logger.log(LogModule::OtaHandler, "boot возвращён на выполняемый образ\n");
             _fwCommitted = false;
+            _pendingBoot = nullptr;
         } else {
-            logger.log(LogModule::OtaHandler, "boot restore failed\n");
+            logger.log(LogModule::OtaHandler, "не удалось вернуть boot\n");
         }
     }
     _phase = Phase::Failed;
@@ -93,14 +127,14 @@ void OtaHandler::onModeExit() {
 }
 
 void OtaHandler::begin() {
-    logger.log(LogModule::OtaHandler, "OTA update started (stream)\n");
+    logger.log(LogModule::OtaHandler, "обновление OTA начато (поток)\n");
     core.logHeapSnapshot("ota_mode_begin");
     _ongoing = true;
     _lastLogTime = 0;
 }
 
 void OtaHandler::streamAbort() {
-    failStream("abort");
+    failStream("отмена");
 }
 
 void OtaHandler::update() {
@@ -110,14 +144,14 @@ void OtaHandler::update() {
 
     if (_awaitHttpUploadSession && !_httpUploadDone) {
         if ((uint32_t)(now - _httpSessionStartMs) >= Timing::OTA_HTTP_UPLOAD_IDLE_MS) {
-            logger.log(LogModule::OtaHandler, "HTTP upload idle timeout (no final within %u ms), leaving OTA\n",
+            logger.log(LogModule::OtaHandler, "таймаут простоя загрузки HTTP (нет final за %u мс), выход из OTA\n",
                        (unsigned)Timing::OTA_HTTP_UPLOAD_IDLE_MS);
             streamAbort();
             core.onOtaHttpUploadAwaitTimedOut();
             return;
         }
         if (now - _lastLogTime > Timing::OTA_WAIT_LOG_INTERVAL_MS) {
-            logger.log(LogModule::OtaHandler, "Receiving firmware stream… (%u bytes so far)\n",
+            logger.log(LogModule::OtaHandler, "приём потока прошивки… (%u байт пока)\n",
                        (unsigned)_totalAccepted);
             _lastLogTime = now;
         }
@@ -125,7 +159,7 @@ void OtaHandler::update() {
     }
 
     if (_awaitHttpUploadSession && _httpUploadDone && !_httpUploadOk) {
-        logger.log(LogModule::OtaHandler, "HTTP upload/stream failed, leaving OTA mode\n");
+        logger.log(LogModule::OtaHandler, "загрузка/поток HTTP не удались, выход из режима OTA\n");
         core.logHeapSnapshot("ota_mode_upload_failed");
         streamAbort();
         core.exitOtaToNormalMode();
@@ -134,12 +168,12 @@ void OtaHandler::update() {
 
     if (_awaitHttpUploadSession && _httpUploadDone && _httpUploadOk) {
         if (_streamDoneOk || _phase == Phase::Done) {
-            logger.log(LogModule::OtaHandler, "Stream OTA successful, rebooting…\n");
+            logger.log(LogModule::OtaHandler, "поток OTA успешен, перезагрузка…\n");
             core.logHeapSnapshot("ota_update_success");
             delay(Delays::REBOOT_HTTP_REPLY_MS);
             core.reboot();
         } else {
-            logger.log(LogModule::OtaHandler, "Upload OK but stream not Done, leaving OTA mode\n");
+            logger.log(LogModule::OtaHandler, "загрузка OK, но поток не Done, выход из режима OTA\n");
             core.logHeapSnapshot("ota_update_failed");
             streamAbort();
             core.exitOtaToNormalMode();

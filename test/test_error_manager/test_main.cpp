@@ -28,7 +28,7 @@ static void test_multiple_codes_stay_active_and_clear_independently() {
     em.set(ErrorCode::RELAY_TIMEOUT);
     ErrorSnapshotEntry act[ErrorHistory::CAPACITY];
     TEST_ASSERT_EQUAL_UINT8(2, em.copyActive(act, ErrorHistory::CAPACITY));
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)ErrorCode::RELAY_TIMEOUT, act[0].code);  // newest first
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ErrorCode::RELAY_TIMEOUT, act[0].code);  // сначала новые
 
     em.clear(ErrorCode::RELAY_TIMEOUT);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ErrorCode::GSM_NO_RESPONSE, (uint8_t)em.get());
@@ -37,7 +37,7 @@ static void test_multiple_codes_stay_active_and_clear_independently() {
     em.clear();
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ErrorCode::NONE, (uint8_t)em.get());
     TEST_ASSERT_EQUAL_UINT8(0, em.copyActive(act, ErrorHistory::CAPACITY));
-    TEST_ASSERT_EQUAL_UINT8(2, em.historyCount());  // history kept
+    TEST_ASSERT_EQUAL_UINT8(2, em.historyCount());  // история сохранена
 }
 
 static void test_repeated_set_refreshes_and_moves_to_front() {
@@ -71,7 +71,7 @@ static void test_undelivered_until_marked_by_fingerprint() {
     em.markDelivered(out, 1);
     TEST_ASSERT_EQUAL_UINT8(0, em.copyUndelivered(out, ErrorHistory::CAPACITY));
 
-    // Same code later = new fingerprint (refresh) is still delivered-flagged in place.
+    // Тот же код позже = новый отпечаток (обновление), флаг доставки ставится на месте.
     test_clock::set(30000);
     em.set(ErrorCode::START_FAILED);
     TEST_ASSERT_EQUAL_UINT8(1, em.copyUndelivered(out, ErrorHistory::CAPACITY));
@@ -91,7 +91,7 @@ static void test_rtc_round_trip_restores_actives_and_redelivers() {
     TEST_ASSERT_EQUAL_UINT8(2, b.historyCount());
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ErrorCode::RELAY_TIMEOUT, (uint8_t)b.get());
     TEST_ASSERT_FALSE(b.isActive(ErrorCode::GSM_NO_RESPONSE));
-    TEST_ASSERT_EQUAL_UINT8(2, b.copyUndelivered(out, ErrorHistory::CAPACITY));  // reboot → redeliver
+    TEST_ASSERT_EQUAL_UINT8(2, b.copyUndelivered(out, ErrorHistory::CAPACITY));  // перезагрузка → повторная доставка
     TEST_ASSERT_TRUE(b.historyAt(0).fromRtc);
 }
 

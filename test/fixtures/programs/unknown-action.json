@@ -1,0 +1,7 @@
+{
+  "id": 99,
+  "name": "Unknown action",
+  "steps": [
+    { "step": 1, "action": "NOT_A_REAL_ACTION" }
+  ]
+}

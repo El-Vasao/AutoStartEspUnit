@@ -93,7 +93,7 @@ void GsmController::handleUrc(const char* line) {
         char tmp[TextBytes::Gsm::OPERATOR];
         if (parseCopsQuotedOperator_(line, tmp, sizeof(tmp)) && strcmp(tmp, _operator) != 0) {
             strlcpy(_operator, tmp, sizeof(_operator));
-            logger.log(LogModule::GsmController, "operator: %s\n", _operator);
+            logger.log(LogModule::GsmController, "оператор: %s\n", _operator);
         }
         return;
     }
@@ -116,7 +116,7 @@ void GsmController::handleUrc(const char* line) {
                 case 65: why = "timeout"; break;
                 default: break;
             }
-            logger.log(LogModule::GsmController, "CNTP URC code=%d (%s)\n", code, why);
+            logger.log(LogModule::GsmController, "CNTP URC код=%d (%s)\n", code, why);
         }
         return;
     }
@@ -124,7 +124,7 @@ void GsmController::handleUrc(const char* line) {
         strlcpy(_cipgsmlocSnap, line, sizeof(_cipgsmlocSnap));
         int code = -1;
         if (sscanf(line, "+CIPGSMLOC: %d", &code) == 1) {
-            logger.log(LogModule::GsmController, "CIPGSMLOC code=%d\n", code);
+            logger.log(LogModule::GsmController, "CIPGSMLOC код=%d\n", code);
         } else {
             logger.log(LogModule::GsmController, "CIPGSMLOC %s\n", line);
         }

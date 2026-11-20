@@ -24,9 +24,9 @@ ThermostatManager::ThermostatManager(Config& config, SensorsController& sensors,
 {}
 
 void ThermostatManager::begin() {
-    logger.log(LogModule::ThermostatManager, "begin\n");
+    logger.log(LogModule::ThermostatManager, "начало\n");
     _runtimeEnabled = _config.getBase().thermostat.enabled;
-    logger.log(LogModule::ThermostatManager, "Runtime enabled: %d\n", _runtimeEnabled);
+    logger.log(LogModule::ThermostatManager, "рантайм включён: %d\n", _runtimeEnabled);
 }
 
 void ThermostatManager::update() {
@@ -55,11 +55,11 @@ void ThermostatManager::update() {
     // comparison в JSON не задаёт направление: нижний порог всегда «ниже», верхний всегда «выше».
 
     if (_lowerLatch.update(temp, ts.lower_threshold, trigger_rules::Compare::Below, hyst) && ts.program_id_lower != 0) {
-        logger.log(LogModule::ThermostatManager, "Lower threshold reached, starting program %u\n", ts.program_id_lower);
+        logger.log(LogModule::ThermostatManager, "нижний порог, старт программы %u\n", ts.program_id_lower);
         _executor.start(ts.program_id_lower);
     }
     if (_upperLatch.update(temp, ts.upper_threshold, trigger_rules::Compare::Above, hyst) && ts.program_id_upper != 0) {
-        logger.log(LogModule::ThermostatManager, "Upper threshold reached, starting program %u\n", ts.program_id_upper);
+        logger.log(LogModule::ThermostatManager, "верхний порог, старт программы %u\n", ts.program_id_upper);
         _executor.start(ts.program_id_upper);
     }
 }

@@ -49,8 +49,7 @@ void GsmController::gsmMaybeLogStallWatchdog(uint32_t now) {
     const char* phaseStr = (_state == GsmState::INIT) ? gsmInitPhaseName(_initPhase) : "-";
 
     logger.log(LogModule::GsmController,
-        "stall: state=%s init=%s await=%s ok=%d err=%d creg=%d ip=%d "
-        "cmd=%u acmd=%u stallMs=%lu at=\"%.48s\"\n",
+        "застой: state=%s init=%s await=%s ok=%d err=%d creg=%d ip=%d cmd=%u acmd=%u stallMs=%lu at=\"%.48s\"\n",
         getStateString(),
         phaseStr,
         awaitStr,

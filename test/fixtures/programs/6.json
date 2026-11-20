@@ -1,0 +1,8 @@
+{
+  "id": 6,
+  "name": "Связь",
+  "steps": [
+    { "step": 1, "action": "SMS_OWNER", "message": "Bench SMS" },
+    { "step": 2, "action": "CALL_OWNER" }
+  ]
+}

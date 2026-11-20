@@ -1,7 +1,27 @@
 #include "web/WebServer.h"
 #include "web/internal/WebServerInternal.h"
+#include "web/internal/WebRamAssets.h"
 
 using namespace web_internal;
+
+namespace {
+
+bool sendRam(AsyncWebServerRequest* request, const char* path, const char* contentType, bool gzip,
+             bool sessionCache) {
+    AsyncWebServerResponse* resp = nullptr;
+    const web_ram::Take take = web_ram::acquire(request, path, contentType, gzip, &resp);
+    if (take == web_ram::Take::Missing) return false;
+    if (take != web_ram::Take::Ready || !resp) {
+        request->send(503, "text/plain", "Not Ready");
+        return true;
+    }
+    if (sessionCache) addSessionRevalidateHeaders(resp, core.getVersionString());
+    else addNoCacheHeaders(resp);
+    request->send(resp);
+    return true;
+}
+
+} // namespace
 
 void WebServer::setupCaptivePortalRoutes_() {
     server.onNotFound([](AsyncWebServerRequest* request) {
@@ -16,37 +36,38 @@ void WebServer::setupCaptivePortalRoutes_() {
 
         size_t urlLen = strlen(urlBuf);
         if (urlLen > 1 && urlBuf[urlLen - 1] != '/') {
-            const char* etag = core.getVersionString();
             const char* contentType = contentTypeByPath(urlBuf);
 
             if (urlEndsWith(urlBuf, ".json")) {
-                // Схемы JSON и блобы конфига на ФС остаются без сжатия (это не файлы оболочки UI).
-                sendJsonFromFs(request, urlBuf, "no-cache, no-store, must-revalidate");
+                // Схемы и index программ: RAM или чтение на цикле, не LittleFS в колбэке.
+                AsyncWebServerResponse* resp = nullptr;
+                const web_ram::Take take = web_ram::acquire(request, urlBuf, kContentTypeJson, false, &resp);
+                if (take == web_ram::Take::Missing) {
+                    request->send(404, kContentTypeJson, "{\"success\":false,\"error\":\"FILE_NOT_FOUND\"}");
+                    return;
+                }
+                if (take != web_ram::Take::Ready || !resp) {
+                    request->send(503, kContentTypeJson, "{\"success\":false,\"error\":\"NOT_READY\"}");
+                    return;
+                }
+                addNoCacheHeaders(resp);
+                request->send(resp);
                 return;
             }
 
-            // Аксиома: статика UI на LittleFS есть только как <path>.gz (build.py).
+            // На ФС статика только как <path>.gz. Отдача — копия в RAM или окно цикла.
             if (urlEndsWith(urlBuf, ".js") || urlEndsWith(urlBuf, ".css") || urlEndsWith(urlBuf, ".html") ||
                 urlEndsWith(urlBuf, ".ico")) {
                 char gzPath[BufferBytes::Fs::GZIP_PATH];
-                snprintf(gzPath, sizeof(gzPath), "%s.gz", urlBuf);
-                if (fileSystem.exists(gzPath)) {
-                    auto* resp = request->beginResponse(fileSystem.webFs(), gzPath, contentType);
-                    resp->addHeader("Content-Encoding", "gzip");
-                    resp->addHeader("Vary", "Accept-Encoding");
-                    addSessionRevalidateHeaders(resp, etag);
-                    request->send(resp);
+                const int n = snprintf(gzPath, sizeof(gzPath), "%s.gz", urlBuf);
+                if (n > 0 && (size_t)n < sizeof(gzPath) &&
+                    sendRam(request, gzPath, contentType, true, true)) {
                     return;
                 }
                 if (urlEndsWith(urlBuf, ".js") || urlEndsWith(urlBuf, ".css")) {
                     request->send(404, "text/plain", "Not Found");
                     return;
                 }
-            } else if (fileSystem.exists(urlBuf)) {
-                auto* resp = request->beginResponse(fileSystem.webFs(), urlBuf, contentType);
-                addSessionRevalidateHeaders(resp, etag);
-                request->send(resp);
-                return;
             }
         }
 

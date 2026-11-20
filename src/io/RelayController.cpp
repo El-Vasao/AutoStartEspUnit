@@ -30,7 +30,7 @@ RelayController::RelayController() : _state(0) {
 }
 
 void RelayController::begin() {
-    logger.log(LogModule::RelayController, "begin\n");
+    logger.log(LogModule::RelayController, "начало\n");
     for (int i = 0; i < HardwareLimits::RELAYS; i++) {
         uint8_t pin = pinForRelay(i);
         pinMode(pin, OUTPUT);
@@ -50,7 +50,7 @@ void RelayController::begin() {
     if (starterTime == 0) starterTime = StarterLimits::MAX_TIME_DEFAULT_SEC;
     if (_starterIdx >= 0) {
         _maxOnTime[(uint8_t)_starterIdx] = secToMs(starterTime);
-        logger.log(LogModule::RelayController, "Starter relay_id: %u (idx=%d), max time: %u ms\n",
+        logger.log(LogModule::RelayController, "реле стартера relay_id: %u (idx=%d), макс. время: %u мс\n",
                    (unsigned)starterRelayId, (int)_starterIdx, (unsigned)_maxOnTime[(uint8_t)_starterIdx]);
 
         if (!_backstop) {
@@ -61,12 +61,12 @@ void RelayController::begin() {
             args.name = "starter_backstop";
             if (esp_timer_create(&args, &_backstop) != ESP_OK) {
                 _backstop = nullptr;
-                logger.log(LogModule::RelayController, "⚠️ starter backstop timer create failed\n");
+                logger.log(LogModule::RelayController, "⚠️ не удалось создать страховочный таймер стартера\n");
             }
         }
     }
     
-    logger.log(LogModule::RelayController, "OK\n");
+    logger.log(LogModule::RelayController, "успех\n");
 }
 
 uint8_t RelayController::pinForRelay(uint8_t relay) const {
@@ -101,7 +101,7 @@ bool RelayController::isStarterLockedOut() const {
 bool RelayController::on(uint8_t relay) {
     if (relay >= HardwareLimits::RELAYS) return false;
     if (_starterIdx >= 0 && relay == (uint8_t)_starterIdx && isStarterLockedOut()) {
-        logger.log(LogModule::RelayController, "Starter ON refused: lockout after safety trip\n");
+        logger.log(LogModule::RelayController, "включение стартера отказано: блокировка после срабатывания защиты\n");
         return false;
     }
     setRelay(relay, true);
@@ -134,7 +134,7 @@ void RelayController::startLockout() {
     const uint32_t lockMs = pauseMs > StarterLimits::LOCKOUT_MIN_MS ? pauseMs : StarterLimits::LOCKOUT_MIN_MS;
     _lockout = true;
     _lockoutUntilMs = millis() + lockMs;
-    logger.log(LogModule::RelayController, "Starter locked out for %u ms\n", (unsigned)lockMs);
+    logger.log(LogModule::RelayController, "стартер заблокирован на %u мс\n", (unsigned)lockMs);
 }
 
 void RelayController::armBackstop() {
@@ -163,7 +163,7 @@ void RelayController::checkSafety() {
             if (now - _turnOnTime[i] > _maxOnTime[i]) {
                 // Страховка: реле «не должно» оставаться включённым дольше лимита.
                 // Особенно критично для стартера/нагревателей — принудительно выключаем и фиксируем ошибку.
-                logger.log(LogModule::RelayController, "⚠️ Relay %d timeout! Forcing OFF\n", i+1);
+                logger.log(LogModule::RelayController, "⚠️ таймаут реле %d! Принудительно OFF\n", i+1);
                 setRelay(i, false);
                 core.getErrorManager().set(ErrorCode::RELAY_TIMEOUT);
                 if (_starterIdx >= 0 && i == _starterIdx) startLockout();
@@ -175,7 +175,7 @@ void RelayController::checkSafety() {
 void RelayController::update() {
     if (_backstopTripped) {
         if (_starterIdx >= 0) setRelay((uint8_t)_starterIdx, false);
-        logger.log(LogModule::RelayController, "⚠️ Starter backstop timer fired (main loop stalled)\n");
+        logger.log(LogModule::RelayController, "⚠️ сработал страховочный таймер стартера (основной цикл завис)\n");
         core.getErrorManager().set(ErrorCode::RELAY_TIMEOUT);
         startLockout();
         _backstopTripped = false;

@@ -1,0 +1,9 @@
+{
+  "id": 8,
+  "name": "Входы",
+  "steps": [
+    { "step": 1, "action": "INPUT_DISABLE", "input_id": "IN3" },
+    { "step": 2, "action": "WAIT", "ms": 2000 },
+    { "step": 3, "action": "INPUT_ENABLE", "input_id": "IN3" }
+  ]
+}

@@ -2,13 +2,13 @@
 
 #include <stddef.h>
 
-// Captures lines that Logger sends to sseBroadcastLog() in native tests.
+// Ловит строки, которые Logger отдаёт в sseBroadcastLog() в нативных тестах.
 namespace test_log {
 void clear();
 size_t count();
-/// i = 0 is the oldest captured line.
+/// i = 0 — самая старая пойманная строка.
 const char* line(size_t i);
-/// Empty string when nothing was captured.
+/// Пустая строка, если ничего не поймано.
 const char* last();
 bool contains(const char* needle);
-} // namespace test_log
+} // пространство имён test_log

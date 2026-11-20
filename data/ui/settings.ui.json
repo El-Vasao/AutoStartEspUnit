@@ -193,7 +193,7 @@
           "key": "starter_relay_id",
           "path": "vehicle.starter_relay_id",
           "type": "select",
-          "valueType": "int",
+          "valueType": "string",
           "label": "Реле стартера",
           "optionsFrom": "relays",
           "helpTitle": "Реле стартера",
@@ -226,7 +226,7 @@
           "key": "start_input_id",
           "path": "vehicle.start_input_id",
           "type": "select",
-          "valueType": "int",
+          "valueType": "string",
           "label": "Вход для запуска",
           "showIf": {
             "in": {
@@ -242,7 +242,7 @@
           "key": "start_block_input_id",
           "path": "vehicle.start_block_input_id",
           "type": "select",
-          "valueType": "int",
+          "valueType": "string",
           "label": "Вход блокировки запуска",
           "optionsFrom": "digitalInputIds",
           "helpTitle": "Вход блокировки запуска",
@@ -359,7 +359,7 @@
           "key": "engine_input_id",
           "path": "vehicle.engine_input_id",
           "type": "select",
-          "valueType": "int",
+          "valueType": "string",
           "label": "Вход двигателя",
           "showIf": {
             "eq": {
@@ -376,8 +376,18 @@
     "sensors": {
       "title": "Датчики",
       "repeatFrom": "MAX_SENSORS",
-      "itemTitlePrefix": "Датчик",
+      "itemTitleFrom": "sensors",
       "fields": [
+        {
+          "bind": "id",
+          "pathTmpl": "sensors.{i}.id",
+          "type": "text",
+          "valueType": "string",
+          "label": "ID",
+          "hidden": true,
+          "helpTitle": "ID",
+          "help": "Шёлк на плате: T1…T3."
+        },
         {
           "key": "rom",
           "pathTmpl": "sensors.{i}.rom",
@@ -393,7 +403,7 @@
           "type": "text",
           "label": "Имя",
           "helpTitle": "Имя",
-          "help": "Имя датчика в интерфейсе."
+          "help": "Подпись рядом с id (T1 · Салон). Пустое — на экране только id."
         },
         {
           "key": "coeff",
@@ -424,11 +434,12 @@
         {
           "bind": "id",
           "pathTmpl": "inputs.{i}.id",
-          "type": "number",
+          "type": "text",
+          "valueType": "string",
           "label": "ID",
           "hidden": true,
           "helpTitle": "ID",
-          "help": "Идентификатор входа."
+          "help": "Шёлк на плате: IN1…IN3."
         },
         {
           "bind": "name",
@@ -516,6 +527,31 @@
         }
       ]
     },
+    "relays": {
+      "title": "Реле",
+      "repeatFrom": "MAX_RELAYS",
+      "itemTitleFrom": "relays",
+      "fields": [
+        {
+          "bind": "id",
+          "pathTmpl": "relays.{i}.id",
+          "type": "text",
+          "valueType": "string",
+          "label": "ID",
+          "hidden": true,
+          "helpTitle": "ID",
+          "help": "Шёлк на плате: K1…K5."
+        },
+        {
+          "bind": "name",
+          "pathTmpl": "relays.{i}.name",
+          "type": "text",
+          "label": "Имя",
+          "helpTitle": "Имя",
+          "help": "Подпись рядом с id (K2 · Зажигание). Пустое — на экране только id."
+        }
+      ]
+    },
     "triggers": {
       "title": "Триггеры",
       "inputFields": [
@@ -539,7 +575,7 @@
         {
           "bind": "input_id",
           "type": "select",
-          "valueType": "int",
+          "valueType": "string",
           "label": "Вход",
           "optionsFrom": "inputIds",
           "helpTitle": "Вход",
@@ -592,6 +628,7 @@
         {
           "bind": "sensor_id",
           "type": "select",
+          "valueType": "string",
           "label": "Датчик",
           "optionsFrom": "sensorIds",
           "helpTitle": "Датчик",
@@ -717,6 +754,7 @@
           "key": "sensor_id",
           "path": "thermostat.sensor_id",
           "type": "select",
+          "valueType": "string",
           "label": "Датчик",
           "optionsFrom": "sensorIds",
           "helpTitle": "Датчик",

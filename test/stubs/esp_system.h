@@ -1,6 +1,6 @@
 #pragma once
 
-// EspHal.h includes <esp_system.h>. Native builds have no ESP-IDF.
+// EspHal.h подключает <esp_system.h>. У нативной сборки нет ESP-IDF.
 #include <stdint.h>
 
 class EspClass {

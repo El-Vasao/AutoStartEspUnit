@@ -1,3 +1,3 @@
-# ESP32-C3 port notes
+# ESP32-C3
 
-Moved to [`HARDWARE.md`](HARDWARE.md).
+Перенесено в [`HARDWARE.md`](HARDWARE.md).

@@ -2,45 +2,35 @@
 #pragma once
 
 #include <Arduino.h>
-#include "common/Pins.h"
 #include "common/Constants.h"
+#include "common/ChannelSilk.h"
 
 /**
- * @brief Единое соответствие id каналов железа и внутренних индексов.
- *
- * Контракт с приоритетом безопасности:
- * - Внешние и прикладные слои должны пользоваться id.
- * - Драйверы могут хранить состояние по индексу, но не должны принимать индексы снаружи.
+ * Соответствие публичного номера канала (1…n, 0 = нет) и индекса слота 0…n-1.
  */
 namespace HwMap {
 
+inline int8_t relayIndexByNumber(uint8_t number) {
+    return ChannelSilk::slotFromNumber(number, ChannelSilk::Kind::Relay);
+}
+
+inline int8_t inputIndexByNumber(uint8_t number) {
+    return ChannelSilk::slotFromNumber(number, ChannelSilk::Kind::Input);
+}
+
+inline int8_t sensorIndexByNumber(uint8_t number) {
+    return ChannelSilk::slotFromNumber(number, ChannelSilk::Kind::Sensor);
+}
+
+/// Совместимость со старыми вызовами: number — 1…n (шёлк), не 2001.
 inline int8_t relayIndexById(uint16_t relayId) {
-    if (!relayId) return -1;
-    for (uint8_t i = 0; i < HardwareLimits::RELAYS; i++) {
-        if (Pin::RELAY_IDS[i] == relayId) return (int8_t)i;
-    }
-    return -1;
+    if (relayId == 0 || relayId > 255) return -1;
+    return relayIndexByNumber(static_cast<uint8_t>(relayId));
 }
 
 inline int8_t inputIndexById(uint16_t inputId) {
-    if (!inputId) return -1;
-    for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
-        if (Pin::INPUT_IDS[i] == inputId) return (int8_t)i;
-    }
-    return -1;
-}
-
-/// Проверка таблицы Pin::*_IDS при старте: пустая таблица, нулевой id или повтор id — неверно.
-inline bool idsHaveZeroOrDuplicates(const uint16_t* ids, size_t n) {
-    if (!ids || n == 0) return true;
-    for (size_t i = 0; i < n; i++) {
-        if (ids[i] == 0) return true;
-        for (size_t j = i + 1; j < n; j++) {
-            if (ids[i] == ids[j]) return true;
-        }
-    }
-    return false;
+    if (inputId == 0 || inputId > 255) return -1;
+    return inputIndexByNumber(static_cast<uint8_t>(inputId));
 }
 
 } // namespace HwMap
-

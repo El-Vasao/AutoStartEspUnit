@@ -105,7 +105,7 @@ void ErrorManager::set(ErrorCode err) {
 
     _lastError = err;
     _errorTime = nowSec;
-    logger.log(LogModule::ErrorManager, "ERROR: %s [%d]\n", errorCodeToString(err), (int)err);
+    logger.log(LogModule::ErrorManager, "ОШИБКА: %s [%d]\n", errorCodeToString(err), (int)err);
     persist_();
 }
 
@@ -115,7 +115,7 @@ void ErrorManager::clear() {
     _errorTime = 0;
     // Историю кольца оставить для одноразовой доставки MQTT; кольцо RTC не стирать.
     persist_();
-    logger.log(LogModule::ErrorManager, "Cleared (history kept)\n");
+    logger.log(LogModule::ErrorManager, "снято (история сохранена)\n");
 }
 
 void ErrorManager::clear(ErrorCode code) {
@@ -132,7 +132,7 @@ void ErrorManager::clear(ErrorCode code) {
 
     recomputeCurrent_();
     persist_();
-    logger.log(LogModule::ErrorManager, "Cleared code: %s [%d]\n", errorCodeToString(code), (int)code);
+    logger.log(LogModule::ErrorManager, "снят код: %s [%d]\n", errorCodeToString(code), (int)code);
 }
 
 void ErrorManager::recordBootReset(ErrorCode err) {
@@ -164,7 +164,7 @@ void ErrorManager::recordBootReset(ErrorCode err) {
         _errorTime = nowSec;
     }
 
-    logger.log(LogModule::ErrorManager, "BOOT RESET: %s [%d] active=%u\n", errorCodeToString(err), (int)err,
+    logger.log(LogModule::ErrorManager, "СБРОС ПРИ ЗАГРУЗКЕ: %s [%d] активна=%u\n", errorCodeToString(err), (int)err,
                (unsigned)active);
     persist_();
 }
@@ -247,7 +247,7 @@ void ErrorManager::loadFromRtc() {
     // Текущий код должен совпадать с оставшимися активными (нужно при восстановлении нескольких активных из RTC).
     recomputeCurrent_();
 
-    logger.log(LogModule::ErrorManager, "Loaded from RTC: current=%s count=%u\n", errorCodeToString(_lastError),
+    logger.log(LogModule::ErrorManager, "загружено из RTC: текущая=%s число=%u\n", errorCodeToString(_lastError),
                (unsigned)_count);
 }
 

@@ -71,13 +71,13 @@ static void test_parse_head_cases() {
 
 static void test_valid_incomplete_detection() {
     uint32_t need = 0;
-    const uint8_t head[] = {0x30, 0x14};  // PUBLISH, remaining 20, nothing else yet
+    const uint8_t head[] = {0x30, 0x14};  // PUBLISH, остаток 20, больше ничего
     TEST_ASSERT_TRUE(isValidIncomplete(head, sizeof(head), 256, need));
     TEST_ASSERT_EQUAL_UINT32(22, need);
-    TEST_ASSERT_FALSE(isValidIncomplete(head, sizeof(head), 16, need));  // would not fit
+    TEST_ASSERT_FALSE(isValidIncomplete(head, sizeof(head), 16, need));  // не поместится
     const uint8_t junk[] = {0x00, 0x30, 0x02};
     TEST_ASSERT_FALSE(isValidIncomplete(junk, sizeof(junk), 256, need));
-    const uint8_t complete[] = {0xD0, 0x00};  // PINGRESP
+    const uint8_t complete[] = {0xD0, 0x00};  // кадр PINGRESP
     TEST_ASSERT_FALSE(isValidIncomplete(complete, sizeof(complete), 256, need));
 }
 
@@ -103,7 +103,7 @@ static void test_connect_311_with_will_and_credentials() {
     const uint8_t* vh = buf + h.headerLen;
     TEST_ASSERT_EQUAL_MEMORY("\x00\x04MQTT", vh, 6);
     TEST_ASSERT_EQUAL_HEX8(0x04, vh[6]);
-    // user | pass | will retain | will qos1 | will | clean
+    // флаги CONNECT: user | pass | will retain | will qos1 | will | clean
     TEST_ASSERT_EQUAL_HEX8(0x80 | 0x40 | 0x20 | 0x08 | 0x04 | 0x02, vh[7]);
     TEST_ASSERT_EQUAL_UINT8(0, vh[8]);
     TEST_ASSERT_EQUAL_UINT8(30, vh[9]);
@@ -128,7 +128,7 @@ static void test_connect_password_requires_username() {
     o.password = "secret";
     const uint16_t n = buildConnect(buf, sizeof(buf), o);
     TEST_ASSERT_TRUE(n > 0);
-    TEST_ASSERT_EQUAL_HEX8(0x02, buf[2 + 6 + 1]);  // only clean session
+    TEST_ASSERT_EQUAL_HEX8(0x02, buf[2 + 6 + 1]);  // только флаг clean session
 }
 
 static void test_connect_requires_client_id_and_room() {
@@ -138,7 +138,7 @@ static void test_connect_requires_client_id_and_room() {
     o.clientId = "a-client-id-that-does-not-fit";
     memset(buf, 0xAA, sizeof(buf));
     TEST_ASSERT_EQUAL_UINT16(0, buildConnect(buf, sizeof(buf), o));
-    TEST_ASSERT_EQUAL_HEX8(0xAA, buf[0]);  // untouched on failure
+    TEST_ASSERT_EQUAL_HEX8(0xAA, buf[0]);  // при ошибке буфер не тронут
 }
 
 static void test_subscribe_packet() {
@@ -155,7 +155,7 @@ static void test_publish_qos1_and_puback_parse() {
     const uint8_t payload[] = {'x'};
     const uint16_t n = buildPublish(buf, sizeof(buf), "t", payload, 1, true, 1, 0x0007, false);
     TEST_ASSERT_TRUE(n > 0);
-    TEST_ASSERT_EQUAL_HEX8(0x33, buf[0]); // PUBLISH qos1 retain
+    TEST_ASSERT_EQUAL_HEX8(0x33, buf[0]); // флаги PUBLISH: qos1 retain
     FrameHead h;
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Head::Ok, (uint8_t)parseHead(buf, n, h));
     PublishView v;
@@ -192,7 +192,7 @@ static void test_publish_head_with_two_byte_remaining_length() {
     uint8_t buf[16];
     const uint16_t head = writePublishHead(buf, sizeof(buf), "t", 1, 200, false);
     TEST_ASSERT_EQUAL_UINT16(publishHeadLength(1, 200), head);
-    TEST_ASSERT_EQUAL_UINT16(6, head);  // type + 2-byte RL + topic length + "t"
+    TEST_ASSERT_EQUAL_UINT16(6, head);  // тип + RL 2 байта + длина топика + «t»
     uint32_t rem = 0;
     uint8_t used = 0;
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Decode::Ok, (uint8_t)decodeRemainingLength(buf + 1, 4, rem, used));

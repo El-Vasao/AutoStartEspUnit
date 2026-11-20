@@ -46,10 +46,10 @@ void test_parse_set_thermostat() {
 void test_parse_set_input_ref() {
     MqttCommand cmd;
     TEST_ASSERT_TRUE(parseMqttCommandJson(
-        "{\"id\":\"s2\",\"cmd\":\"set\",\"name\":\"input\",\"ref\":1001,\"enabled\":false}",
+        "{\"id\":\"s2\",\"cmd\":\"set\",\"name\":\"input\",\"ref\":1,\"enabled\":false}",
         cmd));
     TEST_ASSERT_EQUAL((int)MqttSetName::Input, (int)cmd.setName);
-    TEST_ASSERT_EQUAL_UINT16(1001, cmd.ref);
+    TEST_ASSERT_EQUAL_UINT16(1, cmd.ref);
     TEST_ASSERT_TRUE(cmd.hasEnabled);
     TEST_ASSERT_FALSE(cmd.enabled);
 }
@@ -100,7 +100,7 @@ void test_mqtt_err_to_http_code() {
     TEST_ASSERT_EQUAL_UINT16(503, mqttErrToHttpCode(MqttCmdErr::Busy));
 }
 
-// Contract values documented in docs/modules/mqtt.md (read from the real Constants.h).
+// Значения контракта из docs/modules/mqtt.md (читаются из настоящего Constants.h).
 void test_contract_constants() {
     TEST_ASSERT_EQUAL_UINT16(202, MqttCmd::CODE_ACCEPTED);
     TEST_ASSERT_EQUAL_UINT8(8, MqttCmd::INBOUND_DEPTH);

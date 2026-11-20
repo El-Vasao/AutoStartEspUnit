@@ -13,7 +13,7 @@ void formatSensorRomString(const uint8_t* addr8, char* out, size_t outSz) {
              addr8[4], addr8[5], addr8[6], addr8[7]);
 }
 
-uint16_t resolveSensorConfigId(const uint8_t* addr8, const BaseConfig& cfg) {
+uint8_t resolveSensorConfigId(const uint8_t* addr8, const BaseConfig& cfg) {
     if (!addr8) return 0;
     char romStr[TextBytes::Sensors::ADDR_STRING];
     formatSensorRomString(addr8, romStr, sizeof(romStr));

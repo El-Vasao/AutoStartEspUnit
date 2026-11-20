@@ -1,0 +1,15 @@
+{
+  "id": 4,
+  "name": "Старт без блока",
+  "steps": [
+    { "step": 1, "action": "INPUT_DISABLE", "input_id": "IN1" },
+    { "step": 2, "action": "RELAY_ON", "relay_id": "K5" },
+    { "step": 3, "action": "WAIT", "ms": 500 },
+    { "step": 4, "action": "RELAY_ON", "relay_id": "K2" },
+    { "step": 5, "action": "WAIT", "ms": 5000 },
+    { "step": 6, "action": "ENGINE_START" },
+    { "step": 7, "action": "RELAY_ON", "relay_id": "K1" },
+    { "step": 8, "action": "WAIT", "ms": 5000 },
+    { "step": 9, "action": "RELAY_OFF", "relay_id": "K5" }
+  ]
+}

@@ -1,6 +1,6 @@
 #pragma once
 
-// Host stand-in for the Arduino Print / Stream / Client hierarchy (subset used by firmware code).
+// Замена иерархии Arduino Print / Stream / Client на хосте (подмножество, нужное прошивке).
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>

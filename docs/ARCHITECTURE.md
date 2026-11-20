@@ -3,7 +3,7 @@
 Этот документ фиксирует *контракты и ограничения* для кодовой базы. Он нужен, чтобы рефактор не превращался в набор
 разрозненных правок и чтобы новые изменения не размывали границы модулей.
 
-Target: PlatformIO env `esp32c3` (~170 KB free heap after boot). Pins: [`HARDWARE.md`](HARDWARE.md).
+Цель: окружение PlatformIO `esp32c3` (около 170 КБ свободной кучи после загрузки). Пины: [`HARDWARE.md`](HARDWARE.md).
 
 ## 1) Слои и направление зависимостей
 
@@ -38,17 +38,17 @@ flowchart TD
 - fairness FreeRTOS + lwIP при длинных FS/OTA циклах;
 - отсутствие пересечения flash-операций с логикой выполнения программ.
 
-## 2) Public vs internal (границы заголовков)
+## 2) Публичное и внутреннее (границы заголовков)
 
 Правило: **публичная поверхность модуля — только `include/<domain>/*.h`.**
 
-### Public headers (`include/**`)
+### Публичные заголовки (`include/**`)
 Должны:
 - описывать контракт модуля: что гарантирует, что требует, какие инварианты;
 - по возможности избегать “тяжёлых” include’ов (forward declarations, перенос реализации в `.cpp`);
 - не включать “внутренние” заголовки других подсистем.
 
-### Internal headers (`src/<domain>/internal/**`)
+### Внутренние заголовки (`src/<domain>/internal/**`)
 - являются частью реализации;
 - **не включаются вне `src/<domain>/**`**;
 - могут включать тяжёлые зависимости и детали, необходимые только реализации.
@@ -59,9 +59,9 @@ flowchart TD
 
 ## 3) Политика работы с памятью (ESP32-C3)
 
-Предсказуемый RAM-профиль важен (OTA `Update.begin`, SoftAP+SSE+GSM; ~170 KB free heap after boot).
+Предсказуемый профиль RAM важен (OTA `Update.begin`, SoftAP+SSE+GSM; около 170 КБ свободной кучи после загрузки).
 
-### Heap churn / `String`
+### Оборот кучи / `String`
 `String` допускается только там, где API Arduino/ESPAsyncWebServer принуждает к этому.
 
 Запрещено:
@@ -82,7 +82,7 @@ flowchart TD
 - Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`).
 - MQTT: топики `online`/`state`/`programs`/`hwMap`/`trigMap`/`cmd`/`reply`; payload статуса ≤900; кадр ≤ `MQTT_CIPSEND_MAX` (1400), слот `TX_MAX` 3072. Birth: каталоги → full retained `state` → `online=true`. Период = full retain; край = delta. Норматив — `docs/modules/mqtt.md`.
 
-## 3.0) MQTT contract (топики, сообщения, доставка)
+## 3.0) Контракт MQTT (топики, сообщения, доставка)
 MQTT чувствителен к стабильности цикла (SIM800 + SoftAP).
 
 Фиксируем контракт:
@@ -103,7 +103,7 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
 - должны содержать “time slicing”: `Core::cooperate()` / `espHalFeedWdt()` (= `yield()`);
 - не должны вызываться из enter/exit режимов без явного разбиения по времени.
 
-## 3.3) Memory lifecycle contract по режимам
+## 3.3) Контракт жизни памяти по режимам
 
 Контракт по памяти между `Core`, `WebServer`, `CellularCore` и `ModeManager`:
 
@@ -115,7 +115,7 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
   - пакет льётся стримом в `Update` + FS tail, без полного `/update.bin` на LittleFS;
   - после успешного `streamFinish` — reboot.
 
-Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удалены** (ESP32-C3).
+Символы до OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удалены** (ESP32-C3).
 
 Полевой baseline: [`HARDWARE.md`](HARDWARE.md). Детали stream OTA: [`modules/ota.md`](modules/ota.md).
 
@@ -130,7 +130,7 @@ Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удале
 
 Правило: в hot-path не добавляем новую динамику (`String`, большие временные JSON, malloc/free).
 
-## 3.2) Cellular (SIM800): AT/transport/logging contracts
+## 3.2) Сотовая связь (SIM800): контракты AT, транспорта и журнала
 
 Поведение `begin()`/`INIT` описано в [`modules/gsm.md`](modules/gsm.md); константы — только из `namespace Gsm` в `Constants.h`.
 
@@ -138,12 +138,12 @@ Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удале
 - **Все AT-команды должны идти через `AtSession` + `ModemUart`**.
 - Причина: единый контроль таймаутов/очередей + WDT-safety (yield/time slicing).
 
-### SIM800 TCP transport (RX/TX)
+### Транспорт TCP SIM800 (RX/TX)
 - Connect/Close управляются URC (`CONNECT OK`, `CLOSED`, `SEND OK/FAIL`).
 - RX стратегия по умолчанию: **push `+IPD`** (`AT+CIPRXGET=0`).
 - Важно: payload `+IPD` — бинарный, line-framing должен быть отключён (`dataMode`) на время приёма payload.
 
-### Recovery levels (предсказуемость)
+### Уровни восстановления (предсказуемость)
 При сбоях связь восстанавливаем по уровням (от дешёвого к дорогому):
 - L1: restart GSM FSM (`begin` после cooldown)
 - L2: reset IP stack: `CIPSHUT`
@@ -151,12 +151,12 @@ Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удале
 - L4: modem reset: `CFUN=1,1` (+ сброс sticky UART verify)
 - На READY отдельно: TCP reconnect / reattach с backoff (MQTT + `handleReady`)
 
-### SSE logs: backpressure policy
+### Журнал SSE: политика обратного давления
 - При активной UI-сессии возможен log-storm (GSM churn + transport polling).
 - Политика: **лучше дропать логи через soft/OTA SSE queue gates**, чем блокировать loop.
   Встроенного token-bucket throttle в `Logger` больше нет — gate на стороне `WebServer`.
 
-## 3.4) Decision gate: замена сетевого стека
+## 3.4) Порог решения: замена сетевого стека
 
 Полная замена `ESPAsyncWebServer` не делается “по умолчанию” при первом OOM.
 
@@ -176,7 +176,7 @@ Pre-OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удале
 - централизованный учёт ошибок и атомарность;
 - единая политика deferred операций (чтобы не пересекать flash с выполнением программы).
 
-`FsManager::gc()` на ESP32 Arduino **не компактирует** том: reclaim известных orphan temp + refresh free-space. После вызова всегда проверяйте `getFreeSpace()`.
+`FsManager::gc()` на ESP32 Arduino **не уплотняет** том: освобождение известных осиротевших temp и обновление свободного места. После вызова всегда проверяйте `getFreeSpace()`.
 
 ## 5) Комментарии (стиль “осмысленной документации”)
 

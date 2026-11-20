@@ -127,9 +127,8 @@
           "maximum": 30
         },
         "starter_relay_id": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 65535
+          "type": "string",
+          "pattern": "^K[1-5]$"
         },
         "start_method": {
           "type": "string",
@@ -140,9 +139,8 @@
           ]
         },
         "start_input_id": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 65535
+          "type": "string",
+          "pattern": "^(?:|IN[1-3])$"
         },
         "starter_crank_time_sec": {
           "type": "number",
@@ -160,9 +158,8 @@
           "maximum": 5
         },
         "start_block_input_id": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 65535
+          "type": "string",
+          "pattern": "^(?:|IN[1-3])$"
         },
         "engine_detection_source": {
           "type": "string",
@@ -172,9 +169,8 @@
           ]
         },
         "engine_input_id": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 65535
+          "type": "string",
+          "pattern": "^IN[1-3]$"
         }
       }
     },
@@ -187,9 +183,8 @@
         "additionalProperties": false,
         "properties": {
           "id": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535
+            "type": "string",
+            "pattern": "^T[1-3]$"
           },
           "rom": {
             "type": "string",
@@ -215,9 +210,8 @@
         "additionalProperties": false,
         "properties": {
           "id": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535
+            "type": "string",
+            "pattern": "^IN[1-3]$"
           },
           "enabled": {
             "type": "boolean"
@@ -255,6 +249,25 @@
         }
       }
     },
+    "relays": {
+      "type": "array",
+      "default": [],
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^K[1-5]$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 15
+          }
+        }
+      }
+    },
     "input_triggers": {
       "type": "array",
       "default": [],
@@ -271,9 +284,8 @@
             "type": "boolean"
           },
           "input_id": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535
+            "type": "string",
+            "pattern": "^(?:|IN[1-3])$"
           },
           "trigger_level": {
             "type": "integer",
@@ -306,9 +318,8 @@
             "type": "boolean"
           },
           "sensor_id": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535
+            "type": "string",
+            "pattern": "^(?:|T[1-3])$"
           },
           "sensor_name": {
             "type": "string",
@@ -340,9 +351,8 @@
           "type": "boolean"
         },
         "sensor_id": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 65535
+          "type": "string",
+          "pattern": "^(?:|T[1-3])$"
         },
         "sensor_name": {
           "type": "string",

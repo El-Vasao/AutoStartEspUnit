@@ -22,22 +22,22 @@ static void test_format_rom_null_and_small_buffer() {
     char small[6];
     formatSensorRomString(kRom, small, sizeof(small));
     TEST_ASSERT_EQUAL_STRING("28:FF", small);
-    formatSensorRomString(kRom, nullptr, 0);  // must not crash
+    formatSensorRomString(kRom, nullptr, 0);  // не должен падать
 }
 
 static void test_resolve_matches_configured_rom() {
     BaseConfig cfg{};
-    cfg.sensors[1].id = 7;
+    cfg.sensors[1].id = 2; // T2
     strcpy(cfg.sensors[1].rom, "28:FF:4A:01:02:03:04:B7");
-    TEST_ASSERT_EQUAL_UINT16(7, resolveSensorConfigId(kRom, cfg));
+    TEST_ASSERT_EQUAL_UINT8(2, resolveSensorConfigId(kRom, cfg));
 }
 
 static void test_resolve_skips_unmapped_and_zero_ids() {
     BaseConfig cfg{};
-    strcpy(cfg.sensors[0].rom, "28:FF:4A:01:02:03:04:B7");  // id 0: not mapped
-    cfg.sensors[1].id = 3;                                   // id without ROM
-    TEST_ASSERT_EQUAL_UINT16(0, resolveSensorConfigId(kRom, cfg));
-    TEST_ASSERT_EQUAL_UINT16(0, resolveSensorConfigId(nullptr, cfg));
+    strcpy(cfg.sensors[0].rom, "28:FF:4A:01:02:03:04:B7");  // id 0: не сопоставлен
+    cfg.sensors[1].id = 3;                                   // id без ROM
+    TEST_ASSERT_EQUAL_UINT8(0, resolveSensorConfigId(kRom, cfg));
+    TEST_ASSERT_EQUAL_UINT8(0, resolveSensorConfigId(nullptr, cfg));
 }
 
 int main(int, char**) {

@@ -113,8 +113,14 @@ public:
     // Важно: healthCheck — это “периодическая страховка” после неожиданных ребутов во время записи.
     bool healthCheck();
 
-    // Получить свободное место (байт)
+    // Получить свободное место (байт). Ходит в LittleFS — только с цикла.
     size_t getFreeSpace();
+
+    /// total−used из последнего снимка, без LittleFS. Можно из задачи async.
+    size_t cachedFreeSpace() const {
+        if (!initialized || fsInfo.totalBytes < fsInfo.usedBytes) return 0;
+        return fsInfo.totalBytes - fsInfo.usedBytes;
+    }
 
     // Статистика
     void printStats();

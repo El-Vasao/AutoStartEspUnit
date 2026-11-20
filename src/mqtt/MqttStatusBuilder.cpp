@@ -1,5 +1,6 @@
 #include "mqtt/MqttStatusBuilder.h"
 
+#include "common/ChannelSilk.h"
 #include "common/Constants.h"
 #include "common/JsonEscape.h"
 #include "common/Pins.h"
@@ -164,9 +165,8 @@ void printInputsByIdFull(Print& p, const StatusSnapshot& s) {
     bool ik = false;
     for (int i = 0; i < HardwareLimits::INPUTS; i++) {
         comma(p, &ik);
-        char kb[16];
-        snprintf(kb, sizeof kb, "\"%u\":", (unsigned)Pin::INPUT_IDS[i]);
-        p.print(kb);
+        ChannelSilk::printJsonKey(p, ChannelSilk::numberFromSlot(static_cast<uint8_t>(i), ChannelSilk::Kind::Input),
+                                  ChannelSilk::Kind::Input);
         p.print(s.inputState[i] ? "true" : "false");
     }
     p.print('}');
@@ -177,9 +177,8 @@ void printRelaysByIdFull(Print& p, const StatusSnapshot& s) {
     bool rk = false;
     for (int i = 0; i < HardwareLimits::RELAYS; i++) {
         comma(p, &rk);
-        char keybuf[16];
-        snprintf(keybuf, sizeof keybuf, "\"%u\":", (unsigned)Pin::RELAY_IDS[i]);
-        p.print(keybuf);
+        ChannelSilk::printJsonKey(p, ChannelSilk::numberFromSlot(static_cast<uint8_t>(i), ChannelSilk::Kind::Relay),
+                                  ChannelSilk::Kind::Relay);
         p.print(s.relayState[i] ? "true" : "false");
     }
     p.print('}');
@@ -191,9 +190,7 @@ void printTempSensorsByIdFull(Print& p, const StatusSnapshot& s) {
     for (int i = 0; i < HardwareLimits::SENSORS; i++) {
         if (!s.tempSensors[i].id) continue;
         comma(p, &sk);
-        char keybuf[16];
-        snprintf(keybuf, sizeof keybuf, "\"%u\":", (unsigned)s.tempSensors[i].id);
-        p.print(keybuf);
+        ChannelSilk::printJsonKey(p, s.tempSensors[i].id, ChannelSilk::Kind::Sensor);
         printTempSensorObject(p, s.tempSensors[i]);
     }
     p.print('}');
@@ -435,9 +432,8 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
             for (int i = 0; i < HardwareLimits::INPUTS; i++) {
                 if (cur.inputState[i] == prev.inputState[i]) continue;
                 comma(p, &ik);
-                char kb[16];
-                snprintf(kb, sizeof kb, "\"%u\":", (unsigned)Pin::INPUT_IDS[i]);
-                p.print(kb);
+                ChannelSilk::printJsonKey(p, ChannelSilk::numberFromSlot(static_cast<uint8_t>(i), ChannelSilk::Kind::Input),
+                                          ChannelSilk::Kind::Input);
                 p.print(cur.inputState[i] ? "true" : "false");
             }
             p.print('}');
@@ -449,9 +445,8 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
             for (int i = 0; i < HardwareLimits::RELAYS; i++) {
                 if (cur.relayState[i] == prev.relayState[i]) continue;
                 comma(p, &rk);
-                char keybuf[16];
-                snprintf(keybuf, sizeof keybuf, "\"%u\":", (unsigned)Pin::RELAY_IDS[i]);
-                p.print(keybuf);
+                ChannelSilk::printJsonKey(p, ChannelSilk::numberFromSlot(static_cast<uint8_t>(i), ChannelSilk::Kind::Relay),
+                                          ChannelSilk::Kind::Relay);
                 p.print(cur.relayState[i] ? "true" : "false");
             }
             p.print('}');
@@ -466,9 +461,7 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
                     continue;
                 if (!cur.tempSensors[i].id) continue;
                 comma(p, &sk);
-                char keybuf[16];
-                snprintf(keybuf, sizeof keybuf, "\"%u\":", (unsigned)cur.tempSensors[i].id);
-                p.print(keybuf);
+                ChannelSilk::printJsonKey(p, cur.tempSensors[i].id, ChannelSilk::Kind::Sensor);
                 printTempSensorObject(p, cur.tempSensors[i]);
             }
             p.print('}');

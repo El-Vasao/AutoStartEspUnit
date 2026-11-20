@@ -1,5 +1,5 @@
-// Loads browser IIFE modules from data/ into an isolated vm context that acts as `window`.
-// No npm dependencies: node:vm + node:fs only.
+// Грузит браузерные IIFE-модули из data/ в изолированный контекст vm, который играет роль `window`.
+// Без зависимостей npm: только node:vm и node:fs.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,8 +28,8 @@ function memoryStorage() {
 }
 
 /**
- * Creates a fresh browser-like global. `stores` pre-registers Alpine stores by name.
- * Returns { window, Alpine, load(relPathUnderData), APP }.
+ * Новый глобальный объект, похожий на браузер. `stores` заранее регистрирует сторы Alpine по имени.
+ * Возвращает { window, Alpine, load(relPathUnderData), APP }.
  */
 export function createBrowserEnv({ stores = {}, search = '' } = {}) {
   const storeMap = new Map(Object.entries(stores));
@@ -98,20 +98,20 @@ export function createBrowserEnv({ stores = {}, search = '' } = {}) {
     window: win,
     Alpine,
     get APP() { return win.APP; },
-    /** Runs a script from data/ (e.g. 'js/app/coerce.js') in this context. */
+    /** Выполняет скрипт из data/ (например, 'js/app/coerce.js') в этом контексте. */
     load(relPath) {
       const code = readFileSync(path.join(dataDir, relPath), 'utf8');
       vm.runInContext(code, win, { filename: relPath });
       return win.APP;
     },
-    /** Runs arbitrary code in this context (e.g. a vendored library). */
+    /** Выполняет произвольный код в этом контексте (например, постороннюю библиотеку). */
     run(code, filename = 'inline.js') {
       return vm.runInContext(code, win, { filename });
     },
   };
 }
 
-/** Values created inside the vm have foreign prototypes; normalize before deepStrictEqual. */
+/** Значения из vm имеют чужие прототипы; нормализовать перед deepStrictEqual. */
 export function plain(v) {
   return v === undefined ? undefined : JSON.parse(JSON.stringify(v));
 }

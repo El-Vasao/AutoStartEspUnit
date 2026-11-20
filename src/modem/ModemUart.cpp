@@ -99,7 +99,7 @@ void ModemUart::pollRx() {
         // Приглашение CIPSEND приходит без CRLF — ясно писать в лог и не копить (иначе
         // к '>' прилипнут эхо TX / двоичное и наружу выйдут мусорные «строки»).
         if (c == '>' && _lineLen == 0) {
-            logger.log(LogModule::AT, "<< CIPSEND prompt\n");
+            logger.log(LogModule::AT, "<< приглашение CIPSEND\n");
             if ((++n & 0x3F) == 0) {
                 yield();
             }

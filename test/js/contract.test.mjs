@@ -1,4 +1,4 @@
-// Contract tests: data/ (UI schemas, validation schemas, endpoints) must match the firmware sources.
+// Контрактные тесты: data/ (схемы UI, схемы валидации, эндпоинты) должны совпадать с исходниками прошивки.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
@@ -17,7 +17,7 @@ function createAjv() {
   env.run(readProjectFile('data/js/ajv2020.min.js'), 'ajv2020.min.js');
   const Ajv2020 = env.window.ajv2020;
   assert.equal(typeof Ajv2020, 'function', 'window.ajv2020 missing after loading the bundle');
-  // Same options as data/js/app/stores/settings-validator-store.js.
+  // Те же параметры, что в data/js/app/stores/settings-validator-store.js.
   return new Ajv2020({ allErrors: true, strict: true, allowUnionTypes: true });
 }
 
@@ -145,7 +145,7 @@ test('program editor action params are declared and fit program.schema.json', ()
 
 function firmwareRoutes() {
   const dir = path.join(projectRoot, 'src', 'web');
-  const routes = new Set(['/events']);  // AsyncEventSource events("/events") in WebServer.h
+  const routes = new Set(['/events']);  // AsyncEventSource events("/events") в WebServer.h
   for (const f of readdirSync(dir)) {
     if (!f.endsWith('.cpp')) continue;
     const src = readProjectFile('src/web/' + f);

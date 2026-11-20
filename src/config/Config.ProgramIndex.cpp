@@ -74,7 +74,7 @@ bool Config::ensureProgramIndex() {
     bool inIndex[256] = { false };
     size_t filesCount = 0;
 
-    logger.log(LogModule::Config, "ensureProgramIndex: scanning /programs\n");
+    logger.log(LogModule::Config, "ensureProgramIndex: обход /programs\n");
     File root = fileSystem.openDir("/programs");
     if (root) {
         File entry = root.openNextFile();
@@ -131,7 +131,7 @@ bool Config::ensureProgramIndex() {
     {
         size_t n = 0;
         if (!loadRowsFromIndexFile(rows, Limits::MAX_PROGRAMS, &n)) {
-            logger.log(LogModule::Config, "ensureProgramIndex: no valid index, rebuilding after releasing JSON pool\n");
+            logger.log(LogModule::Config, "ensureProgramIndex: нет годного индекса, пересборка после освобождения пула JSON\n");
             mismatch = true;
         } else {
             mismatch = false;
@@ -163,25 +163,25 @@ bool Config::ensureProgramIndex() {
     }
 
     if (mismatch) {
-        logger.log(LogModule::Config, "ensureProgramIndex: mismatch detected (files=%u, index=%u), rebuilding...\n",
+        logger.log(LogModule::Config, "ensureProgramIndex: расхождение (файлы=%u, индекс=%u), пересборка...\n",
                    (unsigned)filesCount, (unsigned)indexCount);
         return rebuildProgramIndex();
     }
 
     refreshProgramsRevFromRows_(rows, indexCount);
-    logger.log(LogModule::Config, "ensureProgramIndex: OK (files=%u index=%u)\n",
+    logger.log(LogModule::Config, "ensureProgramIndex: успех (файлы=%u индекс=%u)\n",
                (unsigned)filesCount, (unsigned)indexCount);
     return true;
 }
 
 bool Config::rebuildProgramIndex() {
-    logger.log(LogModule::Config, "rebuildProgramIndex: building /programs/index.json\n");
+    logger.log(LogModule::Config, "rebuildProgramIndex: сборка /programs/index.json\n");
     if (!ensureProgramsDir()) return false;
 
     program_json::IndexRow items[Limits::MAX_PROGRAMS]{};
     size_t count = 0;
 
-    logger.log(LogModule::Config, "rebuildProgramIndex: scanning /programs\n");
+    logger.log(LogModule::Config, "rebuildProgramIndex: обход /programs\n");
     espHalFeedWdt();
     File root = fileSystem.openDir("/programs");
     if (root) {
@@ -235,20 +235,20 @@ bool Config::rebuildProgramIndex() {
             const bool okHdr = program_json::parseProgramHeaderFile(entry, id, &rid, name, sizeof name);
             entry.close();
             if (!okHdr) {
-                logger.log(LogModule::Config, "rebuildProgramIndex: skip %s (header parse)\n", fns);
+                logger.log(LogModule::Config, "rebuildProgramIndex: пропуск %s (разбор заголовка)\n", fns);
                 entry = root.openNextFile();
                 continue;
             }
             const uint8_t realId = rid ? rid : id;
             if (realId != id) {
-                logger.log(LogModule::Config, "rebuildProgramIndex: skip %s (id mismatch %u!=%u)\n",
+                logger.log(LogModule::Config, "rebuildProgramIndex: пропуск %s (id не совпал %u!=%u)\n",
                            fns, (unsigned)realId, (unsigned)id);
                 entry = root.openNextFile();
                 continue;
             }
 
             if (count >= Limits::MAX_PROGRAMS) {
-                logger.log(LogModule::Config, "rebuildProgramIndex: too many programs\n");
+                logger.log(LogModule::Config, "rebuildProgramIndex: слишком много программ\n");
                 break;
             }
             items[count].id = id;
@@ -283,6 +283,6 @@ bool Config::rebuildProgramIndex() {
     const bool wrote =
         fileSystem.writeJsonAtomicStream("/programs/index.json", encodeProgramIndexArray, &ctx, Limits::CONFIG_JSON_SIZE);
     if (wrote) refreshProgramsRevFromRows_(items, count);
-    logger.log(LogModule::Config, "rebuildProgramIndex: %s (%u items)\n", wrote ? "OK" : "FAILED", (unsigned)count);
+    logger.log(LogModule::Config, "rebuildProgramIndex: %s (элементов: %u)\n", wrote ? "успех" : "сбой", (unsigned)count);
     return wrote;
 }

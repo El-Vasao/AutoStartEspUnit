@@ -20,7 +20,7 @@ static void test_bool_tokens() {
 static void test_u32_accepts_only_whole_unsigned_decimals() {
     TEST_ASSERT_EQUAL_UINT32(0, parseU32("0", 7));
     TEST_ASSERT_EQUAL_UINT32(4294967295UL, parseU32("4294967295", 7));
-    TEST_ASSERT_EQUAL_UINT32(7, parseU32("4294967296", 7));  // overflow
+    TEST_ASSERT_EQUAL_UINT32(7, parseU32("4294967296", 7));  // переполнение
     TEST_ASSERT_EQUAL_UINT32(7, parseU32("-1", 7));
     TEST_ASSERT_EQUAL_UINT32(7, parseU32(" 5", 7));
     TEST_ASSERT_EQUAL_UINT32(7, parseU32("5x", 7));

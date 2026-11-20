@@ -5,6 +5,7 @@
 #include "json/JsonParseFile.h"
 #include "JsonListener.h"
 #include "program/ProgramAction.h"
+#include "common/ChannelSilk.h"
 #include "common/Constants.h"
 #include "common/JsonEscape.h"
 
@@ -18,9 +19,15 @@ namespace {
 
 bool streq(const char* a, const char* b) { return a && b && strcmp(a, b) == 0; }
 
-
-
-
+bool parseSilkOrFail(const char* v, ChannelSilk::Kind kind, uint8_t* out, bool* failed) {
+    uint8_t n = ChannelSilk::NONE;
+    if (!ChannelSilk::parse(v, kind, &n)) {
+        if (failed) *failed = true;
+        return false;
+    }
+    *out = n;
+    return true;
+}
 
 inline void comma(Print& p, bool* needComma) {
     if (*needComma) p.print(',');
@@ -459,9 +466,11 @@ public:
     void onStepValue(const char* v) {
         if (streq(pending_, "step")) cur_.step = json_scalar::parseU8(v, 0);
         else if (streq(pending_, "action")) strlcpy(cur_.action, v ? v : "", sizeof cur_.action);
-        else if (streq(pending_, "relay_id")) cur_.relay_id = json_scalar::parseU16(v, 0);
+        else if (streq(pending_, "relay_id"))
+            parseSilkOrFail(v, ChannelSilk::Kind::Relay, &cur_.relay_id, &failed_);
         else if (streq(pending_, "ms")) cur_.ms = json_scalar::parseU32(v, 0);
-        else if (streq(pending_, "input_id")) cur_.input_id = json_scalar::parseU16(v, 0);
+        else if (streq(pending_, "input_id"))
+            parseSilkOrFail(v, ChannelSilk::Kind::Input, &cur_.input_id, &failed_);
         else if (streq(pending_, "input_trigger_id")) cur_.input_trigger_id = json_scalar::parseU16(v, 0);
         else if (streq(pending_, "temp_trigger_id")) cur_.temp_trigger_id = json_scalar::parseU16(v, 0);
         else if (streq(pending_, "message")) strlcpy(cur_.message, v ? v : "", sizeof cur_.message);
@@ -517,9 +526,11 @@ public:
     }
     void onStepValue(const char* v) {
         if (streq(pending_, "action")) cur_.action = actionIdFromString(v);
-        else if (streq(pending_, "relay_id")) cur_.relay_id = json_scalar::parseU16(v, 0);
+        else if (streq(pending_, "relay_id"))
+            parseSilkOrFail(v, ChannelSilk::Kind::Relay, &cur_.relay_id, &failed_);
         else if (streq(pending_, "ms")) cur_.ms = json_scalar::parseU32(v, 0);
-        else if (streq(pending_, "input_id")) cur_.input_id = json_scalar::parseU16(v, 0);
+        else if (streq(pending_, "input_id"))
+            parseSilkOrFail(v, ChannelSilk::Kind::Input, &cur_.input_id, &failed_);
         else if (streq(pending_, "input_trigger_id")) cur_.input_trigger_id = json_scalar::parseU16(v, 0);
         else if (streq(pending_, "temp_trigger_id")) cur_.temp_trigger_id = json_scalar::parseU16(v, 0);
         else if (streq(pending_, "message")) strlcpy(cur_.message, v ? v : "", sizeof cur_.message);
@@ -558,10 +569,16 @@ void emitProgramBody(const Program& p, Print& pout) {
         comma(pout, &sc), pout.print("\"step\":"), pout.print(s.step);
         comma(pout, &sc), pout.print("\"action\":"), json_escape::writeQuoted(pout, s.action);
         if (strncmp(s.action, "RELAY_", 6) == 0) {
-            if (s.relay_id) comma(pout, &sc), pout.print("\"relay_id\":"), pout.print(s.relay_id);
+            if (s.relay_id) {
+                comma(pout, &sc), pout.print("\"relay_id\":");
+                ChannelSilk::printQuotedId(pout, s.relay_id, ChannelSilk::Kind::Relay);
+            }
         }
         if (s.ms) comma(pout, &sc), pout.print("\"ms\":"), pout.print(s.ms);
-        if (s.input_id != 0) comma(pout, &sc), pout.print("\"input_id\":"), pout.print(s.input_id);
+        if (s.input_id != 0) {
+            comma(pout, &sc), pout.print("\"input_id\":");
+            ChannelSilk::printQuotedId(pout, s.input_id, ChannelSilk::Kind::Input);
+        }
         if (s.input_trigger_id != 0) comma(pout, &sc), pout.print("\"input_trigger_id\":"), pout.print(s.input_trigger_id);
         if (s.temp_trigger_id != 0) comma(pout, &sc), pout.print("\"temp_trigger_id\":"), pout.print(s.temp_trigger_id);
         if (s.message[0] != '\0') comma(pout, &sc), pout.print("\"message\":"), json_escape::writeQuoted(pout, s.message);

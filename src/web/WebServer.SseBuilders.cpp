@@ -6,6 +6,7 @@
 
 #include "config/Config.h"
 #include "config/SensorRomResolve.h"
+#include "common/ChannelSilk.h"
 #include "common/Pins.h"
 #include "common/Utils.h"
 #include "core/ErrorManager.h"
@@ -29,9 +30,8 @@ void emitRelayInputTempVoltageMaps(Print& p, bool* needComma, const SseStatusPor
         bool rk = false;
         for (int i = 0; i < HardwareLimits::RELAYS; i++) {
             commaOut(p, &rk);
-            char kb[16];
-            snprintf(kb, sizeof kb, "\"%u\":", (unsigned)Pin::RELAY_IDS[i]);
-            p.print(kb);
+            ChannelSilk::printJsonKey(p, ChannelSilk::numberFromSlot(static_cast<uint8_t>(i), ChannelSilk::Kind::Relay),
+                                      ChannelSilk::Kind::Relay);
             p.print(st.relay->getState(i) ? "true" : "false");
         }
     }
@@ -43,9 +43,8 @@ void emitRelayInputTempVoltageMaps(Print& p, bool* needComma, const SseStatusPor
         bool fk = false;
         for (int i = 0; i < HardwareLimits::INPUTS; i++) {
             commaOut(p, &fk);
-            char kb[16];
-            snprintf(kb, sizeof kb, "\"%u\":", (unsigned)Pin::INPUT_IDS[i]);
-            p.print(kb);
+            ChannelSilk::printJsonKey(p, ChannelSilk::numberFromSlot(static_cast<uint8_t>(i), ChannelSilk::Kind::Input),
+                                      ChannelSilk::Kind::Input);
             p.print(st.inputs->getState(i) ? "true" : "false");
         }
     }
@@ -57,9 +56,8 @@ void emitRelayInputTempVoltageMaps(Print& p, bool* needComma, const SseStatusPor
         bool fk = false;
         for (int i = 0; i < HardwareLimits::INPUTS; i++) {
             commaOut(p, &fk);
-            char kb[16];
-            snprintf(kb, sizeof kb, "\"%u\":", (unsigned)Pin::INPUT_IDS[i]);
-            p.print(kb);
+            ChannelSilk::printJsonKey(p, ChannelSilk::numberFromSlot(static_cast<uint8_t>(i), ChannelSilk::Kind::Input),
+                                      ChannelSilk::Kind::Input);
             if (st.inputs->isCounter(i)) {
                 p.print(st.inputs->getFrequency(i));
             } else {
@@ -75,9 +73,8 @@ void emitRelayInputTempVoltageMaps(Print& p, bool* needComma, const SseStatusPor
         bool fk = false;
         for (int i = 0; i < HardwareLimits::INPUTS; i++) {
             commaOut(p, &fk);
-            char kb[16];
-            snprintf(kb, sizeof kb, "\"%u\":", (unsigned)Pin::INPUT_IDS[i]);
-            p.print(kb);
+            ChannelSilk::printJsonKey(p, ChannelSilk::numberFromSlot(static_cast<uint8_t>(i), ChannelSilk::Kind::Input),
+                                      ChannelSilk::Kind::Input);
             p.print(st.inputs->isRuntimeEnabled(i) ? "true" : "false");
         }
     }
@@ -90,12 +87,12 @@ void emitRelayInputTempVoltageMaps(Print& p, bool* needComma, const SseStatusPor
         p.print('{');
         bool tc = false;
 
-        uint16_t sid = resolveSensorConfigId(st.sensors->getSensorAddress(i), config.getBase());
+        const uint8_t sid = resolveSensorConfigId(st.sensors->getSensorAddress(i), config.getBase());
 
         commaOut(p, &tc);
         p.print("\"id\":");
         if (sid)
-            p.print(sid);
+            ChannelSilk::printQuotedId(p, sid, ChannelSilk::Kind::Sensor);
         else
             p.print("null");
 

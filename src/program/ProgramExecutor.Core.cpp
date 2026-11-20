@@ -56,7 +56,7 @@ uint32_t ProgramExecutor::getTimerRemainingMs() const {
 
 bool ProgramExecutor::start(uint8_t programId) {
     if (isInStarterStep()) {
-        logger.log(LogModule::ProgramExecutor, "Start of program %u rejected: engine start in progress (program %u)\n",
+        logger.log(LogModule::ProgramExecutor, "старт программы %u отклонён: идёт запуск двигателя (программа %u)\n",
                    (unsigned)programId, (unsigned)_programId);
         return false;
     }
@@ -68,20 +68,20 @@ bool ProgramExecutor::start(uint8_t programId) {
     _localStepCount = 0;
     if (!config.loadProgramCompiled(programId, _localSteps, Limits::MAX_STEPS_PER_PROGRAM,
                                     &_localStepCount, _currentProgramName, sizeof(_currentProgramName))) {
-        logger.log(LogModule::ProgramExecutor, "Program %u not found or invalid\n", programId);
+        logger.log(LogModule::ProgramExecutor, "программа %u не найдена или неверна\n", programId);
         _localActions = nullptr;
         _localSteps = nullptr;
         _localStepCount = 0;
         return false;
     }
     if (_localStepCount == 0) {
-        logger.log(LogModule::ProgramExecutor, "Program %u is empty\n", programId);
+        logger.log(LogModule::ProgramExecutor, "программа %u пуста\n", programId);
         _localActions = nullptr;
         _localSteps = nullptr;
         return false;
     }
     const auto& base = config.getBase();
-    const uint16_t starterRelayId = base.vehicle.starter_relay_id;
+    const uint8_t starterRelayId = base.vehicle.starter_relay_id;
     uint16_t inTrigIds[Limits::MAX_TRIGGERS];
     uint16_t tempTrigIds[Limits::MAX_TRIGGERS];
     uint8_t nInTrig = 0;
@@ -93,8 +93,8 @@ bool ProgramExecutor::start(uint8_t programId) {
         tempTrigIds[nTempTrig++] = base.temperature_triggers[i].id;
     }
     const program_validate::ChannelTables tables{
-        {Pin::RELAY_IDS, HardwareLimits::RELAYS},
-        {Pin::INPUT_IDS, HardwareLimits::INPUTS},
+        HardwareLimits::RELAYS,
+        HardwareLimits::INPUTS,
         {inTrigIds, nInTrig},
         {tempTrigIds, nTempTrig},
     };
@@ -105,7 +105,7 @@ bool ProgramExecutor::start(uint8_t programId) {
         const program_validate::Issue issue =
             program_validate::checkStep(_localActions[i], ch, starterRelayId, tables);
         if (issue != program_validate::Issue::None) {
-            logger.log(LogModule::ProgramExecutor, "Program %u rejected: step %u %s\n", (unsigned)programId,
+            logger.log(LogModule::ProgramExecutor, "программа %u отклонена: шаг %u %s\n", (unsigned)programId,
                        (unsigned)(i + 1), program_validate::issueToString(issue));
             _localActions = nullptr;
             _localSteps = nullptr;
@@ -121,7 +121,7 @@ bool ProgramExecutor::start(uint8_t programId) {
     _rt.phase = 0;
     _rt.startedAtMs = 0;
 
-    logger.log(LogModule::ProgramExecutor, "Starting program %u: %s (steps=%u)\n",
+    logger.log(LogModule::ProgramExecutor, "старт программы %u: %s (шагов=%u)\n",
                programId, _currentProgramName, (unsigned)_localStepCount);
 
     const CompiledStep& firstStep = _localSteps[0];
@@ -135,7 +135,7 @@ void ProgramExecutor::stop() {
         core.getGSM().abortModemServiceEpoch();
     }
     if (_running) {
-        logger.log(LogModule::ProgramExecutor, "Stopping program id=%u name=%s at step=%u/%u\n",
+        logger.log(LogModule::ProgramExecutor, "остановка программы id=%u имя=%s на шаге=%u/%u\n",
                    (unsigned)_programId, _currentProgramName, (unsigned)_currentStep, (unsigned)_localStepCount);
         // stop() рвёт любой шаг с уже включённым реле, не только ENGINE_START — иначе цепь останется под током.
         // stop() может оборвать любой шаг, который уже включил реле, не только ENGINE_START.
@@ -157,7 +157,7 @@ void ProgramExecutor::nextStep() {
 }
 
 void ProgramExecutor::finish(bool ok) {
-    logger.log(LogModule::ProgramExecutor, "Program %s id=%u name=%s\n", ok ? "finished" : "stopped/failed",
+    logger.log(LogModule::ProgramExecutor, "программа %s id=%u имя=%s\n", ok ? "завершена" : "остановлена/сбой",
                (unsigned)_programId, _currentProgramName);
 
     const uint8_t pid = _programId;
@@ -186,14 +186,14 @@ void ProgramExecutor::firePendingLifecycle() {
 }
 
 void ProgramExecutor::abortWithError(const char* reason, ErrorCode code) {
-    logger.log(LogModule::ProgramExecutor, "⚠️ Program aborted: %s\n", reason ? reason : "-");
+    logger.log(LogModule::ProgramExecutor, "⚠️ программа прервана: %s\n", reason ? reason : "-");
     core.getRelay().allOff();
     finish(false);
     core.getErrorManager().set(code);
 }
 
 void ProgramExecutor::abortInvalidRef(const char* what, unsigned id) {
-    logger.log(LogModule::ProgramExecutor, "Invalid %s %u\n", what, id);
+    logger.log(LogModule::ProgramExecutor, "неверный %s %u\n", what, id);
     abortWithError("invalid channel reference", ErrorCode::PROGRAM_INVALID_REF);
 }
 

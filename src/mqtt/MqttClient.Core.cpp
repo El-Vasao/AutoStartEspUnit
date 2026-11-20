@@ -230,18 +230,17 @@ void MqttClient::begin() {
     c.cleanSession = true;
     _fsm.begin(c);
 
-    logger.log(LogModule::MqttClient, "begin keepAlive=%us proto=%s idLen=%u userLen=%u passLen=%u "
-               "online=%s state=%s cmd=%s reply=%s\n",
+    logger.log(LogModule::MqttClient, "начало keepAlive=%us proto=%s idLen=%u userLen=%u passLen=%u online=%s state=%s cmd=%s reply=%s\n",
                (unsigned)NetTiming::MQTT_KEEPALIVE_SEC,
                "3.1.1",
                (unsigned)strlen(_mqttClientId),
                (unsigned)strlen(_mqttUser),
                (unsigned)strlen(_mqttPass),
                _topicOnline, _topicState, _topicCmd, _topicReply);
-    logger.logSerialOnly(LogModule::MqttClient, "cfg: user=%s prefix=%s\n", _mqttUser, mqttCfg.topic_prefix);
+    logger.logSerialOnly(LogModule::MqttClient, "конфиг: пользователь=%s префикс=%s\n", _mqttUser, mqttCfg.topic_prefix);
 
     if (!_reconnectEnabled) {
-        logger.log(LogModule::MqttClient, "begin(): reconnect disabled, skipping initial connect\n");
+        logger.log(LogModule::MqttClient, "begin(): переподключение выключено, первый connect пропущен\n");
     } else {
         _lastReconnectAttempt = millis();
         connect();
@@ -249,7 +248,7 @@ void MqttClient::begin() {
 }
 
 void MqttClient::onTransportRxOverflow() {
-    logger.log(LogModule::MqttClient, "transport RX overflow — forcing reconnect\n");
+    logger.log(LogModule::MqttClient, "переполнение RX транспорта — принудительный reconnect\n");
     _fsm.forceError("rx_overflow");
 }
 
@@ -346,7 +345,7 @@ void MqttClient::loop() {
                 _subscribeQueued = true;
                 _subWaitStartMs = millis();
                 _subackTimeoutLogged = false;
-                logger.log(LogModule::MqttClient, "Connected. subscribe=%s state=%s online=%s\n",
+                logger.log(LogModule::MqttClient, "подключено. подписка=%s state=%s online=%s\n",
                            _topicCmd, _topicState, _topicOnline);
             }
         }
@@ -380,7 +379,7 @@ void MqttClient::loop() {
         if (subTimedOut) {
             if (!_subackTimeoutLogged) {
                 _subackTimeoutLogged = true;
-                logger.log(LogModule::MqttClient, "SUBACK timeout %ums — retrying SUBSCRIBE\n",
+                logger.log(LogModule::MqttClient, "SUBACK таймаут %ums — повтор SUBSCRIBE\n",
                            (unsigned)kSubackTimeoutMs);
             }
             _fsm.requeueSubscribe();
@@ -550,7 +549,7 @@ bool MqttClient::publishOnline_(bool on) {
     const uint8_t* payload = on ? kTrue : kFalse;
     const uint16_t len = on ? 4u : 5u;
     if (!_fsm.publish(_topicOnline, payload, len, true, true)) return false;
-    logger.log(LogModule::MqttClient, "pub online %s\n", on ? "true" : "false");
+    logger.log(LogModule::MqttClient, "публ. online %s\n", on ? "true" : "false");
     return true;
 }
 
@@ -564,7 +563,7 @@ bool MqttClient::publishProgramsHash_() {
     }
     _programsCatalogDirty = false;
     _publishedProgramsRev = ctx.hash;
-    logger.log(LogModule::MqttClient, "pub programs hash bytes=%u\n", (unsigned)measured);
+    logger.log(LogModule::MqttClient, "публ. programs хэш байт=%u\n", (unsigned)measured);
     return true;
 }
 
@@ -578,7 +577,7 @@ bool MqttClient::publishHwMapHash_() {
     }
     _hwCatalogDirty = false;
     _publishedHwMapRev = ctx.hash;
-    logger.log(LogModule::MqttClient, "pub hwMap hash bytes=%u\n", (unsigned)measured);
+    logger.log(LogModule::MqttClient, "публ. hwMap хэш байт=%u\n", (unsigned)measured);
     return true;
 }
 
@@ -592,7 +591,7 @@ bool MqttClient::publishTrigMapHash_() {
     }
     _trigCatalogDirty = false;
     _publishedTrigMapRev = ctx.hash;
-    logger.log(LogModule::MqttClient, "pub trigMap hash bytes=%u\n", (unsigned)measured);
+    logger.log(LogModule::MqttClient, "публ. trigMap хэш байт=%u\n", (unsigned)measured);
     return true;
 }
 
@@ -606,7 +605,7 @@ bool MqttClient::publishProgramsBody_() {
     }
     _programsCatalogDirty = false;
     _publishedProgramsRev = config.programsRev();
-    logger.log(LogModule::MqttClient, "pub programs body bytes=%u\n", (unsigned)measured);
+    logger.log(LogModule::MqttClient, "публ. programs тело байт=%u\n", (unsigned)measured);
     return true;
 }
 
@@ -620,7 +619,7 @@ bool MqttClient::publishHwMapBody_() {
     }
     _hwCatalogDirty = false;
     _publishedHwMapRev = hwMapObjectFnv(config.getBase());
-    logger.log(LogModule::MqttClient, "pub hwMap body bytes=%u\n", (unsigned)measured);
+    logger.log(LogModule::MqttClient, "публ. hwMap тело байт=%u\n", (unsigned)measured);
     return true;
 }
 
@@ -634,12 +633,12 @@ bool MqttClient::publishTrigMapBody_() {
     }
     _trigCatalogDirty = false;
     _publishedTrigMapRev = trigMapObjectFnv(config.getBase());
-    logger.log(LogModule::MqttClient, "pub trigMap body bytes=%u\n", (unsigned)measured);
+    logger.log(LogModule::MqttClient, "публ. trigMap тело байт=%u\n", (unsigned)measured);
     return true;
 }
 
 void MqttClient::disconnect() {
-    logger.log(LogModule::MqttClient, "disconnect()\n");
+    logger.log(LogModule::MqttClient, "вызов disconnect()\n");
     abandonLastErrDelivery_();
     if (_fsm.isConnected() && _topicOnline[0]) {
         (void)publishOnline_(false);
@@ -659,7 +658,7 @@ void MqttClient::noteSessionErrorIfNeeded_() {
     if (_connectFailStreak < 255) _connectFailStreak++;
     const char* why = _fsm.lastErrorReason();
     if (why && why[0]) {
-        logger.log(LogModule::MqttClient, "session error=%s streak=%u\n", why, (unsigned)_connectFailStreak);
+        logger.log(LogModule::MqttClient, "ошибка сессии=%s серия=%u\n", why, (unsigned)_connectFailStreak);
     }
     core.getErrorManager().set(ErrorCode::MQTT_CONNECT_FAIL);
 }
@@ -672,14 +671,9 @@ void MqttClient::connect() {
     const auto& mqttCfg = config.getBase().mqtt;
     if (_fsm.state() == MqttFsmClient::State::Idle ||
         _fsm.state() == MqttFsmClient::State::Error) {
-        logger.log(LogModule::MqttClient, "connect() broker=%s:%u\n", mqttCfg.broker, (unsigned)mqttCfg.port);
+        logger.log(LogModule::MqttClient, "connect() брокер=%s:%u\n", mqttCfg.broker, (unsigned)mqttCfg.port);
     }
     _fsm.requestConnect();
-}
-
-void MqttClient::onPublishThunk(void* ctx, const char* topic, const uint8_t* payload, uint16_t len, bool retained) {
-    if (!ctx) return;
-    ((MqttClient*)ctx)->handlePublish(topic, payload, len, retained);
 }
 
 bool MqttClient::publishStatus(bool forceFull) {
@@ -728,14 +722,14 @@ bool MqttClient::publishStatus(bool forceFull) {
                                      JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, needFull /*retain*/, false,
                                      &measured, kind, 0)) {
         if (measured > JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES) {
-            logger.log(LogModule::MqttClient, "publishStatus: JSON too large (max %u, got %u)\n",
+            logger.log(LogModule::MqttClient, "publishStatus: JSON слишком велик (макс. %u, получено %u)\n",
                        (unsigned)JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, (unsigned)measured);
         }
         return false;
     }
     const uint32_t dt = millis() - t0;
     if (dt > kMqttPublishBudgetMs) {
-        logger.log(LogModule::MqttClient, "status publish slow (%u ms)\n", (unsigned)dt);
+        logger.log(LogModule::MqttClient, "публикация статуса медленная (%u мс)\n", (unsigned)dt);
     }
 
     _statusSeq = seq;
@@ -758,7 +752,7 @@ bool MqttClient::publishStatus(bool forceFull) {
     }
 
     // Здесь _lastPublished не двигать — ждать снятия Tele с очереди (путь SEND).
-    logger.log(LogModule::MqttClient, "pub state %s seq=%lu bytes=%u\n", needFull ? "full" : "delta",
+    logger.log(LogModule::MqttClient, "публ. state %s seq=%lu байт=%u\n", needFull ? "full" : "delta",
                (unsigned long)seq, (unsigned)measured);
     return true;
 }
@@ -788,7 +782,7 @@ void MqttClient::confirmLastErrDelivery_() {
 
 void MqttClient::abandonLastErrDelivery_() {
     if (!_lastErrAwaitConfirm) return;
-    logger.log(LogModule::MqttClient, "last_err delivery abandoned (session/tcp) — will retry\n");
+    logger.log(LogModule::MqttClient, "доставка last_err брошена (сессия/tcp) — будет повтор\n");
     _lastErrAwaitConfirm = false;
     _lastErrPendingCount = 0;
 }

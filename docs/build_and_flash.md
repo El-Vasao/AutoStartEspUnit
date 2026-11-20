@@ -1,3 +1,3 @@
-# Build, flash, LittleFS
+# Сборка и прошивка
 
-Moved to [`BUILD.md`](BUILD.md).
+Перенесено в [`BUILD.md`](BUILD.md).

@@ -41,12 +41,12 @@ DigitalInputs::DigitalInputs() {
 }
 
 int8_t DigitalInputs::findIndexById(uint16_t inputId) const {
-    // Id входов в конфиге всегда равны Pin::INPUT_IDS (это обеспечивает разбор конфига).
+    // inputId — номер шёлка 1…n (IN1…); слот = номер − 1.
     return HwMap::inputIndexById(inputId);
 }
 
 void DigitalInputs::begin() {
-    logger.log(LogModule::DigitalInputs, "begin\n");
+    logger.log(LogModule::DigitalInputs, "начало\n");
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
         const auto& cfg = config.getBase().inputs[i];
         uint8_t pin = inputs[i].pin;
@@ -68,13 +68,13 @@ void DigitalInputs::begin() {
         }
     }
 
-    logger.log(LogModule::DigitalInputs, "OK\n");
+    logger.log(LogModule::DigitalInputs, "успех\n");
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
         const auto& cfg = config.getBase().inputs[i];
         char fallback[TextBytes::Inputs::FALLBACK_NAME];
         snprintf(fallback, sizeof(fallback), "IN%u", (unsigned)(i + 1));
         const char* displayName = (cfg.name[0] != '\0') ? cfg.name : fallback;
-        logger.log(LogModule::DigitalInputs, "  Input %d: %s, type=%s, active_state=%s, runtime=%s\n", i+1, displayName,
+        logger.log(LogModule::DigitalInputs, "  вход %d: %s, тип=%s, active_state=%s, рантайм=%s\n", i+1, displayName,
                    cfg.type == InputType::DIGITAL ? "DIGITAL" : "PULSE_COUNTER",
                    cfg.active_state ? "HIGH" : "LOW",
                    _runtimeEnabled[i] ? "ON" : "OFF");
@@ -222,6 +222,6 @@ void DigitalInputs::setRuntimeEnabled(uint8_t index, bool en) {
         inputs[index].lastRawState = inputs[index].currentState;
         inputs[index].stable = true;
     }
-    logger.log(LogModule::DigitalInputs, "Input %d runtime %s\n", index+1, en ? "enabled" : "disabled");
+    logger.log(LogModule::DigitalInputs, "вход %d рантайм %s\n", index+1, en ? "включён" : "выключен");
 }
 

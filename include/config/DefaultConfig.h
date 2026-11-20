@@ -6,6 +6,7 @@
 // Дефолтный конфиг в формате JSON (сохранён в PROGMEM).
 // Должен проходить `data/validation/settings.schema.json` (проверяет test/js/contract.test.mjs),
 // иначе устройство уйдёт в EMERGENCY_AP.
+// Публичные id каналов — шёлк K/IN/T с единицы; имена подписей пустые.
 static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
   "setup_required": true,
   "wifi": {
@@ -36,24 +37,24 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "wait_after_start_sec": 10,
     "engine_running_voltage_threshold": 13.2,
     "engine_stopped_voltage_threshold": 12.8,
-    "starter_relay_id": 2002,
+    "starter_relay_id": "K3",
     "start_method": "timed",
-    "start_input_id": 0,
+    "start_input_id": "",
     "starter_crank_time_sec": 2,
     "starter_retry_pause_sec": 5,
     "starter_attempts": 3,
-    "start_block_input_id": 0,
+    "start_block_input_id": "",
     "engine_detection_source": "voltage",
-    "engine_input_id": 1001
+    "engine_input_id": "IN2"
   },
   "sensors": [
-    { "id": 3001, "rom": "", "coeff": 0.1, "name": "" },
-    { "id": 3002, "rom": "", "coeff": 0.1, "name": "" },
-    { "id": 3003, "rom": "", "coeff": 0.1, "name": "" }
+    { "id": "T1", "rom": "", "coeff": 0.1, "name": "" },
+    { "id": "T2", "rom": "", "coeff": 0.1, "name": "" },
+    { "id": "T3", "rom": "", "coeff": 0.1, "name": "" }
   ],
   "inputs": [
     {
-      "id": 1001,
+      "id": "IN1",
       "enabled": true,
       "type": 0,
       "active_state": true,
@@ -61,7 +62,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
-      "id": 1002,
+      "id": "IN2",
       "enabled": true,
       "type": 0,
       "active_state": true,
@@ -69,7 +70,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
-      "id": 1003,
+      "id": "IN3",
       "enabled": true,
       "type": 0,
       "active_state": true,
@@ -77,14 +78,21 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     }
   ],
+  "relays": [
+    { "id": "K1", "name": "" },
+    { "id": "K2", "name": "" },
+    { "id": "K3", "name": "" },
+    { "id": "K4", "name": "" },
+    { "id": "K5", "name": "" }
+  ],
   "thermostat": {
     "enabled": false,
-    "sensor_id": 0,
+    "sensor_id": "T1",
     "comparison": "above",
     "lower_threshold": 5.0,
     "upper_threshold": 10.0,
-    "program_id_lower": 0,
-    "program_id_upper": 0
+    "program_id_lower": 1,
+    "program_id_upper": 2
   },
   "battery_saver": {
     "enabled": false,
@@ -94,7 +102,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "min_low_voltage_duration_sec": 180,
     "min_time_between_attempts_sec": 1800,
     "max_attempts_per_day": 3,
-    "program_id": 0
+    "program_id": 1
   },
   "time": {
     "enabled": true,
@@ -106,4 +114,3 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
   "temperature_triggers": [],
   "schedule_triggers": []
 })";
-

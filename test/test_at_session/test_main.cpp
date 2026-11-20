@@ -34,7 +34,7 @@ void rx(const char* s) {
     g_serial.injectRx(s);
     g_uart.pollRx();
 }
-} // namespace
+} // пространство имён
 
 void setUp() {
     g_at.reset();
@@ -96,7 +96,7 @@ static void test_timeout_is_reported_and_logged() {
     const AtSession::Result r = g_at.takeResult();
     TEST_ASSERT_TRUE(r.timedOut);
     TEST_ASSERT_EQUAL_STRING("probe", r.tag);
-    TEST_ASSERT_TRUE(test_log::contains("[AT] << TIMEOUT for AT (probe)"));
+    TEST_ASSERT_TRUE(test_log::contains("[AT] << ТАЙМАУТ для AT (probe)"));
 }
 
 static void test_high_priority_queue_goes_first() {

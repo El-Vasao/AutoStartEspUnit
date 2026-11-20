@@ -47,10 +47,10 @@ void Core::logHeapSnapshot(const char* tag) const {
     g_lastLoggedMaxBlk = maxBlock;
     g_heapEverLogged = true;
     if (tag && tag[0]) {
-        logger.log(LogModule::Core, "[%s] Heap: %u bytes, Max block: %u (since boot min free=%u min maxBlk=%u)\n", tag,
+        logger.log(LogModule::Core, "[%s] куча: %u байт, макс. блок: %u (с загрузки мин. свободно=%u мин. maxBlk=%u)\n", tag,
                    freeHeap, maxBlock, g_sessionMinFree, g_sessionMinMaxBlk);
     } else {
-        logger.log(LogModule::Core, "Heap: %u bytes, Max block: %u (since boot min free=%u min maxBlk=%u)\n",
+        logger.log(LogModule::Core, "куча: %u байт, макс. блок: %u (с загрузки мин. свободно=%u мин. maxBlk=%u)\n",
                    freeHeap, maxBlock, g_sessionMinFree, g_sessionMinMaxBlk);
     }
 }
@@ -72,7 +72,7 @@ void Core::performPeriodicTasks(uint32_t now) {
     }
 
     if (every(Timing::ERROR_REPORT_INTERVAL_MS, impl.lastErrorReport) && impl.errorManager.get() != ErrorCode::NONE) {
-        logger.log(LogModule::Core, "Active error: %s\n", impl.errorManager.getMessage());
+        logger.log(LogModule::Core, "активная ошибка: %s\n", impl.errorManager.getMessage());
     }
 
     if (every(Timing::HEAP_SNAPSHOT_INTERVAL_MS, impl.lastStatsPrint)) {
@@ -103,7 +103,7 @@ const char* Core::getResetReason() const {
 }
 
 void Core::factoryReset() {
-    logger.log(LogModule::Core, "Factory reset queued\n");
+    logger.log(LogModule::Core, "заводской сброс поставлен в очередь\n");
     flashCommit.queueResetConfig();
 }
 
@@ -180,7 +180,7 @@ void Core::suspendDomainManagersForOta() {
     for (uint8_t i = 0; i < Limits::MAX_SCHEDULE_TRIGGERS; i++) {
         impl.scheduleTriggerManager.setEnabled(i, false);
     }
-    logger.log(LogModule::Core, "Domain managers suspended for OTA\n");
+    logger.log(LogModule::Core, "менеджеры домена приостановлены на время OTA\n");
 }
 
 void Core::restoreDomainManagersAfterOta() {
@@ -189,7 +189,7 @@ void Core::restoreDomainManagersAfterOta() {
     impl.scheduleTriggerManager.syncEnabledFromConfig();
     impl.batterySaverManager.begin();
     impl.thermostatManager.begin();
-    logger.log(LogModule::Core, "Domain managers restored after OTA\n");
+    logger.log(LogModule::Core, "менеджеры домена восстановлены после OTA\n");
 }
 
 bool Core::wakeWifiApFromSilent() {
@@ -197,7 +197,7 @@ bool Core::wakeWifiApFromSilent() {
     if (impl.modeManager.getCurrentMode() != CoreMode::NORMAL_SILENT) {
         return false;
     }
-    logger.log(LogModule::Core, "Wake SoftAP: NORMAL_SILENT -> NORMAL\n");
+    logger.log(LogModule::Core, "пробуждение SoftAP: NORMAL_SILENT -> NORMAL\n");
     impl.modeManager.switchMode(CoreMode::NORMAL);
     return true;
 }

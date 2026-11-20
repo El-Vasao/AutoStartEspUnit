@@ -12,9 +12,9 @@
     const v = cfg?.vehicle || {};
     const inputs = Array.isArray(cfg?.inputs) ? cfg.inputs : [];
     const findInput = (id) => {
-      const n = Number(id) || 0;
-      if (!n) return null;
-      return inputs.find((x) => Number(x?.id) === n) || null;
+      const sid = String(id || '').trim();
+      if (!sid) return null;
+      return inputs.find((x) => String(x?.id || '').trim() === sid) || null;
     };
     const num = (x) => (x === '' || x == null ? NaN : Number(x));
     const method = String(v.start_method || 'timed');

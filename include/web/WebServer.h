@@ -177,7 +177,7 @@ private:
 
     void rebuildActiveUiSessionCount();
 
-    /// POST JSON → tmp (FsManager), затем deferred apply в `flashCommit.tick`.
+    /// POST JSON копится в RAM; tmp и apply — в `flashCommit.tick` (не из async).
     enum class JsonPostStreamKind : uint8_t { Config, Program };
     static const char* jsonPostTmpPath(JsonPostStreamKind k);
     static bool jsonPostOtherSidePending(JsonPostStreamKind k);

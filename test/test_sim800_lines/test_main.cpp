@@ -41,7 +41,7 @@ static void test_control_lines_urcs() {
     TEST_ASSERT_TRUE(ctl("NO ANSWER\r\n"));
     TEST_ASSERT_TRUE(ctl("Call Ready\r\n"));
     TEST_ASSERT_TRUE(ctl("SMS Ready\r\n"));
-    // Forms with '+' eaten by an aborted +IPD match.
+    // Формы с «+», которые съедает оборванное совпадение +IPD.
     TEST_ASSERT_TRUE(ctl("CSQ: 17,0\r\n"));
     TEST_ASSERT_TRUE(ctl("CREG: 1\r\n"));
     TEST_ASSERT_TRUE(ctl("COPS: 0\r\n"));
@@ -138,7 +138,7 @@ static void test_ipd_oversize_does_not_glue_following_ok() {
         TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)last);
         TEST_ASSERT_TRUE(f.inDiscard());
     }
-    // Bytes past the buffer stay inside the frame, so "OK" here is not a modem line.
+    // Байты за буфером остаются внутри кадра, поэтому «OK» здесь не строка модема.
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)f.feed('O'));
     TEST_ASSERT_TRUE(f.inDiscard());
     TEST_ASSERT_EQUAL_STRING("", f.replay());
@@ -177,7 +177,7 @@ static void test_aborted_header_replays_consumed_bytes() {
     TEST_ASSERT_EQUAL_STRING("+IPD,12", f.replay());
     TEST_ASSERT_EQUAL_UINT8((uint8_t)IpdFramer::State::Idle, (uint8_t)f.state());
 
-    // CR/LF around the length are consumed but were never part of the replay.
+    // CR/LF вокруг длины съедаются, но в повтор кадра не входили.
     for (const char* p = "+IPD, 1\r\n2"; *p; ++p) f.feed(*p);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Raw, (uint8_t)f.feed('x'));
     TEST_ASSERT_EQUAL_STRING("+IPD,12", f.replay());

@@ -1,6 +1,6 @@
-# FRONTEND.md
+# Фронтенд
 
-SoftAP UI: Alpine.js 3 stores, Ajv 2020-12, SSE. Bundle order is `JS_LIBS` in `build.py`. Alpine plugins `focus` and `collapse` are used (`x-trap`, `x-collapse`). Alpine.start is queued as a microtask after the concatenated bundle registers `alpine:init` listeners.
+UI SoftAP: сторы Alpine.js 3, Ajv 2020-12, SSE. Порядок бандла — `JS_LIBS` в `build.py`. Используются плагины Alpine `focus` и `collapse` (`x-trap`, `x-collapse`). `Alpine.start` ставится микрозадачей после того, как склеенный бандл регистрирует слушателей `alpine:init`.
 
 ```mermaid
 flowchart LR
@@ -9,21 +9,21 @@ flowchart LR
   alpineInit --> stores[APP.stores.init]
   alpineInit --> checklist[core.js HTTP]
   checklist --> sse[EventSource /events]
-  sse --> deviceStatus[deviceStatus store]
+  sse --> deviceStatus[стор deviceStatus]
 ```
 
-## Stores
+## Сторы
 
-Registered in `data/js/app/stores/stores-init.js`. Notifications: `uiToast`. Paths: `APP.path`. Ajv: `APP.validation.createAjv()`.
+Регистрируются в `data/js/app/stores/stores-init.js`. Уведомления: `uiToast`. Пути: `APP.path`. Ajv: `APP.validation.createAjv()`.
 
 ## SSE
 
-`data/js/app/sse.js`: hang detector uses `lastEventAt` or `connectingSince`; visibility reconnects CONNECTING/CLOSED; `resync` refetches `/bootstrap`.
+`data/js/app/sse.js`: детектор зависания смотрит `lastEventAt` или `connectingSince`; при возврате видимости переподключает CONNECTING/CLOSED; `resync` заново запрашивает `/bootstrap`.
 
-## Save
+## Сохранение
 
-Settings: every schema field is posted (`showIf` is display-only). Vehicle cross-rules run live and on save. Programs: `validateProgramDataHard` on save and live validate.
+Настройки: уходит каждое поле схемы (`showIf` только управляет показом). Перекрёстные правила автомобиля считаются на лету и при сохранении. Программы: `validateProgramDataHard` при сохранении и при живой проверке.
 
-## Schemas
+## Схемы
 
-`data/validation/*.json` and `data/ui/*.json` are preloaded into the bundle (`PRELOADED_JSON_FILES`).
+`data/validation/*.json` и `data/ui/*.json` заранее вложены в бандл (`PRELOADED_JSON_FILES`).

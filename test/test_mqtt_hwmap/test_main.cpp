@@ -33,24 +33,28 @@ void fillName(char* dst, size_t cap) {
 
 void fillWorst(BaseConfig& cfg) {
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
-        cfg.inputs[i].id = (uint16_t)(1001 + i);
+        cfg.inputs[i].id = static_cast<uint8_t>(i + 1);
         fillName(cfg.inputs[i].name, sizeof(cfg.inputs[i].name));
     }
     for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
-        cfg.sensors[i].id = (uint16_t)(i + 1);
+        cfg.sensors[i].id = static_cast<uint8_t>(i + 1);
         fillName(cfg.sensors[i].name, sizeof(cfg.sensors[i].name));
+    }
+    for (uint8_t i = 0; i < HardwareLimits::RELAYS; i++) {
+        cfg.relays[i].id = static_cast<uint8_t>(i + 1);
+        fillName(cfg.relays[i].name, sizeof(cfg.relays[i].name));
     }
     cfg.input_triggers_count = Limits::MAX_TRIGGERS;
     for (uint8_t i = 0; i < Limits::MAX_TRIGGERS; i++) {
         cfg.input_triggers[i].id = (uint16_t)(10 + i);
-        cfg.input_triggers[i].input_id = 1001;
+        cfg.input_triggers[i].input_id = 1;
         cfg.input_triggers[i].program_id = 255;
         cfg.input_triggers[i].trigger_level = 1;
     }
     cfg.temperature_triggers_count = Limits::MAX_TRIGGERS;
     for (uint8_t i = 0; i < Limits::MAX_TRIGGERS; i++) {
         cfg.temperature_triggers[i].id = (uint16_t)(20 + i);
-        cfg.temperature_triggers[i].sensor_id = 65535;
+        cfg.temperature_triggers[i].sensor_id = 3;
         cfg.temperature_triggers[i].program_id = 255;
         strcpy(cfg.temperature_triggers[i].comparison, "below");
         cfg.temperature_triggers[i].threshold = -123.45f;
@@ -65,7 +69,7 @@ void fillWorst(BaseConfig& cfg) {
     }
 }
 
-} // namespace
+} // пространство имён
 
 void test_fnv1a32_known_vectors() {
     TEST_ASSERT_EQUAL_UINT32(0x811c9dc5u, fnv1a32(static_cast<const uint8_t*>(nullptr), 0));
@@ -78,7 +82,7 @@ void test_fnv1a32_known_vectors() {
 
 void test_hwmap_hash_matches_emitted_bytes() {
     BaseConfig cfg;
-    cfg.inputs[0].id = 1001;
+    cfg.inputs[0].id = 1;
     strcpy(cfg.inputs[0].name, "IN");
     BufPrint hw;
     BufPrint trig;

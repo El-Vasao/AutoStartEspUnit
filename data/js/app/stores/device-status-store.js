@@ -7,7 +7,7 @@
     try {
       const list = hwMap?.[key];
       if (!Array.isArray(list)) return [];
-      return list.map(x => String(Number(x?.id) || 0)).filter(x => x !== '0');
+      return list.map(x => String(x?.id || '').trim()).filter(x => x !== '');
     } catch (e) {
       return [];
     }

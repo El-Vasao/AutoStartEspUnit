@@ -1,11 +1,9 @@
 // src/web/WebServer.JsonIngest.cpp
 #include "web/WebServer.h"
 #include "common/EspHal.h"
-#include "fs/FsManager.h"
 #include "core/FlashCommitCoordinator.h"
 #include "common/Logger.h"
 #include "web/internal/WebServerInternal.h"
-#include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 
 namespace {
@@ -14,27 +12,34 @@ static void sendJsonSuccess(AsyncWebServerRequest* request) {
     request->send(resp);
 }
 
-/// Состояние потоковой записи POST JSON во временный файл (тело догоняется в handleBody; финал — в onRequest).
+/// Флаги одного POST. Байты тела лежат в FlashCommitCoordinator, не в файле.
 struct RawJsonPostCtx {
-    File f;
     bool failed{false};
     bool busyRejected{false};
     bool oversize{false};
     bool ioError{false};
     bool heldPending{false};
+    bool ownsBody{false};
+    bool committed{false};
+    bool settled{false};
+    uint8_t slot{0};
+    uint8_t gen{0};
 };
 
 static constexpr uintptr_t kTempAllocFailedTag = 0x1u;
+static constexpr uintptr_t kClosedTag = 0x2u;
 
 static RawJsonPostCtx gRawJsonPostPool[2];
 static bool gRawJsonPostUsed[2]{false, false};
+static uint8_t gRawJsonPostGen[2]{0, 0};
 
 static RawJsonPostCtx* acquireRawJsonCtx() {
-    // Однопоточно: простой фиксированный пул.
     for (int i = 0; i < 2; i++) {
         if (!gRawJsonPostUsed[i]) {
             gRawJsonPostUsed[i] = true;
             gRawJsonPostPool[i] = RawJsonPostCtx{};
+            gRawJsonPostPool[i].slot = static_cast<uint8_t>(i);
+            gRawJsonPostPool[i].gen = gRawJsonPostGen[i];
             return &gRawJsonPostPool[i];
         }
     }
@@ -43,16 +48,24 @@ static RawJsonPostCtx* acquireRawJsonCtx() {
 
 static void releaseRawJsonCtx(RawJsonPostCtx* ctx) {
     if (!ctx) return;
-    for (int i = 0; i < 2; i++) {
-        if (ctx == &gRawJsonPostPool[i]) {
-            gRawJsonPostUsed[i] = false;
-            return;
-        }
+    const uint8_t slot = ctx->slot;
+    if (slot < 2 && ctx == &gRawJsonPostPool[slot]) {
+        gRawJsonPostGen[slot]++;
+        gRawJsonPostUsed[slot] = false;
     }
 }
 
-static bool ensureHttpTmpDir() {
-    return fileSystem.ensurePath(HttpPostJson::TMP_CONFIG);
+static const char* postLabel(bool isConfig) {
+    return isConfig ? "конфиг" : "программа";
+}
+
+/// keepBody: успешный POST — буфер заберёт tick(). Pending снимает вызывающий (член класса).
+static void finishCtx(RawJsonPostCtx* ctx, bool keepBody) {
+    if (!ctx || ctx->settled) return;
+    ctx->settled = true;
+    ctx->heldPending = false;
+    if (!keepBody && ctx->ownsBody) flashCommit.dropPostedBody();
+    releaseRawJsonCtx(ctx);
 }
 } // namespace
 
@@ -77,119 +90,99 @@ void WebServer::jsonPostSetDeferred(JsonPostStreamKind k) {
 
 void WebServer::jsonPostStreamOnBody(JsonPostStreamKind k, AsyncWebServerRequest* request, uint8_t* data,
                                      size_t len, size_t index, size_t total) {
+    // Только RAM: задача async TCP не должна открывать LittleFS параллельно с Core::update.
     if (index == 0) {
-        if (jsonPostOtherSidePending(k)) {
-            logger.log(LogModule::WebServer, "%s: rejected, other JSON stream active\n",
-                       k == JsonPostStreamKind::Config ? "config" : "program");
+        auto reject = [&](bool busy, bool oversize, bool io) -> RawJsonPostCtx* {
             auto* c = acquireRawJsonCtx();
             if (!c) {
                 request->_tempObject = reinterpret_cast<void*>(kTempAllocFailedTag);
-                return;
+                return nullptr;
             }
-            c->busyRejected = true;
+            c->busyRejected = busy;
+            c->oversize = oversize;
+            c->ioError = io;
+            c->failed = oversize || io;
             request->_tempObject = c;
+            request->onDisconnect([request, slot = c->slot, gen = c->gen, k]() {
+                if (slot >= 2 || gRawJsonPostGen[slot] != gen) return;
+                RawJsonPostCtx* ctx = &gRawJsonPostPool[slot];
+                if (ctx->settled || ctx->committed) return;
+                if (ctx->heldPending) WebServer::jsonPostSetThisPending(k, false);
+                finishCtx(ctx, false);
+                // onRequest ещё может прийти: не оставлять указатель на переиспользованный слот.
+                if (request->_tempObject == ctx) {
+                    request->_tempObject = reinterpret_cast<void*>(kClosedTag);
+                }
+            });
+            return c;
+        };
+
+        if (jsonPostOtherSidePending(k) || webServer.isFlashBusy()) {
+            logger.log(LogModule::WebServer, "%s: отклонено, %s\n", postLabel(k == JsonPostStreamKind::Config),
+                       jsonPostOtherSidePending(k) ? "активен другой поток JSON" : "isFlashBusy");
+            reject(true, false, false);
             return;
         }
-        if (webServer.isFlashBusy()) {
-            logger.log(LogModule::WebServer, "%s: rejected, isFlashBusy\n",
-                       k == JsonPostStreamKind::Config ? "config" : "program");
-            auto* c = acquireRawJsonCtx();
-            if (!c) {
-                request->_tempObject = reinterpret_cast<void*>(kTempAllocFailedTag);
-                return;
-            }
-            c->busyRejected = true;
-            request->_tempObject = c;
+        if (total == 0 || total > HttpPostJson::MAX_BYTES) {
+            logger.log(LogModule::WebServer, "%s: тело слишком велико или пустое объявление (%u, макс. %u)\n",
+                       postLabel(k == JsonPostStreamKind::Config), (unsigned)total, (unsigned)HttpPostJson::MAX_BYTES);
+            reject(false, true, false);
             return;
         }
-        if (total > HttpPostJson::MAX_BYTES) {
-            logger.log(LogModule::WebServer, "%s: body too large (%u > max %u)\n",
-                       k == JsonPostStreamKind::Config ? "config" : "program",
-                       (unsigned)total, (unsigned)HttpPostJson::MAX_BYTES);
-            auto* c = acquireRawJsonCtx();
-            if (!c) {
-                request->_tempObject = reinterpret_cast<void*>(kTempAllocFailedTag);
-                return;
-            }
-            c->oversize = true;
-            c->failed = true;
-            request->_tempObject = c;
+        if (!flashCommit.armPostedBody(k == JsonPostStreamKind::Config, total)) {
+            logger.log(LogModule::WebServer, "%s: RAM-слот POST занят\n", postLabel(k == JsonPostStreamKind::Config));
+            reject(true, false, false);
             return;
         }
-        if (!ensureHttpTmpDir()) {
-            logger.log(LogModule::WebServer, "%s: ensurePath for http tmp dir failed\n",
-                       k == JsonPostStreamKind::Config ? "config" : "program");
-            auto* c = acquireRawJsonCtx();
-            if (!c) {
-                request->_tempObject = reinterpret_cast<void*>(kTempAllocFailedTag);
-                return;
-            }
-            c->failed = true;
-            c->ioError = true;
-            request->_tempObject = c;
-            return;
-        }
-        auto* c = acquireRawJsonCtx();
+        auto* c = reject(false, false, false);
         if (!c) {
-            request->_tempObject = reinterpret_cast<void*>(kTempAllocFailedTag);
+            flashCommit.dropPostedBody();
             return;
         }
-        c->f = fileSystem.openDirectWrite(jsonPostTmpPath(k), total);
-        if (!c->f) {
-            logger.log(LogModule::WebServer, "%s: openDirectWrite(%s) failed\n",
-                       k == JsonPostStreamKind::Config ? "config" : "program", jsonPostTmpPath(k));
-            c->failed = true;
-            c->ioError = true;
-            request->_tempObject = c;
-            return;
-        }
-        logger.log(LogModule::WebServer, "%s: streaming body to %s (~%u bytes, heap=%u)\n",
-                   k == JsonPostStreamKind::Config ? "config" : "program",
-                   jsonPostTmpPath(k), (unsigned)total, espHalFreeHeap());
+        c->failed = false;
+        c->ownsBody = true;
         jsonPostSetThisPending(k, true);
         c->heldPending = true;
-        request->_tempObject = c;
+        logger.log(LogModule::WebServer, "%s: тело в RAM (~%u байт, куча=%u), tmp запишет цикл\n",
+                   postLabel(k == JsonPostStreamKind::Config), (unsigned)total, espHalFreeHeap());
     }
 
-    if (request->_tempObject == reinterpret_cast<void*>(kTempAllocFailedTag)) {
-        return;
-    }
+    if (request->_tempObject == reinterpret_cast<void*>(kTempAllocFailedTag)) return;
     auto* ctx = static_cast<RawJsonPostCtx*>(request->_tempObject);
-    if (!ctx || ctx->busyRejected || ctx->oversize) {
-        return;
-    }
-    if (len == 0) {
-        return;
-    }
+    if (!ctx || ctx->busyRejected || ctx->oversize || ctx->failed) return;
+    if (len == 0) return;
     if (index > (size_t)-1 - len || (total > 0 && index + len > total) ||
         index + len > HttpPostJson::MAX_BYTES) {
-        logger.log(LogModule::WebServer, "%s: body length overflow index=%u len=%u total=%u\n",
-                   k == JsonPostStreamKind::Config ? "config" : "program",
-                   (unsigned)index, (unsigned)len, (unsigned)total);
+        logger.log(LogModule::WebServer, "%s: переполнение длины тела index=%u len=%u всего=%u\n",
+                   postLabel(k == JsonPostStreamKind::Config), (unsigned)index, (unsigned)len, (unsigned)total);
         ctx->failed = true;
         ctx->oversize = true;
         return;
     }
-    if (ctx->f && ctx->f.write(data, len) != len) {
-        logger.log(LogModule::WebServer, "%s: chunk write failed to %s\n",
-                   k == JsonPostStreamKind::Config ? "config" : "program", jsonPostTmpPath(k));
+    if (!ctx->ownsBody || !flashCommit.appendPostedBody(index, data, len)) {
+        logger.log(LogModule::WebServer, "%s: не удалось скопировать чанк в RAM\n", postLabel(k == JsonPostStreamKind::Config));
         ctx->failed = true;
         ctx->ioError = true;
     }
 }
 
 void WebServer::jsonPostStreamOnRequest(JsonPostStreamKind k, AsyncWebServerRequest* request) {
+    if (request->_tempObject == reinterpret_cast<void*>(kClosedTag)) {
+        request->_tempObject = nullptr;
+        return;
+    }
     if (request->_tempObject == reinterpret_cast<void*>(kTempAllocFailedTag)) {
         request->_tempObject = nullptr;
         request->send(500, "application/json", "{\"error\":\"Out of memory\"}");
         return;
     }
     auto* ctx = static_cast<RawJsonPostCtx*>(request->_tempObject);
-    if (ctx && ctx->heldPending) jsonPostSetThisPending(k, false);
-    const char* tmp = jsonPostTmpPath(k);
+    if (ctx && ctx->settled) {
+        request->_tempObject = nullptr;
+        return;
+    }
     if (!ctx) {
-        logger.log(LogModule::WebServer, "%s: empty POST body\n",
-                   k == JsonPostStreamKind::Config ? "config" : "program");
+        logger.log(LogModule::WebServer, "%s: пустое тело POST\n", postLabel(k == JsonPostStreamKind::Config));
         if (k == JsonPostStreamKind::Config) {
             request->send(400, "application/json",
                           "{\"success\":false,\"errors\":[{\"field\":\"general\",\"message\":\"Empty body\"}]}");
@@ -198,22 +191,18 @@ void WebServer::jsonPostStreamOnRequest(JsonPostStreamKind k, AsyncWebServerRequ
         }
         return;
     }
-    if (ctx->f) {
-        ctx->f.close();
-    }
     if (ctx->busyRejected) {
-        logger.log(LogModule::WebServer, "%s: sending BUSY to client\n",
-                   k == JsonPostStreamKind::Config ? "config" : "program");
-        releaseRawJsonCtx(ctx);
+        logger.log(LogModule::WebServer, "%s: клиенту отправлен BUSY\n", postLabel(k == JsonPostStreamKind::Config));
+        if (ctx->heldPending) jsonPostSetThisPending(k, false);
+        finishCtx(ctx, false);
         request->_tempObject = nullptr;
         web_internal::sendBusy(request);
         return;
     }
     if (ctx->oversize) {
-        logger.log(LogModule::WebServer, "%s: removed tmp after 413 oversize\n",
-                   k == JsonPostStreamKind::Config ? "config" : "program");
-        fileSystem.deleteFile(tmp);
-        releaseRawJsonCtx(ctx);
+        logger.log(LogModule::WebServer, "%s: тело больше RAM-слота\n", postLabel(k == JsonPostStreamKind::Config));
+        if (ctx->heldPending) jsonPostSetThisPending(k, false);
+        finishCtx(ctx, false);
         request->_tempObject = nullptr;
         if (k == JsonPostStreamKind::Config) {
             request->send(413, "application/json",
@@ -223,11 +212,10 @@ void WebServer::jsonPostStreamOnRequest(JsonPostStreamKind k, AsyncWebServerRequ
         }
         return;
     }
-    if (ctx->ioError || ctx->failed) {
-        logger.log(LogModule::WebServer, "%s: write error, removed tmp %s\n",
-                   k == JsonPostStreamKind::Config ? "config" : "program", tmp);
-        fileSystem.deleteFile(tmp);
-        releaseRawJsonCtx(ctx);
+    if (ctx->ioError || ctx->failed || !flashCommit.postedBodyComplete()) {
+        logger.log(LogModule::WebServer, "%s: тело в RAM не собрано, tmp не пишем\n", postLabel(k == JsonPostStreamKind::Config));
+        if (ctx->heldPending) jsonPostSetThisPending(k, false);
+        finishCtx(ctx, false);
         request->_tempObject = nullptr;
         if (k == JsonPostStreamKind::Config) {
             request->send(500, "application/json",
@@ -238,11 +226,13 @@ void WebServer::jsonPostStreamOnRequest(JsonPostStreamKind k, AsyncWebServerRequ
         return;
     }
 
-    logger.log(LogModule::WebServer, "%s: tmp %s closed, deferred apply queued for loop\n",
-               k == JsonPostStreamKind::Config ? "config" : "program", tmp);
-    releaseRawJsonCtx(ctx);
-    request->_tempObject = nullptr;
+    logger.log(LogModule::WebServer, "%s: RAM закрыт, отложенная запись %s поставлена в цикл\n",
+               postLabel(k == JsonPostStreamKind::Config), jsonPostTmpPath(k));
+    ctx->committed = true;
     jsonPostSetDeferred(k);
+    if (ctx->heldPending) jsonPostSetThisPending(k, false);
+    finishCtx(ctx, true);
+    request->_tempObject = nullptr;
     sendJsonSuccess(request);
 }
 
@@ -254,4 +244,3 @@ void WebServer::registerJsonPostBodyToTmp(AsyncWebServer& srv, const char* path,
                WebServer::jsonPostStreamOnBody(kind, request, data, len, index, total);
            });
 }
-

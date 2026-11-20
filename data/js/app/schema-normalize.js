@@ -116,6 +116,9 @@
       if (inputs > 0) {
         try { sc.properties.inputs.maxItems = inputs; } catch (e) {}
       }
+      if (relays > 0) {
+        try { sc.properties.relays.maxItems = relays; } catch (e) {}
+      }
 
       return sc;
     } catch (e) {

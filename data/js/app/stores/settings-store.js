@@ -258,7 +258,7 @@
               }
             },
             onCommitOk: async () => {
-              // Reload from LittleFS source-of-truth after commit
+              // Reload after commit: GET /config/get emits the RAM cache written with the file.
               await self.load(true);
               Alpine.store('uiBusy').showOk({
                 title: 'Сохранено',
@@ -555,7 +555,7 @@
           const id = Number(tr?.id) || 0;
           if (id > maxId) maxId = id;
         }
-        const firstInputId = Number(this.inputs?.[0]?.id) || 0;
+        const firstInputId = String(this.inputs?.[0]?.id || '').trim() || 'IN1';
         this.input_triggers.push({ id: maxId + 1, enabled: false, input_id: firstInputId, trigger_level: 1, program_id: 0 });
         this.recomputeDirty();
       },
@@ -567,7 +567,7 @@
           const id = Number(tr?.id) || 0;
           if (id > maxId) maxId = id;
         }
-        this.temperature_triggers.push({ id: maxId + 1, enabled: false, sensor_id: 0, sensor_name: '', comparison: 'above', threshold: 0, program_id: 0 });
+        this.temperature_triggers.push({ id: maxId + 1, enabled: false, sensor_id: '', sensor_name: '', comparison: 'above', threshold: 0, program_id: 0 });
         this.recomputeDirty();
       },
       removeTempTrigger(index) { this.temperature_triggers.splice(index, 1); this.recomputeDirty(); },

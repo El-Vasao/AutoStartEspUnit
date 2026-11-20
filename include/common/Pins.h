@@ -27,39 +27,21 @@ namespace Pin {
     // Кнопка платы (была площадка GPIO2 → C3 GPIO10)
     constexpr uint8_t BUTTON = 10;
 
+    // Порядок = публичный id IN1…INn (ChannelSilk).
     constexpr uint8_t INPUT_PINS[] = {
         5,       // IN1 (была GPIO13)
         4,       // IN2 (была GPIO12)
         BUTTON   // IN3
     };
 
-    constexpr uint16_t INPUT_IDS[] = {
-        1001,
-        1002,
-        1003
-    };
-
-    // Реле, активный уровень HIGH
+    // Порядок = публичный id K1…Kn (ChannelSilk). Реле, активный уровень HIGH.
     constexpr uint8_t RELAY_PINS[] = {
-        3,   // RELAY1 (была GPIO14)
-        19,  // RELAY2 (была GPIO5)
-        18,  // RELAY3 (была GPIO4)
-        8,   // RELAY4 (была GPIO15) — страп C3 GPIO8
-        2    // RELAY5 (была GPIO16)
+        3,   // K1 (была GPIO14)
+        19,  // K2 (была GPIO5)
+        18,  // K3 (была GPIO4)
+        8,   // K4 (была GPIO15) — страп C3 GPIO8
+        2    // K5 (была GPIO16)
     };
-
-    constexpr uint16_t RELAY_IDS[] = {
-        2001,
-        2002,
-        2003,
-        2004,
-        2005
-    };
-
-    static_assert(sizeof(INPUT_PINS) / sizeof(INPUT_PINS[0]) == sizeof(INPUT_IDS) / sizeof(INPUT_IDS[0]),
-                  "INPUT_PINS and INPUT_IDS must have same length");
-    static_assert(sizeof(RELAY_PINS) / sizeof(RELAY_PINS[0]) == sizeof(RELAY_IDS) / sizeof(RELAY_IDS[0]),
-                  "RELAY_PINS and RELAY_IDS must have same length");
 
     // Измерение батареи (был A0 → C3 GPIO1 / ADC1_CH1); внешний делитель 1:15 в ~0–1 В
     constexpr uint8_t VBAT = 1;

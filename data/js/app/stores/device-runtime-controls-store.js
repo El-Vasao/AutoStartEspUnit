@@ -102,7 +102,10 @@
         const newState = !current;
         try {
           const settings = Alpine.store('settings') || {};
-          const id = Number(settings.inputs?.[index]?.id) || (1001 + Number(index || 0));
+          // Runtime API ждёт номер шёлка 1…n (не строку IN1 и не старый 1001).
+          const raw = String(settings.inputs?.[index]?.id || '').trim();
+          const m = raw.match(/^(?:IN|K|T)(\d+)$/i);
+          const id = m ? Number(m[1]) : (Number(raw) || (Number(index || 0) + 1));
           const { ok } = await APP.api.apiJson(runtimeEndpoint(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

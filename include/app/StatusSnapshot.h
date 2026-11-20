@@ -23,7 +23,7 @@ struct StatusSnapshot {
     bool engineRunning{false};
 
     struct TempSensor {
-        uint16_t id{0};        // 0, если неизвестен или не сопоставлен
+        uint8_t id{0};         // номер шёлка T1…; 0 = неизвестен / не сопоставлен
         bool valid{false};
         uint32_t lastMs{0};
         float t{0.0f};

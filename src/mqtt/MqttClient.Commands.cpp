@@ -56,7 +56,7 @@ void MqttClient::replyRunFinal_(const char* id, bool finishedOk) {
     strlcpy(pr.id, id, sizeof(pr.id));
     pr.code = code;
     finalizeIdRing_(pr.id, code);
-    logger.log(LogModule::MqttClient, "cmd final id=%s code=%u\n", pr.id, (unsigned)code);
+    logger.log(LogModule::MqttClient, "команда финал id=%s код=%u\n", pr.id, (unsigned)code);
     (void)stageReply_(pr);
 }
 
@@ -169,7 +169,7 @@ bool MqttClient::enqueueInbound_(const MqttCommand& cmd) {
     const uint8_t tail = (uint8_t)((_inboundHead + _inboundCount) % MqttCmd::INBOUND_DEPTH);
     _inbound[tail] = cmd;
     _inboundCount++;
-    logger.log(LogModule::MqttClient, "cmd queued n=%u id=%s\n", (unsigned)_inboundCount, cmd.id);
+    logger.log(LogModule::MqttClient, "команда в очереди n=%u id=%s\n", (unsigned)_inboundCount, cmd.id);
     return true;
 }
 
@@ -179,7 +179,7 @@ void MqttClient::drainInbound_() {
         _inbound[_inboundHead] = MqttCommand{};
         _inboundHead = (uint8_t)((_inboundHead + 1u) % MqttCmd::INBOUND_DEPTH);
         _inboundCount--;
-        logger.log(LogModule::MqttClient, "cmd dispatch kind=%s id=%s\n", mqttCmdKindStr(cmd.kind), cmd.id);
+        logger.log(LogModule::MqttClient, "разбор команды вид=%s id=%s\n", mqttCmdKindStr(cmd.kind), cmd.id);
         _cmdBusy = true;
         dispatchCommand_(cmd);
         _cmdBusy = false;
@@ -203,7 +203,7 @@ bool MqttClient::publishThinReply_(const char* id, uint16_t code, uint32_t statu
                                      MqttFsmClient::TeleKind::None, 1 /*QoS1*/)) {
         return false;
     }
-    logger.log(LogModule::MqttClient, "pub reply id=%s code=%u bytes=%u\n", id ? id : "", (unsigned)code,
+    logger.log(LogModule::MqttClient, "публ. reply id=%s код=%u байт=%u\n", id ? id : "", (unsigned)code,
                (unsigned)measured);
     return true;
 }
@@ -217,11 +217,11 @@ bool MqttClient::ctrlPlaneBlocked_() const {
 bool MqttClient::stageReply_(const PendingReply& pr) {
     if (ctrlPlaneBlocked_()) {
         if (enqueuePending_(pr)) {
-            logger.log(LogModule::MqttClient, "reply wait Ctrl id=%s code=%u kind=%u\n", pr.id, (unsigned)pr.code,
+            logger.log(LogModule::MqttClient, "ответ ждёт Ctrl id=%s код=%u вид=%u\n", pr.id, (unsigned)pr.code,
                        (unsigned)pr.kind);
             return true;
         }
-        logger.log(LogModule::MqttClient, "reply pending full id=%s code=%u\n", pr.id, (unsigned)pr.code);
+        logger.log(LogModule::MqttClient, "очередь ответов полна id=%s код=%u\n", pr.id, (unsigned)pr.code);
         return false;
     }
 
@@ -248,11 +248,11 @@ bool MqttClient::stageReply_(const PendingReply& pr) {
     if (ok) return true;
 
     if (enqueuePending_(pr)) {
-        logger.log(LogModule::MqttClient, "reply stage queued kind=%u id=%s code=%u\n", (unsigned)pr.kind, pr.id,
+        logger.log(LogModule::MqttClient, "ответ поставлен в очередь вид=%u id=%s код=%u\n", (unsigned)pr.kind, pr.id,
                    (unsigned)pr.code);
         return true;
     }
-    logger.log(LogModule::MqttClient, "reply pending full id=%s code=%u\n", pr.id, (unsigned)pr.code);
+    logger.log(LogModule::MqttClient, "очередь ответов полна id=%s код=%u\n", pr.id, (unsigned)pr.code);
     return false;
 }
 
@@ -327,33 +327,38 @@ bool MqttClient::validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const
     }
 }
 
+void MqttClient::onPublishThunk(void* ctx, const char* topic, const uint8_t* payload, uint16_t len, bool retained) {
+    if (!ctx) return;
+    static_cast<MqttClient*>(ctx)->handlePublish(topic, payload, len, retained);
+}
+
 void MqttClient::handlePublish(const char* topic, const uint8_t* payload, uint16_t length, bool retained) {
     if (!_topicCmd[0]) {
-        logger.log(LogModule::MqttClient, "cmd drop: empty topicCmd\n");
+        logger.log(LogModule::MqttClient, "команда отброшена: пустой topicCmd\n");
         return;
     }
     if (!topic) {
-        logger.log(LogModule::MqttClient, "cmd drop: null topic\n");
+        logger.log(LogModule::MqttClient, "команда отброшена: топик пуст\n");
         return;
     }
     if (strcmp(topic, _topicCmd) != 0) {
-        logger.log(LogModule::MqttClient, "ignore topic got=%s want=%s\n", topic, _topicCmd);
+        logger.log(LogModule::MqttClient, "чужой топик получен=%s нужен=%s\n", topic, _topicCmd);
         return;
     }
     // Команду cmd с retain выполнять нельзя (устаревший run заводил бы машину на каждом сеансе).
     if (retained) {
-        logger.log(LogModule::MqttClient, "cmd ignore retained\n");
+        logger.log(LogModule::MqttClient, "команда пропущена: retained\n");
         return;
     }
     tryAckIngress_(payload, length);
 }
 
 void MqttClient::tryAckIngress_(const uint8_t* payload, uint16_t length) {
-    logger.log(LogModule::MqttClient, "cmd recv len=%u\n", (unsigned)length);
+    logger.log(LogModule::MqttClient, "команда принята, длина=%u\n", (unsigned)length);
 
     char message[JsonBytes::Mqtt::CMD_JSON_MAX];
     if (length == 0 || length >= sizeof(message)) {
-        logger.log(LogModule::MqttClient, "Command payload too large (%u)\n", (unsigned)length);
+        logger.log(LogModule::MqttClient, "полезная нагрузка команды слишком велика (%u)\n", (unsigned)length);
         return;
     }
     if (!payload) return;
@@ -365,9 +370,9 @@ void MqttClient::tryAckIngress_(const uint8_t* payload, uint16_t length) {
         pr.kind = PendingKind::Thin;
         strlcpy(pr.id, id, sizeof(pr.id));
         pr.code = code;
-        logger.log(LogModule::MqttClient, "cmd ack id=%s code=%u\n", id, (unsigned)code);
+        logger.log(LogModule::MqttClient, "подтверждение команды id=%s код=%u\n", id, (unsigned)code);
         if (!stageReply_(pr)) {
-            logger.log(LogModule::MqttClient, "cmd ack could not be staged id=%s code=%u\n", id, (unsigned)code);
+            logger.log(LogModule::MqttClient, "подтверждение команды не поставлено id=%s код=%u\n", id, (unsigned)code);
             return false;
         }
         return true;
@@ -377,14 +382,14 @@ void MqttClient::tryAckIngress_(const uint8_t* payload, uint16_t length) {
     if (!parseMqttCommandJson(message, cmd)) {
         char idBuf[MqttCmd::ID_MAX_LEN + 1]{};
         (void)mqttExtractReqId(message, idBuf, sizeof(idBuf));
-        logger.log(LogModule::MqttClient, "cmd unrecognized\n");
+        logger.log(LogModule::MqttClient, "команда не распознана\n");
         if (idBuf[0]) (void)stageAck(idBuf, MqttCmd::CODE_BAD_REQUEST);
         return;
     }
 
     MqttCmdErr argErr = MqttCmdErr::None;
     if (!validateArgs_(cmd, argErr)) {
-        logger.log(LogModule::MqttClient, "cmd invalid id=%s\n", cmd.id);
+        logger.log(LogModule::MqttClient, "команда: неверный id=%s\n", cmd.id);
         (void)stageAck(cmd.id, mqttErrToHttpCode(argErr));
         return;
     }
@@ -408,25 +413,25 @@ void MqttClient::tryAckIngress_(const uint8_t* payload, uint16_t length) {
     }
 
     if (_inboundCount >= MqttCmd::INBOUND_DEPTH) {
-        logger.log(LogModule::MqttClient, "cmd inbound full id=%s\n", cmd.id);
+        logger.log(LogModule::MqttClient, "входящая очередь команд полна id=%s\n", cmd.id);
         if (idempotentKind) releaseIdRing_(cmd.id);
         (void)stageAck(cmd.id, MqttCmd::CODE_UNAVAILABLE);
         return;
     }
 
     if (!stageAck(cmd.id, MqttCmd::CODE_ACCEPTED)) {
-        logger.log(LogModule::MqttClient, "cmd not queued (ack busy) id=%s\n", cmd.id);
+        logger.log(LogModule::MqttClient, "команда не в очереди (ack занят) id=%s\n", cmd.id);
         if (idempotentKind) releaseIdRing_(cmd.id);
         return;
     }
-    logger.log(LogModule::MqttClient, "cmd ack kind=%s id=%s\n", mqttCmdKindStr(cmd.kind), cmd.id);
+    logger.log(LogModule::MqttClient, "подтверждение команды вид=%s id=%s\n", mqttCmdKindStr(cmd.kind), cmd.id);
     if (!enqueueInbound_(cmd) && idempotentKind) releaseIdRing_(cmd.id);
 }
 
 void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
     switch (cmd.kind) {
         case MqttCommandKind::Run: {
-            logger.log(LogModule::MqttClient, "run program=%u id=%s\n", (unsigned)cmd.programId, cmd.id);
+            logger.log(LogModule::MqttClient, "run программа=%u id=%s\n", (unsigned)cmd.programId, cmd.id);
             const bool starterBusy = core.getProgramExecutor().isInStarterStep();
             // start() зовёт stop()→finish(), а жизненный цикл отложен. Новый id до start()
             // закрылся бы этим callback'ом как провал прерванного прогона.
@@ -460,7 +465,7 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
                 strlcpy(pr.id, cmd.id, sizeof(pr.id));
                 pr.code = starterBusy ? mqttErrToHttpCode(MqttCmdErr::Conflict) : MqttCmd::CODE_UNPROCESSABLE;
                 finalizeIdRing_(pr.id, pr.code);
-                logger.log(LogModule::MqttClient, "cmd final id=%s code=%u\n", pr.id, (unsigned)pr.code);
+                logger.log(LogModule::MqttClient, "команда финал id=%s код=%u\n", pr.id, (unsigned)pr.code);
                 (void)stageReply_(pr);
                 return;
             }
@@ -491,7 +496,7 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
             strlcpy(pr.id, cmd.id, sizeof(pr.id));
             pr.code = MqttCmd::CODE_OK;
             finalizeIdRing_(pr.id, pr.code);
-            logger.log(LogModule::MqttClient, "cmd final id=%s code=%u\n", pr.id, (unsigned)pr.code);
+            logger.log(LogModule::MqttClient, "команда финал id=%s код=%u\n", pr.id, (unsigned)pr.code);
             (void)stageReply_(pr);
             return;
         }
@@ -545,7 +550,7 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
             return;
         }
         case MqttCommandKind::Set: {
-            logger.log(LogModule::MqttClient, "set name=%u ref=%u en=%u id=%s\n", (unsigned)cmd.setName,
+            logger.log(LogModule::MqttClient, "set имя=%u ссылка=%u вкл=%u id=%s\n", (unsigned)cmd.setName,
                        (unsigned)cmd.ref, cmd.enabled ? 1u : 0u, cmd.id);
             bool ok = false;
             MqttCmdErr err = MqttCmdErr::Rejected;
@@ -594,7 +599,7 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
             strlcpy(pr.id, cmd.id, sizeof(pr.id));
             pr.code = code;
             finalizeIdRing_(pr.id, code);
-            logger.log(LogModule::MqttClient, "cmd final id=%s code=%u\n", pr.id, (unsigned)pr.code);
+            logger.log(LogModule::MqttClient, "команда финал id=%s код=%u\n", pr.id, (unsigned)pr.code);
             (void)stageReply_(pr);
             return;
         }
@@ -606,7 +611,7 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
             strlcpy(pr.id, cmd.id, sizeof(pr.id));
             pr.code = MqttCmd::CODE_OK;
             finalizeIdRing_(pr.id, pr.code);
-            logger.log(LogModule::MqttClient, "cmd final id=%s code=%u\n", pr.id, (unsigned)pr.code);
+            logger.log(LogModule::MqttClient, "команда финал id=%s код=%u\n", pr.id, (unsigned)pr.code);
             (void)stageReply_(pr);
             return;
         }

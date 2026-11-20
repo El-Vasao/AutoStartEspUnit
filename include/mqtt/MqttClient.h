@@ -19,6 +19,8 @@ struct AppPorts;
  * run/stop/set/set_time: кольцо id (16) резервируется на входе.
  */
 class MqttClient {
+    friend struct MqttClientTestAccess;
+
 public:
     explicit MqttClient(Client& client);
 

@@ -12,7 +12,7 @@ flowchart LR
 
 Web-подсистема — локальный UI поверх SoftAP/captive portal:
 
-- статические файлы из LittleFS (UI только `*.gz`);
+- статические файлы UI (на ФС только `*.gz`), в колбэке — из RAM, не из LittleFS;
 - HTTP API для настроек и программ;
 - SSE для статуса и логов.
 
@@ -23,11 +23,11 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 - internal: `src/web/internal/*`
 - fallback UI: `include/web/FallbackWebPage.h`
 
-## UI sessions
+## Сессии UI
 
-- Клиент периодически обновляет lease (`POST /ui/session`) — для SoftAP idle timeout и log-SSE gating.
+- Клиент периодически обновляет аренду (`POST /ui/session`) — для таймаута простоя SoftAP и допуска журнала в SSE.
 - Фиксированный пул сессий без heap; таймаут `WebUi::SESSION_TIMEOUT_MS`, heartbeat — `WebUi::HEARTBEAT_INTERVAL_MS`.
-- SSE **не требует** сессию; session — best-effort с FE.
+- SSE **не требует** сессию; сессия с фронтенда — по возможности.
 
 ## Контракт по памяти (ESP32-C3)
 
@@ -40,7 +40,7 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 Один ответ при старте UI: metadata (`version`, `uiLease`, `hwCounts`, `hwMap`, ROMs) **и** `live` snapshot.
 Отдельного `/bootstrap/live` нет — дальнейшие обновления идут по SSE.
 
-### SoftAP + cellular
+### SoftAP и сотовая связь
 
 На ESP32-C3 SoftAP UI и GSM/MQTT **сосуществуют**. Cellular suspend при:
 
@@ -53,13 +53,13 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 
 Порядок FE:
 
-1. checklist HTTP (`/bootstrap` → schemas → `/config/get` → `/programs`);
+1. список HTTP (`/bootstrap` → схемы → `/config/get` → `/programs`);
 2. EventSource `/events` (без искусственных SoftAP gaps на ESP32-C3);
-3. best-effort `POST /ui/session` → live updates;
+3. по возможности `POST /ui/session` → живые обновления;
 4. на SSE connect — baseline burst (`clocks`→`mode`→`gsm`→`hardware` в одном тике под soft gate);
    unlock после `mode`+`hardware` (или уже из `bootstrap.live`).
 
-## UI visibility contract
+## Контракт видимости UI
 
 1. **Settings subtabs (`.settings-subtab-pane`):** видимость только через CSS
    `display:none` + класс `.active`. **Запрещён** Alpine `x-show` на тех же элементах.
@@ -69,7 +69,7 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 5. **Вкладки не persist’ятся:** F5 всегда открывает «Панель».
 6. **Boot UI:** `#boot-splash` / `html.ui-booting` до `unlock`/`failInit`.
 
-## UI init lifecycle
+## Жизненный цикл старта UI
 
 1. **`#boot-splash`** вне `x-cloak` — виден до `unlock`/`failInit`.
 2. **`initLock`** vs **`flashLock`**: `.ui-locked` = `initLock || flashLock`.
@@ -78,7 +78,7 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 5. Captive `onNotFound`: отсутствующие `.js`/`.css` → **404**, не redirect `/`.
 6. SSE panel-ready держит lock до `sseInitDeadlineMs` (12s), иначе degraded; safety ~20s.
 
-## SoftAP UI delivery (index + CSS + app.js)
+## Отдача UI SoftAP (index, CSS и app.js)
 
 1. `GET /` → `index.html.gz`
 2. `GET /style.css` → `style.css.gz`
@@ -86,6 +86,12 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 4. Sentinel `#ui-doc-complete` при неполной доставке HTML — cache-bust reload.
 
 Обязательные UI-ассеты: `WebAssets::REQUIRED` — **на LittleFS только `*.gz`**.
+
+Колбэк async не открывает LittleFS и не вызывает `beginResponse(FS)`:
+
+- `POST` JSON копируется в RAM (`Limits::CONFIG_JSON_SIZE`); `FlashCommitCoordinator::tick()` пишет tmp и применяет.
+- `GET /config/get` сериализует RAM-кэш `Config`.
+- При старте точки в кучу кладутся `index.html.gz` (~12 КБ), `style.css.gz` (~7 КБ) и схемы до 16 КБ. `app.js.gz` (~122 КБ) целиком не держим: цикл читает окно 4 КБ, колбэк копирует его. `GET /program` и индекс — одно чтение на цикле в буфер 5 КБ. Если копия не готова или насос занят — **503**, без диска.
 
 ## SSE
 
@@ -101,26 +107,26 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 
 При шторме логов: дроп по soft queue + drop-notice предпочтительнее зависания loop. Логи и status делят одну очередь `/events`.
 
-## Flash busy / deferred
+## Занятость flash и отложенные операции
 
 - `WebServer::isFlashBusy()` блокирует write/delete до безопасной фазы.
-- POST JSON → tmp; apply deferred с `FlashCommitCoordinator`, чтобы не пересекаться с программой.
+- POST JSON → RAM; запись tmp и apply — в `FlashCommitCoordinator::tick()`, чтобы не пересекаться с программой и не трогать LittleFS из async.
 
-## Concurrency: AsyncWebServer vs main `loop`
+## Параллельность: AsyncWebServer и основной `loop`
 
 ESP32-C3 Arduino: AsyncTCP/ESPAsyncWebServer callbacks могут выполняться **вне** `Core::update()` (отдельная задача / ISR-adjacent контекст). Прошивка опирается на одноядерный fair scheduling + явные отложенные точки, а не на мьютексы вокруг всего Core.
 
-### Разрешено из async-handlers
+### Разрешено из обработчиков async
 
 | Операция | Контекст | Контракт |
 |----------|----------|----------|
 | `core.otaStreamFeed` / `otaStreamFinish` / `otaStreamAbort` | upload handler `POST /upload` | Пишет в FSM `OtaHandler`; не делает LittleFS commit всего пакета; режим `OTA_UPDATE` **откладывается** через `pendingDeferredOtaFromWebUpload` → drain в `Core::update` |
 | `core.onOtaHttpUploadStreamOpenedFromWeb` | upload index==0 | `prepareHttpUploadSession` + флаг deferred mode switch |
-| JSON body → tmp file | `jsonPostStreamOnBody` | Только stream write в `.tmp`; **apply** только из loop (`FlashCommitCoordinator`) |
-| `sendJsonBuffered` / static responses | GET handlers | Краткий `malloc` буфера ответа; не держать flash lock |
+| JSON body → RAM | `jsonPostStreamOnBody` | Копия в буфер `CONFIG_JSON_SIZE`; **запись tmp и apply** только из loop (`FlashCommitCoordinator`) |
+| `sendJsonBuffered` / RAM UI | GET handlers | Конфиг из кэша; мелкие gzip/схемы из предзагрузки; крупный `app.js.gz` — окно, которое наполняет цикл. LittleFS и `beginResponse(FS)` из колбэка нельзя |
 | SSE connect / queue push | `/events` + `tickSseIncremental` | Soft/hard queue caps; tick статуса — из main (`WebServer::update` / Core) |
 
-### Только из main loop (`Core::update` / mode handlers)
+### Только из основного цикла (`Core::update` / обработчики режимов)
 
 - `ModeManager::switchMode` (в т.ч. вход в `OTA_UPDATE` после deferred OTA flag)
 - `FlashCommitCoordinator` apply config/program
@@ -128,7 +134,7 @@ ESP32-C3 Arduino: AsyncTCP/ESPAsyncWebServer callbacks могут выполня
 - GSM/MQTT `tick` / cellular suspend
 - полный `handleOTAUpdate` progress (кроме feed байт из upload)
 
-### Shared globals (web)
+### Общие глобалы (web)
 
 - `gUploadCtx` — один активный stream OTA; 409 если уже `active`
 - `gOtaHttpUploadAwaitTimedOut` — выставляется из Core timer, читается в upload handler
@@ -139,9 +145,9 @@ ESP32-C3 Arduino: AsyncTCP/ESPAsyncWebServer callbacks могут выполня
 
 `logger.log` → `sseBroadcastLog` может вызываться из async (upload/API) и из main. Очередь логов soft-gated: при переполнении дроп предпочтительнее зависания. Не полагаться на строгий порядок log vs status frames.
 
-### Stress checklist (ручная регрессия)
+### Стендовый чеклист (ручная регрессия)
 
-1. SoftAP UI + SSE connected + GSM READY + MQTT status publish.
+1. UI SoftAP, SSE подключён, GSM READY, публикация статуса MQTT.
 2. Параллельно: `POST /config/save` (большой JSON) пока идёт программа — должен уйти в deferred, UI видит busy.
 3. `POST /upload` stream OTA при активном SSE — cellular suspend после deferred mode switch; feed не блокирует loop на весь файл.
 4. Двойной `/bootstrap` / второй `/upload` — 409 Busy.

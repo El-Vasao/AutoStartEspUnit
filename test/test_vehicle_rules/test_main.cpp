@@ -6,11 +6,11 @@
 static BaseConfig makeCfg() {
     BaseConfig c{};
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
-        c.inputs[i].id = static_cast<uint16_t>(1001 + i);
+        c.inputs[i].id = static_cast<uint8_t>(i + 1); // IN1…
         c.inputs[i].enabled = true;
         c.inputs[i].type = InputType::DIGITAL;
     }
-    // Input 1002 is a pulse input with a threshold.
+    // IN2 — импульсный, с порогом.
     c.inputs[1].type = InputType::PULSE_COUNTER;
     c.inputs[1].pulse.pulses_per_rev = 2;
     c.inputs[1].pulse.threshold_rpm = 400;
@@ -68,7 +68,7 @@ void test_normalize_clamps_crank_to_max() {
 void test_crank_above_max_ignored_for_rpm_in_validate() {
     BaseConfig c = makeCfg();
     c.vehicle.start_method = StartMethod::Rpm;
-    c.vehicle.start_input_id = 1002;
+    c.vehicle.start_input_id = 2; // IN2
     c.vehicle.starter_max_time_sec = 3;
     c.vehicle.starter_crank_time_sec = 10.0f;
     TEST_ASSERT_NULL(vehicle_rules::validate(c));
@@ -87,13 +87,13 @@ void test_inverted_voltage_thresholds() {
 void test_rpm_method_input_checks() {
     BaseConfig c = makeCfg();
     c.vehicle.start_method = StartMethod::Rpm;
-    c.vehicle.start_input_id = 1002;
+    c.vehicle.start_input_id = 2;
     TEST_ASSERT_NULL(vehicle_rules::validate(c));
 
-    c.vehicle.start_input_id = 1001;  // digital
+    c.vehicle.start_input_id = 1; // цифровой
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
 
-    c.vehicle.start_input_id = 1002;
+    c.vehicle.start_input_id = 2;
     c.inputs[1].pulse.threshold_rpm = 0;
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
 
@@ -101,7 +101,7 @@ void test_rpm_method_input_checks() {
     c.inputs[1].enabled = false;
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
 
-    c.vehicle.start_input_id = 9999;
+    c.vehicle.start_input_id = 99;
     c.inputs[1].enabled = true;
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
 }
@@ -109,49 +109,49 @@ void test_rpm_method_input_checks() {
 void test_input_method_input_checks() {
     BaseConfig c = makeCfg();
     c.vehicle.start_method = StartMethod::Input;
-    c.vehicle.start_input_id = 1001;
+    c.vehicle.start_input_id = 1;
     TEST_ASSERT_NULL(vehicle_rules::validate(c));
-    c.vehicle.start_input_id = 1002;  // pulse
+    c.vehicle.start_input_id = 2; // импульсный
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
 }
 
 void test_normalize_unusable_start_input_falls_back_to_timed() {
     BaseConfig c = makeCfg();
     c.vehicle.start_method = StartMethod::Rpm;
-    c.vehicle.start_input_id = 1001;
+    c.vehicle.start_input_id = 1;
     vehicle_rules::normalize(c, nullptr, nullptr);
     TEST_ASSERT_EQUAL((int)StartMethod::Timed, (int)c.vehicle.start_method);
 }
 
 void test_block_input_checks() {
     BaseConfig c = makeCfg();
-    c.vehicle.start_block_input_id = 1003;
+    c.vehicle.start_block_input_id = 3;
     TEST_ASSERT_NULL(vehicle_rules::validate(c));
 
     c.inputs[2].enabled = false;
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
     notes = 0;
     vehicle_rules::normalize(c, countNote, nullptr);
-    TEST_ASSERT_EQUAL_UINT16(1003, c.vehicle.start_block_input_id);
+    TEST_ASSERT_EQUAL_UINT8(3, c.vehicle.start_block_input_id);
     TEST_ASSERT_TRUE(notes >= 1);
     c.inputs[2].enabled = true;
 
-    c.vehicle.start_block_input_id = 1002;  // pulse
+    c.vehicle.start_block_input_id = 2; // импульсный
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
 
-    c.vehicle.start_block_input_id = 4242;  // missing
+    c.vehicle.start_block_input_id = 42; // отсутствует
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
 
     c.vehicle.start_method = StartMethod::Input;
-    c.vehicle.start_input_id = 1001;
-    c.vehicle.start_block_input_id = 1001;  // same as start input
+    c.vehicle.start_input_id = 1;
+    c.vehicle.start_block_input_id = 1; // тот же, что вход запуска
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
 }
 
 void test_engine_indicator_pulse_needs_threshold() {
     BaseConfig c = makeCfg();
     strcpy(c.vehicle.engine_detection_source, "input");
-    c.vehicle.engine_input_id = 1002;
+    c.vehicle.engine_input_id = 2;
     TEST_ASSERT_NULL(vehicle_rules::validate(c));
     c.inputs[1].pulse.threshold_rpm = 0;
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));

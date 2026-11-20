@@ -1,14 +1,14 @@
-# `json`: SAX parse of LittleFS files
+# `json`: SAX-разбор файлов LittleFS
 
-Streaming JSON for config and program files. No heap `String` on the parse path.
+Потоковый JSON для файлов конфига и программ. На пути разбора нет кучи `String`.
 
-Files: `include/json/JsonParseFile.h`, `src/json/JsonParseFile.cpp`, vendored `lib/JsonStreamingParser/`.
+Файлы: `include/json/JsonParseFile.h`, `src/json/JsonParseFile.cpp`, вложенный `lib/JsonStreamingParser/`.
 
 ```mermaid
 flowchart LR
-  File[LittleFS file] --> Parse[jsonParseFile]
+  File[файл LittleFS] --> Parse[jsonParseFile]
   Parse --> Sax[JsonStreamingParser]
-  Sax --> Listener[domain SAX listener]
+  Sax --> Listener[SAX-слушатель домена]
 ```
 
-Unknown keys are ignored (first-build). A root array at `/config.json` is a hard fail. Extra sensors/inputs/triggers beyond limits are trimmed with a log line. Soft parse of a damaged `/config.json` still loads what it can and does not rewrite the file.
+Неизвестные ключи игнорируются (первый билд). Корневой массив в `/config.json` — жёсткая ошибка. Лишние датчики, входы и триггеры сверх лимитов обрезаются, об этом пишется строка журнала. Мягкий разбор повреждённого `/config.json` загружает то, что смог, и не переписывает файл.

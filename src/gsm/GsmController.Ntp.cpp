@@ -19,7 +19,7 @@ namespace {
 bool readCclkSnapshot(const char* snap, gsm_time::CclkTime& out) {
     if (!snap[0] || !gsm_time::parseCclk(snap, out)) return false;
     if (!out.tzWholeHours) {
-        logger.log(LogModule::GsmController, "CCLK tzq=%d not whole hours; skip config TZ\n", (int)out.tzQuarters);
+        logger.log(LogModule::GsmController, "CCLK tzq=%d не целые часы; TZ конфига не меняется\n", (int)out.tzQuarters);
     }
     return gsm_time::epochSane(out.utc);
 }
@@ -54,7 +54,7 @@ bool GsmController::requestTimeSync(const char* ntpServer, int8_t tzOffsetHours)
     _cipgsmlocSnap[0] = '\0';
     _timeStep = TimeStep::CclkProbe;
     _timeDeadlineMs = millis() + Gsm::CCLK_TIMEOUT_MS;
-    logger.log(LogModule::GsmController, "time cascade start server=%s tzq=%d\n",
+    logger.log(LogModule::GsmController, "каскад времени, старт, сервер=%s tzq=%d\n",
                _ntpServer[0] ? _ntpServer : "(none)", (int)_ntpTzQuarters);
     return true;
 }
@@ -84,7 +84,7 @@ bool GsmController::requestCclkProbe(int8_t tzOffsetHours) {
     _cipgsmlocSnap[0] = '\0';
     _timeStep = TimeStep::CclkProbe;
     _timeDeadlineMs = millis() + Gsm::CCLK_TIMEOUT_MS;
-    logger.log(LogModule::GsmController, "time CCLK-lite probe start tzq=%d\n", (int)_ntpTzQuarters);
+    logger.log(LogModule::GsmController, "проба времени CCLK-lite, старт tzq=%d\n", (int)_ntpTzQuarters);
     return true;
 }
 
@@ -128,7 +128,7 @@ void GsmController::timeFailStep_(const char* why) {
 }
 
 void GsmController::timeFailTerminal_(const char* why) {
-    logger.log(LogModule::GsmController, "time cascade fail: %s mask=0x%02X\n", why ? why : "?",
+    logger.log(LogModule::GsmController, "каскад времени, сбой: %s маска=0x%02X\n", why ? why : "?",
                (unsigned)_timeFailMask);
     _timeFailReady = true;
     _timeResultReady = false;
@@ -160,10 +160,10 @@ void GsmController::timeFinishOk_(time_t epochUtc, TimeSource src, bool tzValid,
         default: break;
     }
     if (tzValid) {
-        logger.log(LogModule::GsmController, "time ok source=%s epoch=%ld tz=%+dh\n", name, (long)epochUtc,
+        logger.log(LogModule::GsmController, "время успех источник=%s epoch=%ld tz=%+dh\n", name, (long)epochUtc,
                    (int)tzHours);
     } else {
-        logger.log(LogModule::GsmController, "time ok source=%s epoch=%ld\n", name, (long)epochUtc);
+        logger.log(LogModule::GsmController, "время успех источник=%s epoch=%ld\n", name, (long)epochUtc);
     }
 }
 
@@ -175,7 +175,7 @@ void GsmController::timeAdvanceToCipgsmloc_(uint32_t now) {
     _cipgsmlocSnap[0] = '\0';
     _timeStep = TimeStep::Cipshut;
     _timeDeadlineMs = now + Sim800Tcp::CIPSHUT_TIMEOUT_MS;
-    logger.log(LogModule::GsmController, "time → CIPSHUT then CIPGSMLOC\n");
+    logger.log(LogModule::GsmController, "время → CIPSHUT, затем CIPGSMLOC\n");
 }
 
 void GsmController::timeEnterCipgsmlocCmd_(uint32_t now) {
@@ -186,7 +186,7 @@ void GsmController::timeEnterCipgsmlocCmd_(uint32_t now) {
     _cipgsmlocSnap[0] = '\0';
     _timeStep = TimeStep::Cipgsmloc;
     _timeDeadlineMs = now + Gsm::CIPGSMLOC_TIMEOUT_MS;
-    logger.log(LogModule::GsmController, "time → CIPGSMLOC\n");
+    logger.log(LogModule::GsmController, "время → CIPGSMLOC\n");
 }
 
 void GsmController::timeAdvanceToCntpOrFail_(uint32_t now, const char* why) {
@@ -201,11 +201,11 @@ void GsmController::timeAdvanceToCntpOrFail_(uint32_t now, const char* why) {
     _ntpUrcFail = false;
     _timeStep = TimeStep::Cntpcid;
     _timeDeadlineMs = now + Gsm::CNTP_AT_TIMEOUT_MS;
-    logger.log(LogModule::GsmController, "time → CNTP (%s)\n", why ? why : "?");
+    logger.log(LogModule::GsmController, "время → CNTP (%s)\n", why ? why : "?");
 }
 
 void GsmController::timeSoftMissCclkLite_(const char* why) {
-    logger.log(LogModule::GsmController, "time CCLK-lite miss: %s\n", why ? why : "?");
+    logger.log(LogModule::GsmController, "время, промах CCLK-lite: %s\n", why ? why : "?");
     resetAwait();
     _timeStep = TimeStep::Idle;
     _timeCmdSent = false;
@@ -286,7 +286,7 @@ void GsmController::serviceTimeSync(uint32_t now) {
                 return;
             }
             // Ожидаемый путь, пока NITZ не заполнит часы модема — не ставить TIME_CCLK_FAIL.
-            logger.log(LogModule::GsmController, "CCLK probe stale/unusable, next\n");
+            logger.log(LogModule::GsmController, "проба CCLK устарела или непригодна, дальше\n");
             timeAdvanceToCipgsmloc_(now);
         }
         return;
@@ -300,7 +300,7 @@ void GsmController::serviceTimeSync(uint32_t now) {
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
-            logger.log(LogModule::GsmController, "time CIPSHUT fail/timeout — continue CIPGSMLOC\n");
+            logger.log(LogModule::GsmController, "время, CIPSHUT сбой/таймаут — продолжаю CIPGSMLOC\n");
             timeEnterCipgsmlocCmd_(now);
             return;
         }

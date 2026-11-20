@@ -6,6 +6,7 @@
 #include "JsonListener.h"
 #include "JsonStreamingParser.h"
 
+#include "common/ChannelSilk.h"
 #include "common/Constants.h"
 #include "common/Logger.h"
 #include "config/ConfigTypes.h"
@@ -30,13 +31,13 @@ bool streq(const char* a, const char* b) { return a && b && strcmp(a, b) == 0; }
 
 void initBaseLikeFillBasic(BaseConfig& t) {
     for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
-        t.sensors[i].id = 0;
+        t.sensors[i].id = ChannelSilk::numberFromSlot(i, ChannelSilk::Kind::Sensor);
         t.sensors[i].coeff = 0.1f;
         t.sensors[i].name[0] = '\0';
         t.sensors[i].rom[0] = '\0';
     }
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
-        t.inputs[i].id = Pin::INPUT_IDS[i];
+        t.inputs[i].id = ChannelSilk::numberFromSlot(i, ChannelSilk::Kind::Input);
         t.inputs[i].enabled = true;
         t.inputs[i].type = InputType::DIGITAL;
         t.inputs[i].active_state = LOW;
@@ -44,11 +45,23 @@ void initBaseLikeFillBasic(BaseConfig& t) {
         t.inputs[i].pulse.pulses_per_rev = 1;
         t.inputs[i].pulse.threshold_rpm = 0;
     }
+    for (uint8_t i = 0; i < HardwareLimits::RELAYS; i++) {
+        t.relays[i].id = ChannelSilk::numberFromSlot(i, ChannelSilk::Kind::Relay);
+        t.relays[i].name[0] = '\0';
+    }
     t.input_triggers_count = 0;
     t.temperature_triggers_count = 0;
     t.schedule_triggers_count = 0;
     t.setup_required = false;
     t.time = TimeConfig{}; // NTP выключен и пуст, пока его не заполнит JSON `time` (или заводской DefaultConfig)
+}
+
+bool parseSilkNumber(const char* v, ChannelSilk::Kind kind, uint8_t* out, bool allowEmpty) {
+    uint8_t n = ChannelSilk::NONE;
+    if (!ChannelSilk::parse(v, kind, &n)) return false;
+    if (!allowEmpty && n == ChannelSilk::NONE) return false;
+    *out = n;
+    return true;
 }
 
 enum class St : uint8_t {
@@ -62,6 +75,8 @@ enum class St : uint8_t {
     SensorObj,
     InputsArr,
     InputObj,
+    RelaysArr,
+    RelayObj,
     PulseObj,
     Thermostat,
     BatterySaver,
@@ -162,6 +177,20 @@ public:
                 seenActive_ = false;
                 break;
             }
+            case St::RelaysArr: {
+                if (ri_ == 255)
+                    ri_ = 0;
+                else if (ri_ + 1 < HardwareLimits::RELAYS)
+                    ri_++;
+                else {
+                    extraTrimmed_++;
+                    push(St::Junk);
+                    junkNest_ = 1;
+                    break;
+                }
+                push(St::RelayObj);
+                break;
+            }
             case St::InputObj: {
                 if (streq(pending_, "pulse")) push(St::PulseObj);
                 break;
@@ -241,6 +270,9 @@ public:
             } else if (streq(pending_, "inputs")) {
                 ii_ = 255;
                 push(St::InputsArr);
+            } else if (streq(pending_, "relays")) {
+                ri_ = 255;
+                push(St::RelaysArr);
             } else if (streq(pending_, "input_triggers")) {
                 push(St::InTrigArr);
             } else if (streq(pending_, "temperature_triggers")) {
@@ -329,30 +361,46 @@ public:
                 else if (streq(pending_, "engine_stopped_voltage_threshold"))
                     t_->vehicle.engine_stopped_voltage_threshold =
                         json_scalar::parseF(v, StarterLimits::STOPPED_VOLTAGE_DEFAULT);
-                else if (streq(pending_, "starter_relay_id"))
-                    t_->vehicle.starter_relay_id = json_scalar::parseU16(v, 2002);
-                else if (streq(pending_, "start_method"))
+                else if (streq(pending_, "starter_relay_id")) {
+                    uint8_t n = 0;
+                    if (!parseSilkNumber(v, ChannelSilk::Kind::Relay, &n, false)) failed_ = true;
+                    else t_->vehicle.starter_relay_id = n;
+                } else if (streq(pending_, "start_method"))
                     t_->vehicle.start_method = vehicle_rules::startMethodFromString(v, StartMethod::Timed);
-                else if (streq(pending_, "start_input_id"))
-                    t_->vehicle.start_input_id = json_scalar::parseU16(v, 0);
-                else if (streq(pending_, "starter_crank_time_sec"))
+                else if (streq(pending_, "start_input_id")) {
+                    uint8_t n = 0;
+                    if (!parseSilkNumber(v, ChannelSilk::Kind::Input, &n, true)) failed_ = true;
+                    else t_->vehicle.start_input_id = n;
+                } else if (streq(pending_, "starter_crank_time_sec"))
                     t_->vehicle.starter_crank_time_sec = json_scalar::parseF(v, StarterLimits::CRANK_TIME_DEFAULT_SEC);
                 else if (streq(pending_, "starter_retry_pause_sec"))
                     t_->vehicle.starter_retry_pause_sec = json_scalar::parseU16(v, StarterLimits::RETRY_PAUSE_DEFAULT_SEC);
                 else if (streq(pending_, "starter_attempts"))
                     t_->vehicle.starter_attempts = json_scalar::parseU8(v, StarterLimits::ATTEMPTS_DEFAULT);
-                else if (streq(pending_, "start_block_input_id"))
-                    t_->vehicle.start_block_input_id = json_scalar::parseU16(v, 0);
-                else if (streq(pending_, "engine_detection_source"))
+                else if (streq(pending_, "start_block_input_id")) {
+                    uint8_t n = 0;
+                    if (!parseSilkNumber(v, ChannelSilk::Kind::Input, &n, true)) failed_ = true;
+                    else t_->vehicle.start_block_input_id = n;
+                } else if (streq(pending_, "engine_detection_source"))
                     strlcpy(t_->vehicle.engine_detection_source, v ? v : "voltage",
                             sizeof t_->vehicle.engine_detection_source);
-                else if (streq(pending_, "engine_input_id"))
-                    t_->vehicle.engine_input_id = json_scalar::parseU16(v, 0);
+                else if (streq(pending_, "engine_input_id")) {
+                    uint8_t n = 0;
+                    if (!parseSilkNumber(v, ChannelSilk::Kind::Input, &n, false)) failed_ = true;
+                    else t_->vehicle.engine_input_id = n;
+                }
                 break;
             case St::SensorObj:
                 if (si_ == 255 || si_ >= HardwareLimits::SENSORS) break;
-                if (streq(pending_, "id")) t_->sensors[si_].id = json_scalar::parseU16(v, 0);
-                else if (streq(pending_, "coeff"))
+                if (streq(pending_, "id")) {
+                    uint8_t n = 0;
+                    if (!parseSilkNumber(v, ChannelSilk::Kind::Sensor, &n, false) ||
+                        n != ChannelSilk::numberFromSlot(si_, ChannelSilk::Kind::Sensor)) {
+                        failed_ = true;
+                    } else {
+                        t_->sensors[si_].id = n;
+                    }
+                } else if (streq(pending_, "coeff"))
                     t_->sensors[si_].coeff = json_scalar::parseF(v, 0.1f);
                 else if (streq(pending_, "name"))
                     strlcpy(t_->sensors[si_].name, v ? v : "", sizeof t_->sensors[si_].name);
@@ -361,8 +409,15 @@ public:
                 break;
             case St::InputObj:
                 if (ii_ == 255 || ii_ >= HardwareLimits::INPUTS) break;
-                // "id" игнорируется: id входов — это идентичность железа (Pin::INPUT_IDS), их ставит initBaseLikeFillBasic.
-                if (streq(pending_, "enabled"))
+                if (streq(pending_, "id")) {
+                    uint8_t n = 0;
+                    if (!parseSilkNumber(v, ChannelSilk::Kind::Input, &n, false) ||
+                        n != ChannelSilk::numberFromSlot(ii_, ChannelSilk::Kind::Input)) {
+                        failed_ = true;
+                    } else {
+                        t_->inputs[ii_].id = n;
+                    }
+                } else if (streq(pending_, "enabled"))
                     t_->inputs[ii_].enabled = json_scalar::parseBool(v, true);
                 else if (streq(pending_, "type"))
                     t_->inputs[ii_].type = (json_scalar::parseU8(v, 0) == static_cast<uint8_t>(InputType::PULSE_COUNTER))
@@ -375,6 +430,19 @@ public:
                     seenActive_ = true;
                 }
                 break;
+            case St::RelayObj:
+                if (ri_ == 255 || ri_ >= HardwareLimits::RELAYS) break;
+                if (streq(pending_, "id")) {
+                    uint8_t n = 0;
+                    if (!parseSilkNumber(v, ChannelSilk::Kind::Relay, &n, false) ||
+                        n != ChannelSilk::numberFromSlot(ri_, ChannelSilk::Kind::Relay)) {
+                        failed_ = true;
+                    } else {
+                        t_->relays[ri_].id = n;
+                    }
+                } else if (streq(pending_, "name"))
+                    strlcpy(t_->relays[ri_].name, v ? v : "", sizeof t_->relays[ri_].name);
+                break;
             case St::PulseObj:
                 if (ii_ == 255 || ii_ >= HardwareLimits::INPUTS) break;
                 if (streq(pending_, "pulses_per_rev"))
@@ -384,18 +452,20 @@ public:
                 break;
             case St::Thermostat:
                 if (streq(pending_, "enabled")) t_->thermostat.enabled = json_scalar::parseBool(v, false);
-                else if (streq(pending_, "sensor_id"))
-                    t_->thermostat.sensor_id = json_scalar::parseU16(v, 0);
-                else if (streq(pending_, "comparison"))
+                else if (streq(pending_, "sensor_id")) {
+                    uint8_t n = 0;
+                    if (!parseSilkNumber(v, ChannelSilk::Kind::Sensor, &n, true)) failed_ = true;
+                    else t_->thermostat.sensor_id = n;
+                } else if (streq(pending_, "comparison"))
                     strlcpy(t_->thermostat.comparison, v ? v : "above", sizeof t_->thermostat.comparison);
                 else if (streq(pending_, "lower_threshold"))
                     t_->thermostat.lower_threshold = json_scalar::parseF(v, 5.0f);
                 else if (streq(pending_, "upper_threshold"))
                     t_->thermostat.upper_threshold = json_scalar::parseF(v, 10.0f);
                 else if (streq(pending_, "program_id_lower"))
-                    t_->thermostat.program_id_lower = json_scalar::parseU8(v, 0);
+                    t_->thermostat.program_id_lower = json_scalar::parseU8(v, 1);
                 else if (streq(pending_, "program_id_upper"))
-                    t_->thermostat.program_id_upper = json_scalar::parseU8(v, 0);
+                    t_->thermostat.program_id_upper = json_scalar::parseU8(v, 2);
                 break;
             case St::BatterySaver:
                 if (streq(pending_, "enabled")) t_->battery_saver.enabled = json_scalar::parseBool(v, false);
@@ -412,7 +482,7 @@ public:
                 else if (streq(pending_, "max_attempts_per_day"))
                     t_->battery_saver.max_attempts_per_day = json_scalar::parseU8(v, 3);
                 else if (streq(pending_, "program_id"))
-                    t_->battery_saver.program_id = json_scalar::parseU8(v, 0);
+                    t_->battery_saver.program_id = json_scalar::parseU8(v, 1);
                 break;
             case St::TimeCfg:
                 if (streq(pending_, "enabled")) t_->time.enabled = json_scalar::parseBool(v, true);
@@ -430,9 +500,11 @@ public:
                 if (streq(pending_, "id")) trig_.id = json_scalar::parseU16(v, 0);
                 else if (streq(pending_, "enabled"))
                     trig_.enabled = json_scalar::parseBool(v, false);
-                else if (streq(pending_, "input_id"))
-                    trig_.input_id = json_scalar::parseU16(v, 0);
-                else if (streq(pending_, "trigger_level"))
+                else if (streq(pending_, "input_id")) {
+                    uint8_t n = 0;
+                    if (!parseSilkNumber(v, ChannelSilk::Kind::Input, &n, true)) failed_ = true;
+                    else trig_.input_id = n;
+                } else if (streq(pending_, "trigger_level"))
                     trig_.trigger_level = json_scalar::parseU8(v, 1);
                 else if (streq(pending_, "program_id"))
                     trig_.program_id = json_scalar::parseU8(v, 0);
@@ -440,8 +512,11 @@ public:
             case St::TempTrigObj:
                 if (streq(pending_, "enabled")) ttrig_.enabled = json_scalar::parseBool(v, false);
                 else if (streq(pending_, "id")) ttrig_.id = json_scalar::parseU16(v, 0);
-                else if (streq(pending_, "sensor_id"))
-                    ttrig_.sensor_id = json_scalar::parseU16(v, 0);
+                else if (streq(pending_, "sensor_id")) {
+                    uint8_t n = 0;
+                    if (!parseSilkNumber(v, ChannelSilk::Kind::Sensor, &n, true)) failed_ = true;
+                    else ttrig_.sensor_id = n;
+                }
                 else if (streq(pending_, "comparison"))
                     strlcpy(ttrig_.comparison, v ? v : "above", sizeof ttrig_.comparison);
                 else if (streq(pending_, "threshold"))
@@ -490,6 +565,7 @@ private:
     char pending_[40]{};
     uint8_t si_{255};
     uint8_t ii_{255};
+    uint8_t ri_{255};
     bool seenActive_{false};
     TriggerConfig trig_;
     TempTriggerConfig ttrig_;
@@ -518,7 +594,7 @@ bool parseBaseConfigStreamingFromFile(File& file, BaseConfig& cfg, ParseMode mod
     if (listener.rootNotObject() || !listener.sawRootObject() || listener.failed()) return false;
     if (!complete && mode == ParseMode::Strict) return false;
     if (listener.extraTrimmed()) {
-        logger.log(LogModule::Config, "config arrays trimmed (%u extra object(s))\n",
+        logger.log(LogModule::Config, "массивы конфига обрезаны (лишних объектов: %u)\n",
                    (unsigned)listener.extraTrimmed());
     }
     return true;
@@ -529,7 +605,7 @@ bool parseBaseConfigStreamingFromProgmem(BaseConfig& cfg, const char* pgmDoc) {
     const bool complete = jsonStreamingParseProgmem(listener, pgmDoc);
     if (listener.rootNotObject() || !listener.sawRootObject() || listener.failed()) return false;
     if (listener.extraTrimmed()) {
-        logger.log(LogModule::Config, "config arrays trimmed (%u extra object(s))\n",
+        logger.log(LogModule::Config, "массивы конфига обрезаны (лишних объектов: %u)\n",
                    (unsigned)listener.extraTrimmed());
     }
     return complete;

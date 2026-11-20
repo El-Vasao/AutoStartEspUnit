@@ -22,11 +22,11 @@ SOFTWARE.
 
 See more at http://blog.squix.ch and https://github.com/squix78/json-streaming-parser
 
-Project fork (see docs/modules/json.md):
-- listener receives NUL-terminated C strings (no String);
-- syntax errors are reported through failed() and stop event delivery;
-- \uXXXX escapes (including surrogate pairs) are decoded to UTF-8;
-- nesting deeper than JSON_MAX_DEPTH is an error; over-long tokens are truncated.
+Ветка проекта (см. docs/modules/json.md):
+- слушатель получает строки C с завершающим NUL (без String);
+- синтаксические ошибки сообщаются через failed() и доставка событий прекращается;
+- экранирование \uXXXX (включая суррогатные пары) декодируется в UTF-8;
+- вложенность глубже JSON_MAX_DEPTH — ошибка; слишком длинные токены обрезаются.
 */
 
 #pragma once
@@ -66,7 +66,7 @@ class JsonStreamingParser {
     JsonListener* myListener = nullptr;
     bool error = false;
 
-    // Token being collected (string body, number, literal); always NUL-terminated on emit.
+    // Собираемый токен (тело строки, число, литерал); при выдаче всегда завершается NUL.
     char buffer[BUFFER_MAX_LENGTH];
     int bufferPos = 0;
 
@@ -112,8 +112,8 @@ class JsonStreamingParser {
     void setListener(JsonListener* listener);
     void reset();
 
-    /// The root object/array was closed (trailing whitespace is allowed).
+    /// Корневой объект или массив закрыт (замыкающие пробелы допустимы).
     bool done() const { return state == STATE_DONE && !error; }
-    /// A syntax error was found; no further listener events are delivered.
+    /// Найдена синтаксическая ошибка; дальнейшие события слушателю не отдаются.
     bool failed() const { return error; }
 };

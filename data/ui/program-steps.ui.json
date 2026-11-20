@@ -5,10 +5,10 @@
         "label": "Реле",
         "type": "select",
         "optionsFrom": "programRelays",
-        "valueType": "int",
+        "valueType": "string",
         "helpTitle": "Реле",
         "help": "Реле, которым управляет шаг. Реле стартера здесь нет — им управляет шаг «Запуск двигателя».",
-        "default": 2001
+        "default": "K1"
       },
       "ms": {
         "label": "Длительность (с)",
@@ -24,10 +24,10 @@
         "label": "Вход",
         "type": "select",
         "optionsFrom": "inputs",
-        "valueType": "int",
+        "valueType": "string",
         "helpTitle": "Вход",
         "help": "Вход для этого шага.",
-        "default": 1001
+        "default": "IN1"
       },
       "input_trigger_id": {
         "label": "Триггер входа",

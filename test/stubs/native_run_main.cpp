@@ -1,5 +1,5 @@
-// Entry for `pio run -e native` only. Host unit tests (`pio test`) define
-// PIO_UNIT_TESTING and supply their own main() via Unity suites.
+// Точка входа только для `pio run -e native`. Нативные тесты (`pio test`) задают
+// PIO_UNIT_TESTING и свой main() через наборы Unity.
 #ifndef PIO_UNIT_TESTING
 int main(int, char**) {
     return 0;

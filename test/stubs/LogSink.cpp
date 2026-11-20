@@ -7,9 +7,9 @@ constexpr size_t kMaxLines = 64;
 constexpr size_t kLineBytes = 256;
 char g_lines[kMaxLines][kLineBytes];
 size_t g_count = 0;
-} // namespace
+} // пространство имён
 
-// Production definition lives in src/web/WebServer.Core.cpp.
+// Боевое определение — в src/web/WebServer.Core.cpp.
 void sseBroadcastLog(const char* message) {
     if (!message) return;
     if (g_count == kMaxLines) {
@@ -32,4 +32,4 @@ bool contains(const char* needle) {
     }
     return false;
 }
-} // namespace test_log
+} // пространство имён test_log

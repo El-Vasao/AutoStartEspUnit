@@ -119,7 +119,7 @@ size_t bigEncoder(Print& p, void*) {
 
 size_t smallEncoder(Print& p, void*) { return p.write(reinterpret_cast<const uint8_t*>("{\"a\":1}"), 7); }
 
-} // namespace
+} // пространство имён
 
 void setUp() {
     test_clock::set(100000);
@@ -214,7 +214,7 @@ static void test_split_frame_is_assembled_across_ticks() {
 
 static void test_leading_junk_is_skipped_without_disconnect() {
     connectAndAck();
-    g_net->inject({0x00, 0xD0, 0x00});  // junk byte then PINGRESP
+    g_net->inject({0x00, 0xD0, 0x00});  // мусорный байт, затем PINGRESP
     tick();
     TEST_ASSERT_TRUE(g_fsm->isConnected());
 }
@@ -232,7 +232,7 @@ static void test_pingreq_after_half_keepalive() {
 
 static void test_keepalive_deadman_without_rx() {
     connectAndAck();
-    test_clock::advance(46000);  // > 1.5 x 30 s without any inbound frame
+    test_clock::advance(46000);  // > 1,5 × 30 с без входящего кадра
     tick();
     TEST_ASSERT_EQUAL_UINT8((uint8_t)MqttFsmClient::State::Error, (uint8_t)g_fsm->state());
     TEST_ASSERT_EQUAL_STRING("keepalive_timeout", g_fsm->lastErrorReason());
@@ -257,11 +257,11 @@ static void test_publish_writes_frame() {
 static void test_failed_coalesced_status_does_not_corrupt_queue() {
     connectAndAck();
     g_net->tx.clear();
-    // Queue one Tele status without ticking, then coalesce an oversized one into the same slot.
+    // Поставить один статус Tele без тика, затем слить слишком большой в тот же слот.
     TEST_ASSERT_TRUE(g_fsm->publishPrintedMeasured("t/status", smallEncoder, nullptr, 900, false, false));
     TEST_ASSERT_FALSE(g_fsm->publishPrintedMeasured("t/status", bigEncoder, nullptr, 900, false, false));
     tick();
-    // The queued slot is neutralized into a PINGREQ instead of a half-overwritten PUBLISH.
+    // Слот очереди нейтрализуется в PINGREQ, а не в наполовину перезаписанный PUBLISH.
     TEST_ASSERT_TRUE(txContains({0xC0, 0x00}));
     TEST_ASSERT_FALSE(txContains({'x', 'x', 'x', 'x'}));
     TEST_ASSERT_TRUE(g_fsm->isConnected());

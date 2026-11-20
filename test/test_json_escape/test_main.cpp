@@ -19,7 +19,7 @@ std::string esc(const char* in) {
     json_escape::escapeTo(out, sizeof(out), in);
     return out;
 }
-} // namespace
+} // пространство имён
 
 void setUp() {}
 void tearDown() {}
@@ -47,8 +47,8 @@ static void test_utf8_is_not_touched() {
 static void test_escape_to_reports_full_length_and_truncates_on_boundary() {
     char out[6];
     const size_t need = json_escape::escapeTo(out, sizeof(out), "ab\"cd");
-    TEST_ASSERT_EQUAL_UINT32(6, need);           // a b \ " c d
-    TEST_ASSERT_EQUAL_STRING("ab\\\"c", out);    // 5 chars fit, no split escape
+    TEST_ASSERT_EQUAL_UINT32(6, need);           // символы a, b, \, ", c, d
+    TEST_ASSERT_EQUAL_STRING("ab\\\"c", out);    // влезают 5 символов, escape не рвётся
     char tiny[3];
     json_escape::escapeTo(tiny, sizeof(tiny), "\"x");
     TEST_ASSERT_EQUAL_STRING("\\\"", tiny);

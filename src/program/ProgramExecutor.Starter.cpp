@@ -32,7 +32,7 @@ bool ProgramExecutor::isStartBlocked() const {
 }
 
 void ProgramExecutor::failStart(const char* reason, ErrorCode code) {
-    logger.log(LogModule::Starter, "start failed: %s, all relays OFF\n", reason);
+    logger.log(LogModule::Starter, "запуск не удался: %s, все реле OFF\n", reason);
     core.getRelay().allOff();
     finish(false);
     if (code != ErrorCode::NONE) core.getErrorManager().set(code);
@@ -57,7 +57,7 @@ void ProgramExecutor::beginStarter() {
         }
         _startInputIdx = HwMap::inputIndexById(v.start_input_id);
         if (_startInputIdx < 0 || !core.getInputs().isRuntimeEnabled((uint8_t)_startInputIdx)) {
-            logger.log(LogModule::Starter, "start input %u disabled at runtime\n", (unsigned)v.start_input_id);
+            logger.log(LogModule::Starter, "вход запуска %u выключен в рантайме\n", (unsigned)v.start_input_id);
             abortWithError("start input disabled", ErrorCode::PROGRAM_INVALID_REF);
             return;
         }
@@ -75,7 +75,7 @@ void ProgramExecutor::beginStarter() {
 
     const uint32_t now = millis();
     _starter.begin(p, now);
-    logger.log(LogModule::Starter, "begin method=%s attempts=%u crank=%ums max=%ums settle=%ums rest=%ums vrun=%.2f\n",
+    logger.log(LogModule::Starter, "начало метод=%s попыток=%u crank=%ums макс=%ums settle=%ums rest=%ums vrun=%.2f\n",
                vehicle_rules::startMethodToString(p.method), (unsigned)_starter.params().attempts,
                (unsigned)_starter.params().crankMs, (unsigned)p.maxMs, (unsigned)p.settleMs,
                (unsigned)p.restMs, (double)p.runningVoltage);
@@ -87,7 +87,7 @@ void ProgramExecutor::logStarterAttempt() const {
     char minV[12];
     if (a.hasMinVoltage) snprintf(minV, sizeof(minV), "%.2f", (double)a.minVoltage);
     else strlcpy(minV, "-", sizeof(minV));
-    logger.log(LogModule::Starter, "attempt %u/%u method=%s stop=%s crank=%ums vmin=%s vend=%.2f maxgap=%ums\n",
+    logger.log(LogModule::Starter, "попытка %u/%u метод=%s стоп=%s crank=%ums vmin=%s vend=%.2f maxgap=%ums\n",
                (unsigned)a.number, (unsigned)_starter.params().attempts,
                vehicle_rules::startMethodToString(_starter.params().method),
                starter::stopReasonToString(a.reason), (unsigned)a.crankMs, minV, (double)a.finalVoltage,
@@ -136,7 +136,7 @@ void ProgramExecutor::updateStarter(uint32_t now) {
 
     switch (t.outcome) {
         case starter::Outcome::Success:
-            logger.log(LogModule::Starter, "engine running\n");
+            logger.log(LogModule::Starter, "двигатель работает\n");
             nextStep();
             return;
         case starter::Outcome::Failure:

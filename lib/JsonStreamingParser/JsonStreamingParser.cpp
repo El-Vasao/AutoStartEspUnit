@@ -52,7 +52,7 @@ void JsonStreamingParser::fail() {
 
 void JsonStreamingParser::parse(char c) {
     if (error) return;
-    // UTF-8 BOM (EF BB BF) before the root value, e.g. a config.json saved by a Windows editor.
+    // UTF-8 BOM (EF BB BF) перед корневым значением, например config.json из редактора Windows.
     if (state == STATE_START_DOCUMENT && characterCounter < 3) {
         static const unsigned char kBom[3] = {0xEF, 0xBB, 0xBF};
         if (static_cast<unsigned char>(c) == kBom[characterCounter]) {
@@ -60,7 +60,7 @@ void JsonStreamingParser::parse(char c) {
             return;
         }
     }
-    // JSON whitespace (RFC 8259): space, tab, LF, CR — significant only inside strings and numbers.
+    // Пробелы JSON (RFC 8259): пробел, таб, LF, CR — значимы только внутри строк и чисел.
     if ((c == ' ' || c == '\t' || c == '\n' || c == '\r') &&
         !(state == STATE_IN_STRING || state == STATE_UNICODE || state == STATE_START_ESCAPE ||
           state == STATE_UNICODE_SURROGATE || state == STATE_IN_NUMBER)) {
@@ -73,7 +73,7 @@ void JsonStreamingParser::parse(char c) {
       } else if (c == '\\') {
         state = STATE_START_ESCAPE;
       } else if (static_cast<unsigned char>(c) < 0x20) {
-        fail();  // unescaped control character
+        fail();  // неэкранированный управляющий символ
       } else {
         appendByte(c);
       }
@@ -167,7 +167,7 @@ void JsonStreamingParser::parse(char c) {
         appendByte(c);
       } else {
         endNumber();
-        // The character after the number belongs to the enclosing structure.
+        // Символ после числа принадлежит окружающей структуре.
         parse(c);
       }
       break;
@@ -191,11 +191,11 @@ void JsonStreamingParser::parse(char c) {
         if (myListener) myListener->startDocument();
         startObject();
       } else {
-        fail();  // document must start with an object or array
+        fail();  // документ должен начинаться с объекта или массива
       }
       break;
     case STATE_DONE:
-      fail();  // non-whitespace after the root value
+      fail();  // не пробел после корневого значения
       break;
     default:
       fail();
@@ -205,7 +205,7 @@ void JsonStreamingParser::parse(char c) {
 }
 
 void JsonStreamingParser::appendByte(char c) {
-    // Over-long tokens are truncated (fixed fields copy at most their size anyway).
+    // Слишком длинные токены обрезаются (фиксированные поля и так копируют не больше своего размера).
     if (bufferPos < BUFFER_MAX_LENGTH - 1) buffer[bufferPos++] = c;
 }
 
@@ -279,7 +279,7 @@ void JsonStreamingParser::startValue(char c) {
 }
 
 bool JsonStreamingParser::isDigit(char c) {
-    // Only concerned with the first character in a number.
+    // Важен только первый символ числа.
     return (c >= '0' && c <= '9') || c == '-';
 }
 
@@ -343,17 +343,17 @@ void JsonStreamingParser::processUnicodeCharacter(char c) {
     unicodeBufferPos = 0;
     if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
         if (unicodeHighSurrogate != -1) {
-            fail();  // two high surrogates in a row
+            fail();  // два старших суррогата подряд
             return;
         }
         unicodeHighSurrogate = codepoint;
         unicodeEscapeBufferPos = 0;
-        state = STATE_UNICODE_SURROGATE;  // expect "\u" + low surrogate
+        state = STATE_UNICODE_SURROGATE;  // ожидается «\u» + младший суррогат
         return;
     }
     if (codepoint >= 0xDC00 && codepoint <= 0xDFFF) {
         if (unicodeHighSurrogate == -1) {
-            fail();  // lone low surrogate
+            fail();  // одинокий младший суррогат
             return;
         }
         const uint32_t combined =
@@ -364,7 +364,7 @@ void JsonStreamingParser::processUnicodeCharacter(char c) {
         return;
     }
     if (unicodeHighSurrogate != -1) {
-        fail();  // high surrogate not followed by a low one
+        fail();  // за старшим суррогатом нет младшего
         return;
     }
     endUnicodeCharacter(codepoint);
@@ -401,7 +401,7 @@ bool JsonStreamingParser::doesCharArrayContain(const char* myArray, int length, 
 void JsonStreamingParser::endUnicodeSurrogateInterstitial() {
     unicodeEscapeBufferPos = 0;
     if (unicodeEscapeBuffer[0] != '\\' || unicodeEscapeBuffer[1] != 'u') {
-        fail();  // high surrogate must be followed by "\u"
+        fail();  // за старшим суррогатом должно идти «\u»
         return;
     }
     unicodeBufferPos = 0;

@@ -26,9 +26,9 @@ BatterySaverManager::BatterySaverManager(Config& config, SensorsController& sens
       _lowStartTime(0) {}
 
 void BatterySaverManager::begin() {
-    logger.log(LogModule::BatterySaverManager, "begin\n");
+    logger.log(LogModule::BatterySaverManager, "начало\n");
     _runtimeEnabled = _config.getBase().battery_saver.enabled;
-    logger.log(LogModule::BatterySaverManager, "Runtime enabled: %d\n", _runtimeEnabled);
+    logger.log(LogModule::BatterySaverManager, "рантайм включён: %d\n", _runtimeEnabled);
 }
 
 void BatterySaverManager::update() {
@@ -75,7 +75,7 @@ void BatterySaverManager::update() {
         // Сама прокрутка сажает батарею ниже порога отмены — шаг запуска никогда не отменять.
         if (bs.program_id != 0 && _executor.isRunning() &&
             _executor.getCurrentProgramId() == bs.program_id && !_executor.isInStarterStep()) {
-            logger.log(LogModule::BatterySaverManager, "Abort program %u: voltage %.2f < abort %.2f\n",
+            logger.log(LogModule::BatterySaverManager, "прерывание программы %u: напряжение %.2f < порог %.2f\n",
                        bs.program_id, voltage, abortThreshold);
             _executor.stop();
         }
@@ -101,7 +101,7 @@ void BatterySaverManager::update() {
             if (now - _lastAttempt < secToMs(bs.min_time_between_attempts_sec)) return;
 
             if (bs.program_id != 0) {
-                logger.log(LogModule::BatterySaverManager, "Starting program %u due to low voltage\n", bs.program_id);
+                logger.log(LogModule::BatterySaverManager, "старт программы %u из-за низкого напряжения\n", bs.program_id);
                 if (_executor.start(bs.program_id)) _attemptsToday++;
                 _lastAttempt = now;
             }

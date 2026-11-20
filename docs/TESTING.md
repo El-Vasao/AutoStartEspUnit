@@ -1,26 +1,28 @@
-# TESTING.md
+# Тесты
 
-## Native (host)
+## Нативные (хост)
 
 ```bash
 pio test -e native
 ```
 
-Unity suites under `test/test_*/`. Production sources listed in `platformio.ini` `[env:native] build_src_filter`. Stubs: `test/stubs/`. `test/native_pre.py` is a MinGW path workaround; on Linux it is a no-op.
+Наборы Unity в `test/test_*/`. Производственные исходники перечислены в `platformio.ini`, секция `[env:native] build_src_filter`. Заглушки: `test/stubs/`. `test/native_pre.py` обходит пути MinGW; на Linux это пустая операция.
 
-Coverage: CI sets `PLATFORMIO_BUILD_FLAGS=--coverage` then `gcovr` over `src/` and `include/`. Locally: `pio test -e native`.
+Покрытие: CI задаёт `PLATFORMIO_BUILD_FLAGS=--coverage`, затем `gcovr` по `src/` и `include/`. Локально: `pio test -e native`.
+
+Хост дополнительно: `test_fs_atomic` (`closeWriteStream`: цель → `.bak`, затем `.tmp` → цель, `.bak` удаляется; если rename `.tmp` не удался, `.bak` возвращается), `test_ota_stream` (белый список хвоста OTA и слот boot вокруг `Update.end` / `streamFinish`).
 
 ## JavaScript
 
-Node 18+ (no npm). Loader: `test/js/helpers/browser-env.mjs`.
+Node 18+ (без npm). Загрузчик: `test/js/helpers/browser-env.mjs`.
 
 ```bash
 node --test "test/js/**/*.test.mjs"
 ```
 
-Includes contract tests: factory `DEFAULT_CONFIG_JSON` vs `settings.schema.json`, UI paths vs schema, program actions vs `ProgramAction.cpp`, `contract.js` endpoints vs `server.on`.
+В том числе контрактные тесты: заводской `DEFAULT_CONFIG_JSON` против `settings.schema.json`, пути UI против схемы, действия программ против `ProgramAction.cpp`, эндпоинты `contract.js` против `server.on`.
 
-## Firmware
+## Прошивка
 
 ```bash
 pio run -e esp32c3
@@ -28,19 +30,19 @@ python build.py release
 python build.py fs
 ```
 
-Current `pio run -e esp32c3` size (this tree): RAM 58340 / 327680 (17.8%), Flash 1035108 / 1310720 (79.0%).
+Текущий размер `pio run -e esp32c3` (это дерево): RAM 58340 / 327680 (17.8%), Flash 1035108 / 1310720 (79.0%).
 
-## Bench checklist (device)
+## Стенд (устройство)
 
-- Broker TCP close while MQTT is up; inbound RING during MQTT (CIP should drain, then voice).
-- MQTT `run` while a program is running, outside ENGINE_START: the old run is preempted and its id gets a final reply. `run` during ENGINE_START is rejected.
-- Stop with ignition relays already on (UI or MQTT): `stop()` turns every relay off, not only the starter.
-- Inbound DTMF during ENGINE_START does not start a program and is not discarded; it is taken after the starter step.
-- ATH with no OK before the hangup timeout fails the voice epoch and does not start the DTMF program.
-- ENGINE_START: timed / rpm / input; starter fuse cut → `RELAY_TIMEOUT`; block input enabled vs disabled.
-- Save settings with fields hidden by `showIf` (crank time, pulse params, AP timeout) — values must round-trip.
-- Parallel POSTs and mid-upload abort; OTA stream; missing LittleFS → FallbackWebPage.
-- OTA LittleFS tail after `Update.end`: tail writes run with the Update session closed. A tail error does not call `Update.abort`; boot is put back on the running image.
-- UI: toast, hardware error banner, program unknown-step rejected with `PROGRAM_INVALID_REF`.
+- Закрытие TCP брокера при живом MQTT; входящий RING во время MQTT (CIP должен стечь, затем голос).
+- MQTT `run`, пока программа выполняется, вне ENGINE_START: старый запуск вытесняется, его id получает финальный ответ. `run` во время ENGINE_START отклоняется.
+- Стоп при уже включённых реле зажигания (UI или MQTT): `stop()` гасит все реле, не только стартер.
+- Входящий DTMF во время ENGINE_START не стартует программу и не теряется; он берётся после шага стартера.
+- ATH без OK до таймаута сброса срывает голосовую эпоху и не стартует программу по DTMF.
+- ENGINE_START: по времени / rpm / входу; обрыв предохранителя стартера → `RELAY_TIMEOUT`; вход блокировки включён и выключен.
+- Сохранение настроек с полями, скрытыми `showIf` (время прокрутки, параметры импульса, таймаут AP) — значения должны вернуться как были.
+- Параллельные POST и обрыв посередине загрузки; нет LittleFS → FallbackWebPage. Поток OTA на хосте (`test_ota_stream`): белый список хвоста (`/index.html.gz`, `/validation/settings.schema.json`) принимается, `/config.json` и `/programs/1.json` отклоняются.
+- Хвост LittleFS после `Update.end`: запись хвоста идёт при закрытой сессии Update. Ошибка хвоста не вызывает `Update.abort`; boot возвращается на выполняемый образ. Хост (`test_ota_stream`): после `Update.end` и до успешного `streamFinish` boot — выполняемый слот, после успеха — новый; сбой хвоста не зовёт `Update.abort`, boot остаётся на выполняемом. Запись на реальной флеш — на стенде.
+- UI: тост, баннер аппаратной ошибки, неизвестный шаг программы отклоняется с `PROGRAM_INVALID_REF`.
 
-Field log worksheet: [`modules/gsm_mqtt_field_log.md`](modules/gsm_mqtt_field_log.md).
+Полевой лист: [`modules/gsm_mqtt_field_log.md`](modules/gsm_mqtt_field_log.md).

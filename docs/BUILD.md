@@ -1,6 +1,6 @@
-# Build, flash, LittleFS (ESP32-C3)
+# Сборка, прошивка, LittleFS (ESP32-C3)
 
-Primary path: [`build.py`](../build.py) + [`platformio.ini`](../platformio.ini) env `esp32c3`.
+Основной путь: [`build.py`](../build.py) и [`platformio.ini`](../platformio.ini), окружение `esp32c3`.
 
 ```mermaid
 flowchart TD
@@ -12,33 +12,33 @@ flowchart TD
   Gz --> LittleFS[uploadfs]
 ```
 
-## Requirements
+## Требования
 
 - PlatformIO Core
-- USB-UART (or board USB) for upload/monitor
+- USB-UART (или USB платы) для загрузки и монитора
 
 ## `build.py`
 
 ```bash
 python build.py --help
 
-python build.py release -u    # firmware + upload
-python build.py debug -u      # SERIAL_DEBUG (shares UART with GSM)
-python build.py fs            # 3-gzip UI → LittleFS uploadfs
+python build.py release -u    # прошивка и загрузка
+python build.py debug -u      # SERIAL_DEBUG (делит UART с GSM)
+python build.py fs            # UI из трёх gzip → LittleFS uploadfs
 python build.py release --no-ota
-python build.py -c            # clean
-python build.py -m            # monitor
+python build.py -c            # очистка
+python build.py -m            # монитор
 ```
 
-What it does:
+Что делает скрипт:
 
-1. Writes `include/common/Version.h` (gitignored)
-2. `pio run -e esp32c3` (+ optional `--target upload`)
-3. Copies `dist/autostart-<ts>-<type>.bin`
-4. Packs OTA (`dist/*-ota.bin`) unless `--no-ota`
-5. `fs`: builds `index.html.gz` + `style.css.gz` + `app.js.gz` (+ schemas), then `uploadfs`
+1. Пишет `include/common/Version.h` (не в git)
+2. `pio run -e esp32c3` (и по желанию `--target upload`)
+3. Копирует `dist/autostart-<ts>-<type>.bin`
+4. Собирает OTA (`dist/*-ota.bin`), если нет `--no-ota`
+5. `fs`: собирает `index.html.gz`, `style.css.gz` и `app.js.gz` (и схемы), затем `uploadfs`
 
-Direct PlatformIO also works if you do not need Version.h / OTA / gzip packaging:
+Прямой PlatformIO тоже работает, если не нужны Version.h, OTA и упаковка gzip:
 
 ```bash
 python -m platformio run -e esp32c3
@@ -49,22 +49,22 @@ python -m platformio device monitor
 ## LittleFS
 
 - `board_build.filesystem = littlefs`
-- Prefer `python build.py fs` so the UI tree is packed correctly (do not upload raw `data/` without bundling)
+- Предпочтительно `python build.py fs`, чтобы дерево UI упаковалось правильно (не заливать сырой `data/` без сборки бандла)
 
 ## OTA
 
-Recovery UI lives in PROGMEM when FS assets are missing (`FallbackWebPage.h`).
+Аварийный UI лежит в PROGMEM, если ассетов ФС нет (`FallbackWebPage.h`).
 
-Package format (`OtaHandler`):
+Формат пакета (`OtaHandler`):
 
-1. 4-byte LE firmware size
-2. firmware blob
-3. optional LittleFS file trail (name/size/payload)
+1. 4 байта LE — размер прошивки
+2. тело прошивки
+3. необязательный хвост файлов LittleFS (имя, размер, данные)
 
-See [`modules/ota.md`](modules/ota.md).
+См. [`modules/ota.md`](modules/ota.md).
 
-## Notes
+## Заметки
 
-- Partitions: [`partitions.csv`](../partitions.csv)
-- Pins / bring-up: [`HARDWARE.md`](HARDWARE.md)
-- Debug UART shares SIM800 on GPIO20/21
+- Разделы: [`partitions.csv`](../partitions.csv)
+- Пины и запуск: [`HARDWARE.md`](HARDWARE.md)
+- Отладочный UART делит SIM800 на GPIO20/21

@@ -26,6 +26,7 @@
 #include "common/Utils.h"
 #include "core/Core.h"
 #include "fs/FsManager.h"
+#include "web/internal/WebRamAssets.h"
 
 #include <DNSServer.h>
 #include <WiFi.h>
@@ -51,6 +52,8 @@ uint8_t apMaxConnectionsForMode(CoreMode mode) {
 } // namespace
 
 void WebServerRuntime::update(WebServer& ws) {
+    // Предзагрузка UI и окно app.js — только здесь, не из колбэка async.
+    web_ram::tick();
     if (ws.apActive) {
         processDNS(ws);
     }
@@ -83,7 +86,7 @@ void WebServerRuntime::update(WebServer& ws) {
             const char* pass = ws.pendingApPass_;
             const uint8_t maxSta = apMaxConnectionsForMode(ws.lastStartedMode_);
             if (!WiFi.softAP(ssid, pass, ApConfig::CHANNEL, ApConfig::HIDDEN, maxSta)) {
-                logger.log(LogModule::WebServer, "WiFi.softAP() failed\n");
+                logger.log(LogModule::WebServer, "WiFi.softAP() не удался\n");
                 ws.apStartState_ = WebServer::ApStartState::Idle;
                 return;
             }
@@ -117,7 +120,7 @@ void WebServerRuntime::update(WebServer& ws) {
 
             char ipStr[BufferBytes::Web::IP_STRING];
             snprintf(ipStr, sizeof(ipStr), "%u.%u.%u.%u", apIP[0], apIP[1], apIP[2], apIP[3]);
-            logger.log(LogModule::WebServer, "AP started, SSID: %s, IP: %s (heap free=%u max=%u)\n",
+            logger.log(LogModule::WebServer, "AP запущен, SSID: %s, IP: %s (куча свободно=%u макс=%u)\n",
                        ws.lastApSsid, ipStr, (unsigned)espHalFreeHeap(), (unsigned)espHalMaxBlock());
 
             ws.apStartState_ = WebServer::ApStartState::Idle;
@@ -132,7 +135,7 @@ void WebServerRuntime::processUiSessions(WebServer& ws) {
     for (auto& session : ws.uiSessions_) {
         if (!session.active) continue;
         if (now - session.lastSeenMs < WebUi::SESSION_TIMEOUT_MS) continue;
-        logger.log(LogModule::WebServer, "UI session expired: id=%lu, heap=%u, max=%u\n",
+        logger.log(LogModule::WebServer, "сессия UI истекла: id=%lu, куча=%u, макс=%u\n",
                    static_cast<unsigned long>(session.id),
                    (unsigned)espHalFreeHeap(),
                    (unsigned)espHalMaxBlock());
@@ -148,7 +151,7 @@ void WebServerRuntime::processUiSessions(WebServer& ws) {
             const size_t q = ws.events.avgPacketsWaiting();
             const uint16_t clients = refreshSseClientCount(ws);
             if (clients > 0 || q > 0) {
-                logger.log(LogModule::WebServer, "UI sessions=0: closing SSE (clients=%u, queue=%u)\n",
+                logger.log(LogModule::WebServer, "сессий UI=0: закрываю SSE (клиенты=%u, очередь=%u)\n",
                            (unsigned)clients, (unsigned)q);
                 ws.events.close();
                 ws.sseClientCount = 0;
@@ -178,7 +181,7 @@ void WebServerRuntime::processSseDiagnostics(WebServer& ws) {
     } else if (ws.lastObservedSseClients_ > 0) {
         ws.sseDiagTailUntilMs_ = now + kSseDiagTailMs;
         if (queue > 0) {
-            logger.log(LogModule::WebServer, "SSE: clients=%u->0, queue=%u\n",
+            logger.log(LogModule::WebServer, "SSE: клиенты=%u->0, очередь=%u\n",
                        (unsigned)ws.lastObservedSseClients_,
                        (unsigned)queue);
         }
@@ -188,7 +191,7 @@ void WebServerRuntime::processSseDiagnostics(WebServer& ws) {
 }
 
 void WebServerRuntime::start(WebServer& ws, CoreMode mode) {
-    logger.log(LogModule::WebServer, "start(CoreMode::%d)\n", (int)mode);
+    logger.log(LogModule::WebServer, "старт(CoreMode::%d)\n", (int)mode);
     ws.lastStartedMode_ = mode;
     ws.lastUiActivityMs_ = millis();
 
@@ -208,7 +211,7 @@ void WebServerRuntime::start(WebServer& ws, CoreMode mode) {
             pass = config.getBase().wifi.password;
             break;
         default:
-            logger.log(LogModule::WebServer, "Unsupported mode for AP start\n");
+            logger.log(LogModule::WebServer, "режим не поддерживает старт AP\n");
             return;
     }
 
@@ -216,7 +219,7 @@ void WebServerRuntime::start(WebServer& ws, CoreMode mode) {
 }
 
 void WebServerRuntime::stop(WebServer& ws) {
-    logger.log(LogModule::WebServer, "stop()\n");
+    logger.log(LogModule::WebServer, "вызов stop()\n");
     ws.lastStopMs_ = millis();
     ws.apConfigKnown = false;
     ws.lastApSsid[0] = '\0';
@@ -239,13 +242,13 @@ void WebServerRuntime::stop(WebServer& ws) {
         WiFi.mode(WIFI_OFF);
         ws.apStartNotBeforeMs_ = ws.lastStopMs_ + Delays::WIFI_OFF_SETTLE_MS;
         ws.apActive = false;
-        logger.log(LogModule::WebServer, "SoftAP stopped\n");
+        logger.log(LogModule::WebServer, "SoftAP остановлен\n");
     }
 }
 
 void WebServerRuntime::startWithParams(WebServer& ws, const char* ssid, const char* pass) {
     if (isSameAPConfig(ws, ssid, pass)) {
-        logger.log(LogModule::WebServer, "Already running with same config, skipping\n");
+        logger.log(LogModule::WebServer, "уже работает с тем же конфигом, пропуск\n");
         return;
     }
 
@@ -254,7 +257,7 @@ void WebServerRuntime::startWithParams(WebServer& ws, const char* ssid, const ch
     }
 
     if (!ssid || strlen(ssid) == 0) {
-        logger.log(LogModule::WebServer, "SSID is empty, using emergency AP\n");
+        logger.log(LogModule::WebServer, "SSID пуст, используется аварийный AP\n");
         char emergencySSID[TextBytes::Wifi::SSID];
         generateUniqueSSID(emergencySSID, sizeof(emergencySSID));
         ssid = emergencySSID;
@@ -266,7 +269,7 @@ void WebServerRuntime::startWithParams(WebServer& ws, const char* ssid, const ch
         ? pass
         : ApConfig::DEFAULT_PASSWORD;
 
-    logger.log(LogModule::WebServer, "Scheduling AP start SSID=%s\n", ssid);
+    logger.log(LogModule::WebServer, "запланирован старт AP SSID=%s\n", ssid);
 
     strlcpy(ws.pendingApSsid_, ssid, sizeof(ws.pendingApSsid_));
     strlcpy(ws.pendingApPass_, effectivePass, sizeof(ws.pendingApPass_));
@@ -390,7 +393,7 @@ bool WebServerRuntime::touchUiSession(WebServer& ws, uint32_t id, uint32_t now) 
     WebServer::UiSession& slot = ws.uiSessions_[idx];
     const bool evictingActive = slot.active && slot.id != 0 && slot.id != id;
     if (evictingActive) {
-        logger.log(LogModule::WebServer, "UI session evicted: %lu -> %lu\n",
+        logger.log(LogModule::WebServer, "сессия UI вытеснена: %lu -> %lu\n",
                    static_cast<unsigned long>(slot.id), static_cast<unsigned long>(id));
     }
     slot.id = id;

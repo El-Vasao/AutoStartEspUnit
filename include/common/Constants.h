@@ -116,6 +116,11 @@ namespace TextBytes {
         constexpr size_t FALLBACK_NAME = 8;
     }
 
+    namespace Relays {
+        /// Подпись реле в UI (кириллица; 15 символов UTF-8 + NUL).
+        constexpr size_t NAME = 32;
+    }
+
     namespace Triggers {
         /// "above" / "below" (сравнение)
         constexpr size_t COMPARISON = 8;
@@ -401,7 +406,7 @@ namespace JsonBytes {
         /// Тело retained-топика `programs` (только массив).
         constexpr size_t PROGRAMS_TOPIC_JSON_MAX = 960;
         /// Тело retained-топика `hwMap` (реле/входы/датчики/расписание).
-        constexpr size_t HWMAP_TOPIC_JSON_MAX = 1200;
+        constexpr size_t HWMAP_TOPIC_JSON_MAX = 1280; // silk ids + relay names
         /// Тело retained-топика `trigMap` (триггеры входов и температуры).
         constexpr size_t TRIGMAP_TOPIC_JSON_MAX = 1200;
         /// Короткий ответ `{id,code[,seq]}`.

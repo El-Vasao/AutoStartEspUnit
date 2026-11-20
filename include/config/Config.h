@@ -24,6 +24,8 @@ public:
     Config();
 
     const BaseConfig& getBase() const { return baseCache; }
+    /// JSON RAM-кэша тем же emit, что и `/config.json`. ФС не читает.
+    void emitBaseJson(Print& out) const;
     uint16_t getCRC() const { return configCRC; }
     bool isLoaded() const { return loaded; }
 
@@ -76,6 +78,8 @@ private:
     bool loadBaseFromFile(const char* path, BaseConfig& target, size_t& outLen, uint16_t* outFileCrc = nullptr);
     bool saveBaseConfig(const BaseConfig& cfg);
     bool validateCross(const BaseConfig& cfg);
+    /// Записывает заводские программы 1 «Запуск» и 2 «Стоп» и пересобирает индекс.
+    bool writeFactoryPrograms();
 };
 
 extern Config config;

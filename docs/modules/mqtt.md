@@ -5,7 +5,7 @@ stateDiagram-v2
   [*] --> Disconnected
   Disconnected --> Connecting
   Connecting --> Connected: CONNACK
-  Connecting --> Disconnected: refuse / timeout
+  Connecting --> Disconnected: отказ / таймаут
   Connected --> Disconnected: drop / keepalive
 ```
 
@@ -45,7 +45,7 @@ MQTT-публикация статуса и подписка на команды
 
 Кадр MQTT ≤ `MQTT_CIPSEND_MAX` (1400) байт вместе с заголовком. Буфер слота `MQTT_FRAME_MAX` (3072).
 
-### Presence (`/online`)
+### Присутствие (`/online`)
 
 - Один retained `true` после birth (после ухода полного `state` из очереди).
 - Retained `false` на чистом `disconnect`.
@@ -145,11 +145,11 @@ MQTT-публикация статуса и подписка на команды
 ### Транспорт (SIM800)
 - Один MQTT-кадр = один атомарный `AT+CIPSEND`.
 - RX overflow → reconnect.
-- Keepalive dead-man: нет MQTT RX `1.5 × keepAliveSec` → Error.
+- Сторож keepalive: нет MQTT RX `1.5 × keepAliveSec` → Error.
 - Ctrl serialize: ack/final ждут Ctrl-очередь и `gsm.tcpBusBusy()`.
 
-### Time vs MQTT CIP
-Полный modem cascade не делит IP с MQTT TCP. Drain: `online=false` + DISCONNECT + CIPCLOSE, затем sync, затем reconnect. См. прежние заметки в `gsm.md` / `TimeSync`.
+### Время и MQTT CIP
+Полный каскад модема не делит IP с MQTT TCP. Слив: `online=false` + DISCONNECT + CIPCLOSE, затем синхронизация, затем переподключение. См. прежние заметки в `gsm.md` / `TimeSync`.
 
-### Вне scope
+### Не входит
 QoS2, TLS на SIM800, очередь сессий команд в прошивке, тело программы по MQTT.

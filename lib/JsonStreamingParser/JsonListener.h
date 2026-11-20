@@ -2,8 +2,8 @@
 
 Copyright (c) 2015 by Daniel Eichhorn
 
-Fork note: `key`/`value` take null-terminated C strings pointing into the parser's
-scratch buffer; copy before returning if you need to retain the text across parse() calls.
+Заметка ветки: `key`/`value` получают строки C с завершающим нулём, указывающие в
+черновой буфер парсера; скопируйте текст до возврата, если он нужен после следующих вызовов parse().
 */
 
 #pragma once

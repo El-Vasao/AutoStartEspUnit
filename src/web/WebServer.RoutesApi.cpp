@@ -23,6 +23,10 @@
 #include "config/SensorRomResolve.h"
 #include "config/internal/ProgramJsonIo.h"
 #include "core/FlashCommitCoordinator.h"
+#include "fs/FsManager.h"
+#include "web/internal/WebRamAssets.h"
+#include "common/ChannelSilk.h"
+#include "common/JsonEscape.h"
 #include "common/Pins.h"
 #include "io/SensorsController.h"
 
@@ -52,16 +56,22 @@ void emitBootstrapJson(Print& p) {
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
         if (i) p.print(',');
         p.print("{\"id\":");
-        p.print(Pin::INPUT_IDS[i]);
-        p.print(",\"label\":\"\"}");
+        ChannelSilk::printQuotedId(p, ChannelSilk::numberFromSlot(i, ChannelSilk::Kind::Input),
+                                   ChannelSilk::Kind::Input);
+        p.print(",\"label\":");
+        json_escape::writeQuoted(p, config.getBase().inputs[i].name);
+        p.print('}');
     }
 
     p.print("],\"relays\":[");
     for (uint8_t i = 0; i < HardwareLimits::RELAYS; i++) {
         if (i) p.print(',');
         p.print("{\"id\":");
-        p.print(Pin::RELAY_IDS[i]);
-        p.print(",\"label\":\"\"}");
+        ChannelSilk::printQuotedId(p, ChannelSilk::numberFromSlot(i, ChannelSilk::Kind::Relay),
+                                   ChannelSilk::Kind::Relay);
+        p.print(",\"label\":");
+        json_escape::writeQuoted(p, config.getBase().relays[i].name);
+        p.print('}');
     }
 
     p.print("]},\"temperatureSensorRoms\":[");
@@ -108,7 +118,12 @@ static bool readIdEnabledBodyParams(AsyncWebServerRequest* request, uint32_t* id
 void WebServer::setupApiRoutes_() {
     server.on("/config/get", HTTP_GET, [](AsyncWebServerRequest* request) {
         if (rejectIfFlashBusy(request)) return;
-        sendJsonFromFs(request, "/config.json", "no-cache, no-store, must-revalidate");
+        if (!config.isLoaded()) {
+            request->send(503, kContentTypeJson, "{\"success\":false,\"error\":\"NOT_READY\"}");
+            return;
+        }
+        // Кэш Config уже в RAM — файл /config.json из колбэка не открываем.
+        sendJsonBuffered(request, [](Print& p) { config.emitBaseJson(p); }, Limits::CONFIG_JSON_SIZE);
     });
 
     server.on("/bootstrap", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -122,7 +137,7 @@ void WebServer::setupApiRoutes_() {
             gBootstrapInFlight = false;
             return;
         }
-        logger.log(LogModule::WebServer, "/bootstrap done in %lu ms (heap free=%u max=%u)\n",
+        logger.log(LogModule::WebServer, "/bootstrap готов за %lu мс (куча свободно=%u макс=%u)\n",
                    (unsigned long)(millis() - startedAt),
                    (unsigned)espHalFreeHeap(),
                    (unsigned)espHalMaxBlock());
@@ -146,13 +161,13 @@ void WebServer::setupApiRoutes_() {
 
         if (closing) {
             if (ok) {
-                logger.log(LogModule::WebServer, "UI session closed: id=%lu\n", static_cast<unsigned long>(sessionId));
+                logger.log(LogModule::WebServer, "сессия UI закрыта: id=%lu\n", static_cast<unsigned long>(sessionId));
             }
             if (ok && prevCount > 0 && newCount == 0) {
                 const size_t q = webServer.events.avgPacketsWaiting();
                 const uint16_t clients = webServer.refreshSseClientCount();
                 if (clients > 0 || q > 0) {
-                    logger.log(LogModule::WebServer, "UI sessions=0 (explicit close): closing SSE (clients=%u, queue=%u)\n",
+                    logger.log(LogModule::WebServer, "сессий UI=0 (явное закрытие): закрываю SSE (клиенты=%u, очередь=%u)\n",
                                (unsigned)clients, (unsigned)q);
                     webServer.events.close();
                     webServer.sseClientCount = 0;
@@ -211,14 +226,13 @@ void WebServer::setupApiRoutes_() {
 
             if (!index) {
                 gOtaHttpUploadAwaitTimedOut = false;
-                logger.log(LogModule::WebServer, "Stream OTA upload start: %s\n", filename.c_str());
+                logger.log(LogModule::WebServer, "старт потоковой загрузки OTA: %s\n", filename.c_str());
 
-                fileSystem.gc();
-
-                size_t freeSpace = fileSystem.getFreeSpace();
-                logger.log(LogModule::WebServer, "Free space before stream OTA: %u bytes\n", (unsigned)freeSpace);
+                // Снимок места обновляет цикл. LittleFS из этого колбэка не вызываем.
+                size_t freeSpace = fileSystem.cachedFreeSpace();
+                logger.log(LogModule::WebServer, "свободно перед потоком OTA (снимок): %u байт\n", (unsigned)freeSpace);
                 if (freeSpace < Ota::STREAM_FS_HEADROOM + FsSpace::MIN_FREE_SPACE) {
-                    logger.log(LogModule::WebServer, "Insufficient FS headroom for UI tail\n");
+                    logger.log(LogModule::WebServer, "недостаточно запаса ФС для хвоста UI\n");
                     request->send(507, kContentTypeText, "Insufficient space");
                     return;
                 }
@@ -248,7 +262,7 @@ void WebServer::setupApiRoutes_() {
                 const AppPorts* p = webPorts();
                 const bool fed = p && p->ota.feed && p->ota.feed(p->ota.ctx, data, len);
                 if (!fed) {
-                    logger.log(LogModule::WebServer, "Stream feed failed at %u bytes\n",
+                    logger.log(LogModule::WebServer, "подача потока не удалась на %u байтах\n",
                                (unsigned)(gUploadCtx.totalSize + len));
                     gUploadCtx.errored = true;
                     if (p) {
@@ -261,7 +275,7 @@ void WebServer::setupApiRoutes_() {
                 }
                 gUploadCtx.totalSize += len;
                 if (gUploadCtx.totalSize > Ota::FILE_MAX_SIZE) {
-                    logger.log(LogModule::WebServer, "Upload rejected: too large (%u > %u)\n",
+                    logger.log(LogModule::WebServer, "загрузка отклонена: слишком велика (%u > %u)\n",
                                (unsigned)gUploadCtx.totalSize, (unsigned)Ota::FILE_MAX_SIZE);
                     gUploadCtx.errored = true;
                     if (p) {
@@ -275,7 +289,7 @@ void WebServer::setupApiRoutes_() {
             }
 
             if (final) {
-                logger.log(LogModule::WebServer, "Stream upload finished, total size: %u\n",
+                logger.log(LogModule::WebServer, "потоковая загрузка завершена, размер: %u\n",
                            (unsigned)gUploadCtx.totalSize);
                 const AppPorts* p = webPorts();
                 const bool ok = !gUploadCtx.errored && p && p->ota.finish && p->ota.finish(p->ota.ctx);
@@ -311,7 +325,19 @@ void WebServer::setupApiRoutes_() {
 
     server.on("/programs", HTTP_GET, [](AsyncWebServerRequest* request) {
         if (rejectIfFlashBusy(request)) return;
-        sendJsonFromFs(request, "/programs/index.json", "no-cache, no-store, must-revalidate");
+        AsyncWebServerResponse* resp = nullptr;
+        const web_ram::Take take =
+            web_ram::acquire(request, "/programs/index.json", kContentTypeJson, false, &resp);
+        if (take == web_ram::Take::Missing) {
+            request->send(404, kContentTypeJson, "{\"success\":false,\"error\":\"FILE_NOT_FOUND\"}");
+            return;
+        }
+        if (take != web_ram::Take::Ready || !resp) {
+            request->send(503, kContentTypeJson, "{\"success\":false,\"error\":\"NOT_READY\"}");
+            return;
+        }
+        addNoCacheHeaders(resp);
+        request->send(resp);
     });
     server.on("/programs", HTTP_POST, [](AsyncWebServerRequest* request) {
         if (rejectIfFlashBusy(request)) return;
@@ -347,7 +373,18 @@ void WebServer::setupApiRoutes_() {
         uint8_t id = request->getParam("id")->value().toInt();
         char path[BufferBytes::Fs::PROGRAM_PATH];
         program_json::formatProgramPath(path, sizeof(path), id);
-        sendJsonFromFs(request, path, "no-cache, no-store, must-revalidate");
+        AsyncWebServerResponse* resp = nullptr;
+        const web_ram::Take take = web_ram::acquire(request, path, kContentTypeJson, false, &resp);
+        if (take == web_ram::Take::Missing) {
+            request->send(404, kContentTypeJson, "{\"success\":false,\"error\":\"FILE_NOT_FOUND\"}");
+            return;
+        }
+        if (take != web_ram::Take::Ready || !resp) {
+            request->send(503, kContentTypeJson, "{\"success\":false,\"error\":\"NOT_READY\"}");
+            return;
+        }
+        addNoCacheHeaders(resp);
+        request->send(resp);
     });
 
     registerJsonPostBodyToTmp(server, "/program", JsonPostStreamKind::Program);

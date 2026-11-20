@@ -65,17 +65,17 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                           (static_cast<uint32_t>(_hdrBuf[1]) << 8) |
                           (static_cast<uint32_t>(_hdrBuf[2]) << 16) |
                           (static_cast<uint32_t>(_hdrBuf[3]) << 24);
-                logger.log(LogModule::OtaHandler, "Firmware size: %u bytes\n", (unsigned)_fwSize);
+                logger.log(LogModule::OtaHandler, "размер прошивки: %u байт\n", (unsigned)_fwSize);
                 if (_fwSize == 0 || _fwSize > Ota::APP_IMAGE_MAX) {
-                    failStream("fwSize out of range");
+                    failStream("fwSize вне диапазона");
                     return false;
                 }
                 yield();
-                logger.log(LogModule::OtaHandler, "heap before Update.begin: free=%u maxBlk=%u\n",
+                logger.log(LogModule::OtaHandler, "куча перед Update.begin: свободно=%u maxBlk=%u\n",
                            (unsigned)espHalFreeHeap(), (unsigned)espHalMaxBlock());
                 if (!Update.begin(_fwSize)) {
                     core.logHeapSnapshot("ota_update_begin_failed");
-                    failStream("Update.begin failed");
+                    failStream("Update.begin не удался");
                     return false;
                 }
                 _updateBegun = true;
@@ -89,7 +89,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                 const size_t take = left < _fwRemaining ? left : _fwRemaining;
                 if (Update.write(const_cast<uint8_t*>(p), take) != take) {
                     core.logHeapSnapshot("ota_update_write_failed");
-                    failStream("Update.write failed");
+                    failStream("Update.write не удался");
                     return false;
                 }
                 _fwRemaining -= take;
@@ -99,13 +99,17 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                     // ESP32: LittleFS open/write падает, пока сеанс Update ещё открыт (та же SPI flash).
                     if (!Update.end(true)) {
                         core.logHeapSnapshot("ota_update_end_failed");
-                        failStream("Update.end after firmware failed");
+                        failStream("Update.end после прошивки не удался");
                         return false;
                     }
                     _updateBegun = false;
-                    // end уже сменил boot; если хвост упадёт, abort слот не вернёт.
-                    _fwCommitted = true;
                     core.logHeapSnapshot("ota_update_end_ok");
+                    // end уже сделал новый слот загрузочным. Сразу вернуть boot на
+                    // running: между этим и концом хвоста питание не должно грузить новый UI.
+                    if (!pinBootToRunningAfterEnd()) {
+                        failStream("не удалось закрепить boot после прошивки");
+                        return false;
+                    }
                     _phase = Phase::NameLen;
                     _metaHave = 0;
                     _metaNeed = 2;
@@ -127,7 +131,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                     return true;
                 }
                 if (_nameLen >= sizeof(_nameBuf)) {
-                    failStream("filename too long");
+                    failStream("имя файла слишком длинное");
                     return false;
                 }
                 _nameHave = 0;
@@ -146,7 +150,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                 // LittleFS ждёт абсолютные пути (/…).
                 if (_nameBuf[0] != '/') {
                     if (_nameLen + 1 >= sizeof(_nameBuf)) {
-                        failStream("filename too long for slash");
+                        failStream("имя файла слишком длинное для слэша");
                         return false;
                     }
                     memmove(_nameBuf + 1, _nameBuf, _nameLen + 1);
@@ -155,8 +159,8 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                 }
                 // Иначе хвост может перезаписать config или программы.
                 if (!isAllowedOtaTailPath(_nameBuf)) {
-                    logger.log(LogModule::OtaHandler, "rejected tail path: %s\n", _nameBuf);
-                    failStream("tail path not a UI asset");
+                    logger.log(LogModule::OtaHandler, "отклонён путь хвоста: %s\n", _nameBuf);
+                    failStream("путь хвоста не ассет UI");
                     return false;
                 }
                 _metaHave = 0;
@@ -177,7 +181,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                             (static_cast<uint32_t>(_metaBuf[1]) << 8) |
                             (static_cast<uint32_t>(_metaBuf[2]) << 16) |
                             (static_cast<uint32_t>(_metaBuf[3]) << 24);
-                logger.log(LogModule::OtaHandler, "Extracting %s (%u bytes)\n", _nameBuf, (unsigned)_fileSize);
+                logger.log(LogModule::OtaHandler, "извлечение %s (%u байт)\n", _nameBuf, (unsigned)_fileSize);
 
                 if (_fileSize == 0) {
                     // Пустой файл: всё равно создать через open/close.
@@ -193,7 +197,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
 
                 _outFile = fileSystem.openWriteStream(_nameBuf, _fileSize);
                 if (!_outFile) {
-                    failStream("openWriteStream failed");
+                    failStream("openWriteStream не удался");
                     return false;
                 }
                 _outOpen = true;
@@ -205,7 +209,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
             case Phase::FileData: {
                 const size_t take = left < _fileRemaining ? left : _fileRemaining;
                 if (_outFile.write(p, take) != take) {
-                    failStream("FS write failed");
+                    failStream("запись ФС не удалась");
                     return false;
                 }
                 _fileRemaining -= take;
@@ -213,7 +217,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                 core.feedWatchdog();
                 if (_fileRemaining == 0) {
                     if (!closeOutFile(true)) {
-                        failStream("FS finalize/rename failed");
+                        failStream("фиксация или переименование ФС не удались");
                         return false;
                     }
                     _phase = Phase::NameLen;
@@ -242,7 +246,7 @@ bool OtaHandler::streamFeed(const uint8_t* data, size_t len) {
     size_t offset = 0;
     while (offset < len) {
         if (_totalAccepted + (len - offset) > Ota::FILE_MAX_SIZE) {
-            failStream("package too large");
+            failStream("пакет слишком велик");
             return false;
         }
         size_t consumed = 0;
@@ -262,11 +266,11 @@ bool OtaHandler::streamFinish() {
 
     // Прошивка должна быть целиком.
     if (_phase == Phase::Header || _phase == Phase::Firmware) {
-        failStream("incomplete firmware");
+        failStream("прошивка неполная");
         return false;
     }
     if (_phase == Phase::Name || _phase == Phase::FileSize || _phase == Phase::FileData) {
-        failStream("incomplete FS tail");
+        failStream("хвост ФС неполный");
         return false;
     }
 
@@ -277,29 +281,37 @@ bool OtaHandler::streamFinish() {
         } else if (_metaHave == 2 && (_metaBuf[0] | (_metaBuf[1] << 8)) == 0) {
             _phase = Phase::Done;
         } else {
-            failStream("truncated FS meta");
+            failStream("метаданные ФС обрезаны");
             return false;
         }
     }
 
     if (_phase != Phase::Done) {
-        failStream("stream not complete");
+        failStream("поток не завершён");
         return false;
     }
 
     if (_updateBegun) {
         if (!Update.end(true)) {
             core.logHeapSnapshot("ota_update_end_failed");
-            failStream("Update.end failed");
+            failStream("Update.end не удался");
             return false;
         }
         _updateBegun = false;
-        // Тот же контракт, что после байтов прошивки: boot уже на новом слоте.
-        _fwCommitted = true;
         core.logHeapSnapshot("ota_update_end_ok");
+        if (!pinBootToRunningAfterEnd()) {
+            failStream("не удалось закрепить boot после прошивки");
+            return false;
+        }
+    }
+
+    // До этой точки boot на running. Новый слот — только когда пакет реально цел.
+    if (!activatePendingBoot()) {
+        failStream("не удалось активировать новый слот boot");
+        return false;
     }
 
     _streamDoneOk = true;
-    logger.log(LogModule::OtaHandler, "Stream finished OK, total=%u\n", (unsigned)_totalAccepted);
+    logger.log(LogModule::OtaHandler, "поток завершён успешно, всего=%u\n", (unsigned)_totalAccepted);
     return true;
 }

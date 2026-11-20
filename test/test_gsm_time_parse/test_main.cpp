@@ -44,7 +44,7 @@ static void test_leap_second_rolls_over() {
 
 static void test_cclk_moscow_offset() {
     CclkTime ct;
-    // 12:00 local at +3h (12 quarters) = 09:00 UTC.
+    // 12:00 местного при +3 ч (12 четвертей) = 09:00 UTC.
     TEST_ASSERT_TRUE(parseCclk("+CCLK: \"25/01/15,12:00:00+12\"", ct));
     TEST_ASSERT_EQUAL_INT64(1736931600LL, (int64_t)ct.utc);
     TEST_ASSERT_EQUAL_INT16(12, ct.tzQuarters);
@@ -54,7 +54,7 @@ static void test_cclk_moscow_offset() {
 
 static void test_cclk_negative_offset() {
     CclkTime ct;
-    // 07:00 local at -5h = 12:00 UTC.
+    // 07:00 местного при −5 ч = 12:00 UTC.
     TEST_ASSERT_TRUE(parseCclk("+CCLK: \"25/01/15,07:00:00-20\"", ct));
     TEST_ASSERT_EQUAL_INT64(1736942400LL, (int64_t)ct.utc);
     TEST_ASSERT_EQUAL_INT8(-5, ct.tzHours);
@@ -62,7 +62,7 @@ static void test_cclk_negative_offset() {
 
 static void test_cclk_fractional_zone_is_parsed_but_not_whole_hours() {
     CclkTime ct;
-    TEST_ASSERT_TRUE(parseCclk("+CCLK: \"25/01/15,12:00:00+22\"", ct));  // +5:30
+    TEST_ASSERT_TRUE(parseCclk("+CCLK: \"25/01/15,12:00:00+22\"", ct));  // смещение +5:30
     TEST_ASSERT_FALSE(ct.tzWholeHours);
     TEST_ASSERT_EQUAL_INT16(22, ct.tzQuarters);
 }

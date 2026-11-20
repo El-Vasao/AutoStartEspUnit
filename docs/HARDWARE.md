@@ -1,47 +1,47 @@
-# ESP32-C3 port notes
+# Заметки по порту ESP32-C3
 
-Branch: `esp32`. PlatformIO env: **`esp32c3`** (`python build.py release|debug|fs`).
+Ветка: `esp32`. Окружение PlatformIO: **`esp32c3`** (`python build.py release|debug|fs`).
 
-## Pins (ESP-C3-12F / DevKit on ESP-12 PCB nets)
+## Пины (ESP-C3-12F / DevKit на сетях платы ESP-12)
 
-| Net | ESP32-C3 GPIO | Notes |
-|-----|---------------|--------|
+| Сеть | GPIO ESP32-C3 | Примечание |
+|------|---------------|------------|
 | GSM TX (MCU→SIM800) | 21 | UART0 TX |
 | GSM RX (SIM800→MCU) | 20 | UART0 RX |
-| 1-Wire | 9 | strap: keep HIGH at boot |
-| Button / IN3 | 10 | |
+| 1-Wire | 9 | strap: держать HIGH при загрузке |
+| Кнопка / IN3 | 10 | |
 | IN1 / IN2 | 5 / 4 | |
-| RELAY1..5 | 3, 19, 18, 8, 2 | GPIO8 strap — prefer HIGH at boot |
-| VBAT ADC | 1 | 1:15 → ~0–1 V; `ADC_0db` |
+| RELAY1..5 | 3, 19, 18, 8, 2 | GPIO8 — strap, лучше HIGH при загрузке |
+| VBAT ADC | 1 | 1:15 → ~0–1 В; `ADC_0db` |
 
-See `include/common/Pins.h`.
+См. `include/common/Pins.h`.
 
-## Partitions
+## Разделы
 
-[`partitions.csv`](../partitions.csv) — dual OTA (`app0`/`app1`) + FS labeled `spiffs` subtype (Arduino LittleFS mounts it). ~1.4 MB FS.
+[`partitions.csv`](../partitions.csv) — два слота OTA (`app0`/`app1`) и ФС с меткой `spiffs` (её монтирует Arduino LittleFS). ФС около 1,4 МБ.
 
-## UART0 (SIM800 + debug)
+## UART0 (SIM800 и отладка)
 
-SIM800 and debug Serial share UART0 (GPIO20/21).
+SIM800 и отладочный Serial делят UART0 (GPIO20/21).
 
-## SoftAP UI — 3 gzip assets
+## UI SoftAP — 3 gzip-ассета
 
-After `python build.py fs`:
+После `python build.py fs`:
 
 1. `index.html.gz`
 2. `style.css.gz`
 3. `app.js.gz`
 
-## Build
+## Сборка
 
 ```bash
-python build.py release -u   # firmware
-python build.py fs           # LittleFS UI
-python build.py debug -u     # SERIAL_DEBUG on shared UART
+python build.py release -u   # прошивка
+python build.py fs           # UI в LittleFS
+python build.py debug -u     # SERIAL_DEBUG на общем UART
 ```
 
-`include/common/Version.h` is generated and gitignored.
+`include/common/Version.h` генерируется и не попадает в git.
 
 ## RAM
 
-Field note: ~170 KB free heap shortly after boot on C3 — SoftAP/UI headroom is no longer the ESP8266 bottleneck.
+На поле: около 170 КБ свободной кучи вскоре после загрузки на C3 — запас SoftAP/UI больше не упирается в узкое место ESP8266.

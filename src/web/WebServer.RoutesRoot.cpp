@@ -1,5 +1,6 @@
 #include "web/WebServer.h"
 #include "web/internal/WebServerInternal.h"
+#include "web/internal/WebRamAssets.h"
 #include "web/FallbackWebPage.h"
 
 using namespace web_internal;
@@ -21,29 +22,24 @@ void WebServer::setupRootRoutes_() {
             request->send(response);
         };
 
-        if (fileSystem.hasRequiredWebAssets()) {
-            const char* etag = core.getVersionString();
-            auto addHeaders = [&](AsyncWebServerResponse* response) {
-                addSessionRevalidateHeaders(response, etag);
-                response->addHeader("Content-Security-Policy",
-                    "default-src 'self'; "
-                    "script-src 'self' 'unsafe-eval' 'unsafe-inline'; "
-                    "style-src 'self' 'unsafe-inline';");
-            };
-
-            if (fileSystem.exists("/index.html.gz")) {
-                AsyncWebServerResponse* response =
-                    request->beginResponse(fileSystem.webFs(), "/index.html.gz", "text/html; charset=utf-8");
-                response->addHeader("Content-Encoding", "gzip");
-                response->addHeader("Vary", "Accept-Encoding");
-                addHeaders(response);
-                request->send(response);
+        // index.html.gz уже в RAM (или окно с цикла). LittleFS и beginResponse(FS) отсюда нельзя.
+        AsyncWebServerResponse* response = nullptr;
+        const web_ram::Take take =
+            web_ram::acquire(request, "/index.html.gz", "text/html; charset=utf-8", true, &response);
+        if (take == web_ram::Take::Missing || !response) {
+            if (take == web_ram::Take::Unavailable) {
+                request->send(503, "text/plain", "Not Ready");
                 return;
             }
             sendFallback();
-        } else {
-            sendFallback();
+            return;
         }
+        const char* etag = core.getVersionString();
+        addSessionRevalidateHeaders(response, etag);
+        response->addHeader("Content-Security-Policy",
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-eval' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline';");
+        request->send(response);
     });
 }
-

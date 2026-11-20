@@ -39,7 +39,7 @@ void Core::startOTAUpdate() {
         impl.modeManager.switchMode(CoreMode::OTA_UPDATE);
         return;
     }
-    logger.log(LogModule::Core, "OTA enter ignored: stream via POST /upload\n");
+    logger.log(LogModule::Core, "вход в OTA пропущен: поток через POST /upload\n");
 }
 
 void Core::onOtaHttpUploadStreamOpenedFromWeb() {
@@ -77,7 +77,7 @@ void Core::handleBoot() {
     // `ensureProgramIndex` + flash — иначе не успеваем покормить WDT (rst cause 4).
     switch (impl.bootStage) {
             case CorePrivate::BootStage::InitWiFiOff: {
-                logger.log(LogModule::Core, "BOOT: InitWiFiOff\n");
+                logger.log(LogModule::Core, "BOOT: Wi-Fi выкл.\n");
                 WiFi.persistent(false);
                 WiFi.disconnect(true);
                 WiFi.mode(WIFI_OFF);
@@ -85,10 +85,10 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::MountFS: {
-                logger.log(LogModule::Core, "BOOT: MountFS\n");
+                logger.log(LogModule::Core, "BOOT: монтирование ФС\n");
                 if (!fileSystem.begin()) {
                     impl.errorManager.set(ErrorCode::FS_MOUNT_FAIL);
-                    logger.log(LogModule::Core, "FATAL: Cannot mount LittleFS. Will reboot on next tick...\n");
+                    logger.log(LogModule::Core, "FATAL: не удалось смонтировать LittleFS. Перезагрузка на следующем тике...\n");
                     impl.bootStage = CorePrivate::BootStage::Done;
                     impl.pendingHardRestart = true;
                     espHalFeedWdt();
@@ -130,14 +130,14 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::LoadOrCreateConfig: {
-                logger.log(LogModule::Core, "BOOT: LoadOrCreateConfig\n");
+                logger.log(LogModule::Core, "BOOT: загрузка или создание конфига\n");
                 const ConfigLoadOutcome lo = config.loadWithOutcome();
                 if (lo == ConfigLoadOutcome::OkAfterFactoryDefaultsWrittenRebootRecommended) {
                     // Сохранить причину сбоя загрузки до заводских значений (RTC переживает мягкую перезагрузку).
                     if (config.lastLoadError() != ErrorCode::NONE) {
                         impl.errorManager.set(config.lastLoadError());
                     }
-                    logger.log(LogModule::Core, "Factory defaults written; rebooting on next tick\n");
+                    logger.log(LogModule::Core, "заводские записаны; перезагрузка на следующем тике\n");
                     impl.bootConfigLoaded = true;
                     impl.bootStage = CorePrivate::BootStage::Done;
                     impl.pendingHardRestart = true;
@@ -149,14 +149,14 @@ void Core::handleBoot() {
                                                  ? config.lastLoadError()
                                                  : ErrorCode::CONFIG_MISSING;
                     impl.errorManager.set(cfgErr);
-                    logger.log(LogModule::Core, "Config load and factory reset failed. Entering EMERGENCY_AP.\n");
+                    logger.log(LogModule::Core, "загрузка конфига и заводской сброс не удались. Вход в EMERGENCY_AP.\n");
                     impl.bootTargetMode = CoreMode::EMERGENCY_AP;
                     impl.bootStage = CorePrivate::BootStage::SelectInitialMode;
                     break;
                 }
                 impl.bootConfigLoaded = true;
                 if (const char* r = vehicle_rules::checkBlockInput(config.getBase())) {
-                    logger.log(LogModule::Core, "start block input: %s — engine start stays blocked\n", r);
+                    logger.log(LogModule::Core, "вход блокировки запуска: %s — запуск двигателя остаётся заблокирован\n", r);
                     impl.errorManager.set(ErrorCode::START_BLOCKED);
                 }
                 espHalFeedWdt();
@@ -164,7 +164,7 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::EnsureProgramIndex: {
-                logger.log(LogModule::Core, "BOOT: EnsureProgramIndex\n");
+                logger.log(LogModule::Core, "BOOT: индекс программ\n");
                 if (impl.bootConfigLoaded) {
                     (void)config.ensureProgramIndex();
                 }
@@ -173,16 +173,9 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::InitHardware: {
-                logger.log(LogModule::Core, "BOOT: InitHardware\n");
-                // Проверить карты выводов.
-                const size_t inN = sizeof(Pin::INPUT_IDS) / sizeof(Pin::INPUT_IDS[0]);
-                const size_t rlN = sizeof(Pin::RELAY_IDS) / sizeof(Pin::RELAY_IDS[0]);
-                impl.bootHwMapBad = HwMap::idsHaveZeroOrDuplicates(Pin::INPUT_IDS, inN) ||
-                                    HwMap::idsHaveZeroOrDuplicates(Pin::RELAY_IDS, rlN);
-                if (impl.bootHwMapBad) {
-                    impl.errorManager.set(ErrorCode::HW_MAP_INVALID);
-                    logger.log(LogModule::Core, "FATAL: Hardware map invalid (zero/duplicates in INPUT_IDS/RELAY_IDS)\n");
-                }
+                logger.log(LogModule::Core, "BOOT: инициализация железа\n");
+                // Карта каналов — порядок Pin::*PINS = шёлк K/IN; id в таблице пинов больше нет.
+                impl.bootHwMapBad = false;
 
                 impl.sensors.begin();
                 impl.relay.begin();
@@ -193,7 +186,7 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::InitManagers: {
-                logger.log(LogModule::Core, "BOOT: InitManagers\n");
+                logger.log(LogModule::Core, "BOOT: инициализация менеджеров\n");
                 impl.mqtt.setAppPorts(&impl.ports);
                 impl.programExecutor.setLifecycleCallback(&MqttClient::onProgramLifecycleThunk, &impl.mqtt);
                 impl.cellular.init(impl.gsm, impl.mqtt, webServer, impl.timeSyncManager);
@@ -208,7 +201,7 @@ void Core::handleBoot() {
                 break;
             }
             case CorePrivate::BootStage::SelectInitialMode: {
-                logger.log(LogModule::Core, "BOOT: SelectInitialMode\n");
+                logger.log(LogModule::Core, "BOOT: выбор начального режима\n");
                 CoreMode initialMode = CoreMode::NORMAL;
                 if (impl.bootTargetMode == CoreMode::EMERGENCY_AP) {
                     initialMode = CoreMode::EMERGENCY_AP;
@@ -222,7 +215,7 @@ void Core::handleBoot() {
 
                 impl.modeManager.switchMode(initialMode);
                 impl.bootStage = CorePrivate::BootStage::Done;
-                logger.log(LogModule::Core, "Boot finished, initial mode=%s\n", getModeName());
+                logger.log(LogModule::Core, "загрузка завершена, начальный режим=%s\n", getModeName());
                 logHeapSnapshot("boot_done");
                 break;
             }
@@ -270,7 +263,7 @@ void Core::handleNormal() {
         uint8_t pid = 0;
         // takePending снимает команду. На шаге стартера start() всё равно откажет — запрос нельзя терять.
         if (!impl.programExecutor.isInStarterStep() && impl.gsm.takePendingProgramStart(pid)) {
-            logger.log(LogModule::Core, "inbound DTMF start program %u\n", (unsigned)pid);
+            logger.log(LogModule::Core, "входящий DTMF, старт программы %u\n", (unsigned)pid);
             (void)impl.programExecutor.start(pid);
         }
     }
@@ -281,7 +274,7 @@ void Core::handleNormal() {
             const uint32_t idleMs = millis() - webServer.lastUiActivityMs();
             const uint32_t timeoutMs = secToMs((uint32_t)wcfg.ap_timeout_sec);
             if (idleMs >= timeoutMs) {
-                logger.log(LogModule::Core, "AP timeout reached (%us), switching to NORMAL_SILENT\n",
+                logger.log(LogModule::Core, "таймаут AP (%us), переход в NORMAL_SILENT\n",
                            (unsigned)wcfg.ap_timeout_sec);
                 impl.modeManager.switchMode(CoreMode::NORMAL_SILENT);
             }
@@ -316,7 +309,7 @@ void Core::handleNormalSilent() {
         uint8_t pid = 0;
         // takePending снимает команду. На шаге стартера start() всё равно откажет — запрос нельзя терять.
         if (!impl.programExecutor.isInStarterStep() && impl.gsm.takePendingProgramStart(pid)) {
-            logger.log(LogModule::Core, "inbound DTMF start program %u\n", (unsigned)pid);
+            logger.log(LogModule::Core, "входящий DTMF, старт программы %u\n", (unsigned)pid);
             (void)impl.programExecutor.start(pid);
         }
     }

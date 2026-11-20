@@ -8,6 +8,8 @@
 /**
  * Проверка шагов программы — общая для приёма программы (Config::commitPostedProgramFile)
  * и запуска (ProgramExecutor::start). Без Arduino, тестируется на хосте. См. docs/modules/program.md.
+ *
+ * relay_id / input_id — номер шёлка 1…n (K1 / IN1), 0 = нет.
  */
 namespace program_validate {
 
@@ -17,7 +19,7 @@ enum class Issue : uint8_t {
     UnknownAction,
     /// Шаг RELAY_* адресует реле стартера: стартером управляет только ENGINE_START.
     DrivesStarterRelay,
-    /// input_id / relay_id / trigger id нет в таблице устройства.
+    /// input_id / relay_id / trigger id нет на устройстве.
     InvalidRef,
 };
 
@@ -27,21 +29,21 @@ struct IdTable {
 };
 
 struct ChannelRef {
-    uint16_t relay_id{0};
-    uint16_t input_id{0};
+    uint8_t relay_id{0};
+    uint8_t input_id{0};
     uint16_t input_trigger_id{0};
     uint16_t temp_trigger_id{0};
 };
 
 struct ChannelTables {
-    IdTable relays{};
-    IdTable inputs{};
+    uint8_t relayCount{0};  ///< допустимы relay_id 1…relayCount
+    uint8_t inputCount{0};  ///< допустимы input_id 1…inputCount
     IdTable inputTriggers{};
     IdTable tempTriggers{};
 };
 
-/// `starterRelayId` = 0 — реле стартера не назначено.
-Issue checkStep(ActionId action, const ChannelRef& ch, uint16_t starterRelayId, const ChannelTables& tables);
+/// `starterRelayNumber` = 0 — реле стартера не назначено; иначе номер K1… (1…n).
+Issue checkStep(ActionId action, const ChannelRef& ch, uint8_t starterRelayNumber, const ChannelTables& tables);
 
 /// Короткое имя проблемы для журнала ("unknown action", ...); "" для None.
 const char* issueToString(Issue issue);

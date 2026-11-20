@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 class Core;
@@ -36,6 +37,13 @@ public:
         deferredPostedProgramApply_ = true;
         deferredPostedProgramIndexPhase_ = false;
     }
+
+    /// Принять тело POST в RAM (без LittleFS). false, если слот ещё не сброшен tick().
+    bool armPostedBody(bool isConfig, size_t total);
+    /// Дописать чанк по смещению `index`. false — разрыв или переполнение.
+    bool appendPostedBody(size_t index, const uint8_t* data, size_t len);
+    bool postedBodyComplete() const;
+    void dropPostedBody();
 
     /// false, если другая операция flash уже в очереди (не перезаписывает).
     bool queueResetConfig();

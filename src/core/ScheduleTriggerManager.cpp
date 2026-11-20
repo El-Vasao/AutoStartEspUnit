@@ -37,10 +37,10 @@ void ScheduleTriggerManager::syncEnabledFromConfig() {
 }
 
 void ScheduleTriggerManager::begin() {
-    logger.log(LogModule::ScheduleTriggerManager, "begin\n");
+    logger.log(LogModule::ScheduleTriggerManager, "начало\n");
     syncEnabledFromConfig();
     memset(_lastFireDayKey, 0, sizeof(_lastFireDayKey));
-    logger.log(LogModule::ScheduleTriggerManager, "OK (%u)\n", _config.getBase().schedule_triggers_count);
+    logger.log(LogModule::ScheduleTriggerManager, "успех (%u)\n", _config.getBase().schedule_triggers_count);
 }
 
 void ScheduleTriggerManager::update() {
@@ -64,7 +64,7 @@ void ScheduleTriggerManager::update() {
                                                     local.tm_hour, local.tm_min, local.tm_wday);
         if (!trigger_rules::scheduleShouldFire(due, todayKey, _lastFireDayKey[i])) continue;
 
-        logger.log(LogModule::ScheduleTriggerManager, "#%u %02u:%02u -> program %u\n", (unsigned)i, (unsigned)s.hour,
+        logger.log(LogModule::ScheduleTriggerManager, "#%u %02u:%02u -> программа %u\n", (unsigned)i, (unsigned)s.hour,
                    (unsigned)s.minute, (unsigned)s.program_id);
         if (_executor.start(s.program_id)) {
             _lastFireDayKey[i] = todayKey;
@@ -75,7 +75,7 @@ void ScheduleTriggerManager::update() {
 void ScheduleTriggerManager::setEnabled(uint8_t index, bool en) {
     if (index < Limits::MAX_SCHEDULE_TRIGGERS) {
         _enabled[index] = en;
-        logger.log(LogModule::ScheduleTriggerManager, "%u runtime enabled: %d\n", index, en);
+        logger.log(LogModule::ScheduleTriggerManager, "%u рантайм включён: %d\n", index, en);
     }
 }
 

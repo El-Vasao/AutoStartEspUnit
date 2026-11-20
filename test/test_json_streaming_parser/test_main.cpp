@@ -6,7 +6,7 @@
 #include "JsonStreamingParser.h"
 
 namespace {
-/// Records parser events as a compact trace: `{ k:name v:x [ v:1 ] } $`.
+/// Пишет события парсера короткой трассой: `{ k:name v:x [ v:1 ] } $`.
 class TraceListener : public JsonListener {
 public:
     std::string trace;
@@ -47,7 +47,7 @@ std::string parseAll(const char* json, int* documents = nullptr) {
     if (documents) *documents = l.documents;
     return l.trace;
 }
-} // namespace
+} // пространство имён
 
 void setUp() {}
 void tearDown() {}
@@ -87,14 +87,14 @@ static void test_unicode_escapes_decode_to_utf8() {
     TEST_ASSERT_EQUAL_STRING("[ v:A ] $", parseAll("[\"\\u0041\"]").c_str());
     TEST_ASSERT_EQUAL_STRING("[ v:Д ] $", parseAll("[\"\\u0414\"]").c_str());
     TEST_ASSERT_EQUAL_STRING("[ v:€ ] $", parseAll("[\"\\u20ac\"]").c_str());
-    TEST_ASSERT_EQUAL_STRING("[ v:\xF0\x9F\x98\x80 ] $", parseAll("[\"\\ud83d\\ude00\"]").c_str());  // 😀
+    TEST_ASSERT_EQUAL_STRING("[ v:\xF0\x9F\x98\x80 ] $", parseAll("[\"\\ud83d\\ude00\"]").c_str());  // символ 😀
 }
 
 static void test_invalid_unicode_is_an_error() {
     TEST_ASSERT_TRUE(run("[\"\\u00G1\"]").failed);
-    TEST_ASSERT_TRUE(run("[\"\\ude00\"]").failed);        // lone low surrogate
-    TEST_ASSERT_TRUE(run("[\"\\ud83d x\"]").failed);      // high surrogate without \u
-    TEST_ASSERT_TRUE(run("[\"\\ud83d\\u0041\"]").failed); // high surrogate + non-low
+    TEST_ASSERT_TRUE(run("[\"\\ude00\"]").failed);        // одинокий младший суррогат
+    TEST_ASSERT_TRUE(run("[\"\\ud83d x\"]").failed);      // старший суррогат без \u
+    TEST_ASSERT_TRUE(run("[\"\\ud83d\\u0041\"]").failed); // старший суррогат + не младший
 }
 
 static void test_done_and_failed_flags() {
@@ -106,14 +106,14 @@ static void test_done_and_failed_flags() {
     TEST_ASSERT_FALSE(truncated.done);
     TEST_ASSERT_FALSE(truncated.failed);
 
-    TEST_ASSERT_TRUE(run("{\"a\" 1}").failed);       // missing ':'
-    TEST_ASSERT_TRUE(run("{\"a\":1 \"b\":2}").failed); // missing ','
+    TEST_ASSERT_TRUE(run("{\"a\" 1}").failed);       // нет «:»
+    TEST_ASSERT_TRUE(run("{\"a\":1 \"b\":2}").failed); // нет «,»
     TEST_ASSERT_TRUE(run("{\"a\":tru}").failed);
     TEST_ASSERT_TRUE(run("{\"a\":nul}").failed);
     TEST_ASSERT_TRUE(run("{\"a\":x}").failed);
-    TEST_ASSERT_TRUE(run("{\"a\":1}]").failed);       // trailing garbage
-    TEST_ASSERT_TRUE(run("x").failed);                // root must be object/array
-    TEST_ASSERT_TRUE(run("[\"a\\qb\"]").failed);      // bad escape
+    TEST_ASSERT_TRUE(run("{\"a\":1}]").failed);       // мусор после корня
+    TEST_ASSERT_TRUE(run("x").failed);                // корень должен быть объектом или массивом
+    TEST_ASSERT_TRUE(run("[\"a\\qb\"]").failed);      // плохой escape
     TEST_ASSERT_TRUE(run("[1.2.3]").failed);
     TEST_ASSERT_TRUE(run("[-]").failed);
 }
@@ -129,7 +129,7 @@ static void test_mismatched_closers_are_errors() {
 }
 
 static void test_object_closing_tracks_nesting_correctly() {
-    // endObject used to read the wrong stack slot; nested objects inside arrays exercise it.
+    // endObject раньше читал не тот слот стека; вложенные объекты в массивах это проверяют.
     Outcome o = run("{\"a\":[{\"b\":{}},{}],\"c\":{\"d\":[[]]}}");
     TEST_ASSERT_TRUE(o.done);
     TEST_ASSERT_EQUAL_STRING("{ k:a [ { k:b { } } { } ] k:c { k:d [ [ ] ] } } $", o.trace.c_str());

@@ -5,35 +5,59 @@
 
   APP.stores.registerUiFormattersStore = function registerUiFormattersStore(Alpine) {
     Alpine.store('uiFormat', {
+      _silkWithName(id, name) {
+        const silk = String(id || '').trim();
+        if (!silk) return '';
+        const n = String(name || '').trim();
+        return n ? `${silk} · ${n}` : silk;
+      },
       inputName(idx) {
         try {
           const item = Alpine.store('settings')?.inputs?.[idx];
-          const custom = item?.name;
-          if (typeof custom === 'string' && custom.trim()) return custom.trim();
-          const id = Number(item?.id) || 0;
-          return id ? String(id) : '';
+          const id = String(item?.id || '').trim() || `IN${(Number(idx) || 0) + 1}`;
+          return this._silkWithName(id, item?.name);
         } catch (e) {}
         return '';
       },
       inputLabelById(id) {
         try {
-          const iid = Number(id) || 0;
+          const iid = String(id || '').trim();
           if (!iid) return '—';
           const s = Alpine.store('settings');
           const list = Array.isArray(s?.inputs) ? s.inputs : [];
-          const hit = list.find(x => x && Number(x.id) === iid);
-          const name = String(hit?.name || '').trim();
-          return name || String(iid);
+          const hit = list.find(x => x && String(x.id || '') === iid);
+          return this._silkWithName(iid, hit?.name) || '—';
+        } catch (e) {}
+        return '—';
+      },
+      relayName(idx) {
+        try {
+          const item = Alpine.store('settings')?.relays?.[idx];
+          let id = String(item?.id || '').trim();
+          if (!id) {
+            const hw = Alpine.store('deviceStatus')?.hwMap?.relays?.[idx];
+            id = String(hw?.id || '').trim() || `K${(Number(idx) || 0) + 1}`;
+          }
+          return this._silkWithName(id, item?.name);
+        } catch (e) {}
+        return '';
+      },
+      relayLabelById(id) {
+        try {
+          const rid = String(id || '').trim();
+          if (!rid) return '—';
+          const s = Alpine.store('settings');
+          const list = Array.isArray(s?.relays) ? s.relays : [];
+          const hit = list.find(x => x && String(x.id || '') === rid);
+          return this._silkWithName(rid, hit?.name) || '—';
         } catch (e) {}
         return '—';
       },
       sensorName(idx) {
         try {
           const item = Alpine.store('settings')?.sensors?.[idx];
-          const custom = item?.name;
-          if (typeof custom === 'string' && custom.trim()) return custom.trim();
-          const id = Number(item?.id) || 0;
-          return id ? String(id) : '';
+          const id = String(item?.id || '').trim() || `T${(Number(idx) || 0) + 1}`;
+          return this._silkWithName(id, item?.name);
         } catch (e) {}
         return '';
       },
@@ -63,13 +87,12 @@
       },
       sensorLabelById(id) {
         try {
-          const sid = Number(id) || 0;
+          const sid = String(id || '').trim();
           if (!sid) return '—';
           const s = Alpine.store('settings');
           const list = Array.isArray(s?.sensors) ? s.sensors : [];
-          const hit = list.find(x => x && Number(x.id) === sid);
-          const name = String(hit?.name || '').trim();
-          return name || String(sid);
+          const hit = list.find(x => x && String(x.id || '') === sid);
+          return this._silkWithName(sid, hit?.name) || '—';
         } catch (e) {}
         return '—';
       },
