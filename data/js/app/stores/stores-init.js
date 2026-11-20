@@ -27,6 +27,7 @@
     safe('deviceOta', APP.stores.registerDeviceOtaUpdateStore);
     safe('deviceRuntime', APP.stores.registerDeviceRuntimeControlsStore);
     safe('deviceMaintenance', APP.stores.registerDeviceMaintenanceActionsStore);
+    safe('backup', APP.stores.registerBackupStore);
   };
 })();
 

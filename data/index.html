@@ -1198,6 +1198,21 @@
                         </div>
 
                         <div class="card">
+                            <h3>Копия</h3>
+                            <div class="notice notice-warning">
+                                В файле настроек есть пароли Wi‑Fi и MQTT.
+                            </div>
+                            <input type="file" x-ref="settingsBackupFile" accept=".json,application/json" hidden @change="$store.backup.importSettings($event)">
+                            <input type="file" x-ref="programsBackupFile" accept=".json,application/json" hidden @change="$store.backup.importPrograms($event)">
+                            <div class="button-group button-group--stack">
+                                <button class="btn" type="button" @click="$store.backup.exportSettings()" :disabled="$store.backup.locked()">Экспорт настроек</button>
+                                <button class="btn" type="button" @click="$refs.settingsBackupFile.click()" :disabled="$store.backup.locked()">Импорт настроек</button>
+                                <button class="btn" type="button" @click="$store.backup.exportPrograms()" :disabled="$store.backup.locked() || $store.programs.loading">Экспорт программ</button>
+                                <button class="btn" type="button" @click="$refs.programsBackupFile.click()" :disabled="$store.backup.locked() || $store.programs.loading">Импорт программ</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
                             <h3>Прошивка</h3>
                             <div class="notice notice-warning">
                                 Не отключайте питание во время прошивки.
