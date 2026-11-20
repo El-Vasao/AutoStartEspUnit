@@ -19,6 +19,17 @@ struct GsmVoiceTestAccess {
         gsm._voiceHangupDeadlineMs = 0;
     }
 
+    static void armSmsWaitOk(GsmController& gsm) {
+        gsm._state = GsmState::READY;
+        gsm._voiceKind = GsmController::VoiceKind::OutSms;
+        gsm._voicePhase = GsmController::VoicePhase::CmgsWaitOk;
+        // Эпоха уже дольше голосового потолка; await submit ещё жив.
+        gsm._voiceEpochStartMs = millis() - Gsm::VOICE_CALL_CEILING_MS - 1000;
+        gsm._voiceResultReady = false;
+        gsm._voiceResultOk = false;
+        gsm.beginAwait(GsmController::AwaitKind::OK, Gsm::SMS_CMGS_SUBMIT_TIMEOUT_MS);
+    }
+
     static bool holdAtBusy(GsmController& gsm) {
         AtSession::Request req{};
         req.cmd = "AT";
@@ -66,8 +77,20 @@ static void test_hangup_send_deadline_does_not_start_program() {
     TEST_ASSERT_NULL(strstr(Serial.tx(), "ATH"));
 }
 
+static void test_sms_wait_ok_ignores_voice_epoch_ceiling() {
+    GsmController gsm;
+    GsmVoiceTestAccess::armSmsWaitOk(gsm);
+
+    GsmVoiceTestAccess::service(gsm);
+
+    TEST_ASSERT_EQUAL_INT((int)GsmController::VoicePhase::CmgsWaitOk,
+                          (int)GsmVoiceTestAccess::phase(gsm));
+    TEST_ASSERT_FALSE(test_log::contains("voice: epoch ceiling"));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_hangup_send_deadline_does_not_start_program);
+    RUN_TEST(test_sms_wait_ok_ignores_voice_epoch_ceiling);
     return UNITY_END();
 }

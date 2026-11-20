@@ -84,6 +84,24 @@ static void test_error_and_cme_error_finish_with_error() {
     r = g_at.takeResult();
     TEST_ASSERT_TRUE(r.error);
     TEST_ASSERT_EQUAL_STRING("+CME ERROR: 10", r.capturedLine);
+
+    g_at.enqueue(req("AT+CMGS=\"1\"", kOk));
+    g_at.tick(0);
+    rx("+CMS ERROR: 330\r\n");
+    r = g_at.takeResult();
+    TEST_ASSERT_TRUE(r.error);
+    TEST_ASSERT_EQUAL_STRING("+CMS ERROR: 330", r.capturedLine);
+}
+
+static void test_prompt_or_ok_fails_on_error_before_prompt() {
+    g_at.enqueue(req("AT+CMGS=\"1\"", kPrompt | kOk, 10000, nullptr, "CMGS"));
+    g_at.tick(0);
+    rx("+CMS ERROR: 331\r\n");
+    TEST_ASSERT_TRUE(g_at.hasResult());
+    const AtSession::Result r = g_at.takeResult();
+    TEST_ASSERT_TRUE(r.error);
+    TEST_ASSERT_FALSE(r.gotPrompt);
+    TEST_ASSERT_FALSE(r.ok);
 }
 
 static void test_timeout_is_reported_and_logged() {
@@ -179,6 +197,7 @@ int main(int, char**) {
     RUN_TEST(test_command_is_sent_on_tick_with_crlf);
     RUN_TEST(test_prefix_line_is_captured_until_final_ok);
     RUN_TEST(test_error_and_cme_error_finish_with_error);
+    RUN_TEST(test_prompt_or_ok_fails_on_error_before_prompt);
     RUN_TEST(test_timeout_is_reported_and_logged);
     RUN_TEST(test_high_priority_queue_goes_first);
     RUN_TEST(test_prompt_completes_cipsend_prelude);

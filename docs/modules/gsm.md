@@ -94,7 +94,7 @@ stateDiagram-v2
 
 Файлы: `src/gsm/GsmController.Voice.cpp`, URC в `GsmController.Urc.cpp`, init `AT+CLIP=1` / `AT+DDET=1` / `AT+CMGF=1`.
 
-- **Исходящие:** `requestCallOwner()` → `ATDphone;`, гудки до `+CLCC` stat 0 или 25 с, затем `ATH`. `requestSmsOwner(text)` → `AT+CMGS` + тело + Ctrl+Z.
+- **Исходящие:** `requestCallOwner()` → `ATDphone;`, гудки до `+CLCC` stat 0 или 25 с, затем `ATH`. `requestSmsOwner(text)` → `AT+CMGF=1`, затем `AT+CMGS` + тело + Ctrl+Z. Приглашение `>` — до 10 с, `OK` после Ctrl+Z — до 60 с. `+CMS ERROR` / `ERROR` до `>` завершают шаг сразу. Голосовой потолок 60 с на фазы приёма SMS не действует.
 - **Входящие:** `RING`/`+CLIP` → совпадение `owner_phone` (хвост цифр) **и** непустой `dtmf_password` → слив MQTT → `ATA` → пароль DTMF → цифры id программы + `#` → `ATH` → `takePendingProgramStart` → `ProgramExecutor::start`.
 - Несовпадение CLIP/DTMF или таймаут → сброс линии, без старта программы.
 - После звонка GPRS/MQTT обычно переподключается (ожидаемо).

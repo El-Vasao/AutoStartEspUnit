@@ -144,6 +144,19 @@ void CellularCore::service() {
     if (_gsm->isReady()) {
         if (_gsm->modemServiceEpochBusy()) {
             // Держать MQTT выключенным всю эпоху голоса/SMS.
+            // Пока CIP-слив не добит (потолок эпохи мог уйти из NeedMqttDrain) — качать loop,
+            // иначе ATH/CMGS уйдут поверх живого CIPSEND.
+            if (_mqtt->needsDisconnectDrain()) {
+                if (_gsm->takeTcpRxOverflow()) {
+                    _mqtt->onTransportRxOverflow();
+                }
+                _mqtt->loop();
+                if (!_mqtt->needsDisconnectDrain() && !_gsm->tcpBusBusy()) {
+                    _mqttStarted = false;
+                    _mqttStableNoted = false;
+                    _lastLoggedFailStreak = 0;
+                }
+            }
             return;
         }
 

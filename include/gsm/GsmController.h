@@ -46,6 +46,8 @@ public:
         DialRing,
         HangupSend,
         HangupWait,
+        CmgsCmgfSend, ///< AT+CMGF=1 перед CMGS: init глотает ошибку текстового режима
+        CmgsCmgfWait,
         CmgsSend,
         CmgsWaitPrompt,
         CmgsSendBody,
@@ -401,6 +403,8 @@ private:
     void timeSoftMissCclkLite_(const char* why);
 
     void serviceVoice_(uint32_t now);
+    /// Фазы AT+CMGS со своим бюджетом: голосовой потолок 60 с их не режет.
+    bool voiceSmsOnWire_() const;
     void voiceReset_();
     void voiceFinish_(bool ok);
     void voiceAbortInboundClipWait_();

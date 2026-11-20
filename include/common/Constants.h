@@ -689,7 +689,10 @@ namespace Gsm {
     constexpr uint32_t VOICE_CALL_CEILING_MS = 60000;
     constexpr uint32_t VOICE_CLIP_WAIT_MS = 8000;
     constexpr uint32_t VOICE_HANGUP_TIMEOUT_MS = 8000;
-    constexpr uint32_t SMS_CMGS_TIMEOUT_MS = 30000;
+    /// Приглашение '>' на AT+CMGS. Дольше — модем не вошёл в текстовый режим.
+    constexpr uint32_t SMS_CMGS_PROMPT_TIMEOUT_MS = 10000;
+    /// OK после Ctrl+Z. SIM800 ждёт подтверждение SMSC до 60 с.
+    constexpr uint32_t SMS_CMGS_SUBMIT_TIMEOUT_MS = 60000;
     /// Минимальная длина цифрового суффикса при сравнении CLIP с owner_phone.
     constexpr uint8_t PHONE_MATCH_MIN_DIGITS = 10;
 }

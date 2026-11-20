@@ -335,6 +335,9 @@ void MqttClient::loop() {
 
     noteSessionErrorIfNeeded_();
 
+    // Слив: только качать FSM (online=false → DISCONNECT → stop). Без SUBSCRIBE/birth/steady.
+    if (_fsm.isDisconnectPending()) return;
+
     if (_fsm.state() == MqttFsmClient::State::Error || !_fsm.isConnected()) {
         abandonLastErrDelivery_();
     } else {
@@ -652,6 +655,9 @@ void MqttClient::failQueuedInboundOnDisconnect_() {
 }
 
 void MqttClient::disconnect() {
+    // Повторный слив (голос/SMS, time-sync) не должен снова класть online=false в очередь —
+    // иначе CIPSEND не опустеет и DISCONNECT/AT+CMGS не стартуют.
+    if (_fsm.isDisconnectPending()) return;
     logger.log(LogModule::MqttClient, "calling disconnect()\n");
     abandonLastErrDelivery_();
     // Пока сессия ещё Connected — ответить 500 на каждую команду с 202 в FIFO.

@@ -100,7 +100,7 @@ bool GsmController::requestSmsOwner(const char* message) {
 
     strlcpy(_voicePhone, phone, sizeof(_voicePhone));
     strlcpy(_voiceSmsText, message, sizeof(_voiceSmsText));
-    _voiceTimeoutMs = Gsm::SMS_CMGS_TIMEOUT_MS;
+    _voiceTimeoutMs = Gsm::SMS_CMGS_SUBMIT_TIMEOUT_MS;
     _voiceKind = VoiceKind::OutSms;
     _voicePhase = VoicePhase::NeedMqttDrain;
     _voiceEpochStartMs = millis();
@@ -290,6 +290,21 @@ void GsmController::voiceHandleUrc_(const char* line) {
     }
 }
 
+bool GsmController::voiceSmsOnWire_() const {
+    switch (_voicePhase) {
+    case VoicePhase::CmgsCmgfSend:
+    case VoicePhase::CmgsCmgfWait:
+    case VoicePhase::CmgsSend:
+    case VoicePhase::CmgsWaitPrompt:
+    case VoicePhase::CmgsSendBody:
+    case VoicePhase::CmgsWaitOk:
+    case VoicePhase::CmgsAbortEsc:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void GsmController::serviceVoice_(uint32_t now) {
     if (_voicePhase == VoicePhase::Idle) {
         if (_inboundRingSeen && _inboundClipDeadlineMs != 0 &&
@@ -300,7 +315,9 @@ void GsmController::serviceVoice_(uint32_t now) {
         return;
     }
 
-    if ((int32_t)(now - _voiceEpochStartMs) >= (int32_t)Gsm::VOICE_CALL_CEILING_MS) {
+    // Голосовой потолок не режет приём SMS: submit SMSC у SIM800 до 60 с после Ctrl+Z.
+    if (!voiceSmsOnWire_() &&
+        (int32_t)(now - _voiceEpochStartMs) >= (int32_t)Gsm::VOICE_CALL_CEILING_MS) {
         logger.log(LogModule::GsmController, "voice: epoch ceiling\n");
         if (_voicePhase != VoicePhase::HangupSend && _voicePhase != VoicePhase::HangupWait &&
             _voicePhase != VoicePhase::FinishOk && _voicePhase != VoicePhase::FinishFail) {
@@ -321,7 +338,7 @@ void GsmController::serviceVoice_(uint32_t now) {
         if (_voiceKind == VoiceKind::OutCall) {
             _voicePhase = VoicePhase::DialSend;
         } else if (_voiceKind == VoiceKind::OutSms) {
-            _voicePhase = VoicePhase::CmgsSend;
+            _voicePhase = VoicePhase::CmgsCmgfSend;
         } else {
             _voicePhase = VoicePhase::AnswerSend;
         }
@@ -422,18 +439,38 @@ void GsmController::serviceVoice_(uint32_t now) {
         }
         return;
 
+    case VoicePhase::CmgsCmgfSend:
+        if (_stack.at.isBusy() || _stack.at.hasResult()) return;
+        if (!sendAt("AT+CMGF=1", "CMGF", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS)) return;
+        _voicePhase = VoicePhase::CmgsCmgfWait;
+        return;
+
+    case VoicePhase::CmgsCmgfWait:
+        if (_awaitError || awaitTimedOut(now)) {
+            resetAwait();
+            logger.log(LogModule::GsmController, "voice: CMGF=1 failed\n");
+            _voicePhase = VoicePhase::FinishFail;
+            return;
+        }
+        if (!_awaitOk) return;
+        resetAwait();
+        _voicePhase = VoicePhase::CmgsSend;
+        return;
+
     case VoicePhase::CmgsSend: {
         char cmd[48];
         snprintf(cmd, sizeof(cmd), "AT+CMGS=\"%s\"", _voicePhone);
         _cmdId++;
         snprintf(_atCmdBuf, sizeof(_atCmdBuf), "%s", cmd);
-        AtSession::Request r{_atCmdBuf, Gsm::SMS_CMGS_TIMEOUT_MS,
-                             atExpectMask(AtSession::Expect::Prompt), nullptr, "CMGS"};
+        // Prompt|Ok: ERROR/+CMS ERROR до '>' завершают команду сразу, без 10 с тишины.
+        AtSession::Request r{_atCmdBuf, Gsm::SMS_CMGS_PROMPT_TIMEOUT_MS,
+                             atExpectOr(atExpectMask(AtSession::Expect::Prompt), AtSession::Expect::Ok),
+                             nullptr, "CMGS"};
         if (!_stack.at.enqueue(r)) return;
         resetAwait();
         _lastCommandTime = now;
         _voicePromptSeen = false;
-        _voicePhaseDeadlineMs = now + Gsm::SMS_CMGS_TIMEOUT_MS;
+        _voicePhaseDeadlineMs = now + Gsm::SMS_CMGS_PROMPT_TIMEOUT_MS;
         _voicePhase = VoicePhase::CmgsWaitPrompt;
         return;
     }
@@ -455,7 +492,7 @@ void GsmController::serviceVoice_(uint32_t now) {
     case VoicePhase::CmgsSendBody: {
         _stack.uart.writeRaw(_voiceSmsText);
         _stack.uart.writeByte(0x1A);
-        beginAwait(AwaitKind::OK, Gsm::SMS_CMGS_TIMEOUT_MS);
+        beginAwait(AwaitKind::OK, Gsm::SMS_CMGS_SUBMIT_TIMEOUT_MS);
         _voicePhase = VoicePhase::CmgsWaitOk;
         return;
     }

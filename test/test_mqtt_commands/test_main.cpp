@@ -97,6 +97,7 @@ struct MqttClientTestAccess {
     static void armTopics(MqttClient& m) {
         snprintf(m._topicCmd, sizeof(m._topicCmd), "dev/cmd");
         snprintf(m._topicReply, sizeof(m._topicReply), "dev/reply");
+        snprintf(m._topicOnline, sizeof(m._topicOnline), "dev/online");
     }
     static void tick(MqttClient& m) { m._fsm.tick(budgets()); }
     static void drain(MqttClient& m) { m.drainInbound_(); }
@@ -116,6 +117,16 @@ struct MqttClientTestAccess {
 };
 
 namespace {
+
+size_t countNeedle(const std::vector<uint8_t>& hay, const char* needle) {
+    if (!needle || !needle[0] || hay.empty()) return 0;
+    const size_t nlen = strlen(needle);
+    size_t hits = 0;
+    for (size_t i = 0; i + nlen <= hay.size(); i++) {
+        if (memcmp(hay.data() + i, needle, nlen) == 0) hits++;
+    }
+    return hits;
+}
 
 void connectMqtt() {
     MqttFsmClient::Config cfg;
@@ -270,11 +281,35 @@ static void test_run_during_starter_is_conflict_and_keeps_active() {
     TEST_ASSERT_EQUAL_UINT16(MqttCmd::CODE_CONFLICT, MqttClientTestAccess::ringCode(*g_mqtt, "late"));
 }
 
+static void test_disconnect_publishes_online_false_once() {
+    g_mqtt->setReconnectEnabled(false);
+    g_net->tx.clear();
+
+    g_mqtt->disconnect();
+    g_mqtt->disconnect();
+    TEST_ASSERT_TRUE(MqttClientTestAccess::fsm(*g_mqtt).isDisconnectPending());
+
+    for (int i = 0; i < 8; i++) {
+        g_mqtt->loop();
+        if (MqttClientTestAccess::fsm(*g_mqtt).state() == MqttFsmClient::State::Idle) break;
+    }
+    TEST_ASSERT_EQUAL_INT((int)MqttFsmClient::State::Idle, (int)MqttClientTestAccess::fsm(*g_mqtt).state());
+    TEST_ASSERT_FALSE(MqttClientTestAccess::fsm(*g_mqtt).isDisconnectPending());
+    TEST_ASSERT_EQUAL(1u, countNeedle(g_net->tx, "false"));
+    TEST_ASSERT_TRUE(txHas("dev/online"));
+
+    const size_t txBefore = g_net->tx.size();
+    for (int i = 0; i < 4; i++) g_mqtt->loop();
+    TEST_ASSERT_EQUAL(txBefore, g_net->tx.size());
+    TEST_ASSERT_EQUAL(1u, countNeedle(g_net->tx, "false"));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_preempt_run_final_reply_uses_old_id);
     RUN_TEST(test_failed_stage_ack_releases_id_ring);
     RUN_TEST(test_full_inbound_releases_id_ring);
     RUN_TEST(test_run_during_starter_is_conflict_and_keeps_active);
+    RUN_TEST(test_disconnect_publishes_online_false_once);
     return UNITY_END();
 }

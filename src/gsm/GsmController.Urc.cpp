@@ -179,7 +179,8 @@ void GsmController::handleAwaitLine(const char* line) {
         return;
     }
 
-    if (strcmp(line, "ERROR") == 0 || strstr(line, "+CME ERROR") != nullptr || isWordError_(line)) {
+    if (strcmp(line, "ERROR") == 0 || strstr(line, "+CME ERROR") != nullptr ||
+        strstr(line, "+CMS ERROR") != nullptr || isWordError_(line)) {
         _awaitError = true;
         return;
     }

@@ -117,7 +117,8 @@ void AtSession::onLine(const char* line) {
             finish_(true, false, false);
             return;
         }
-        if (strcmp(line, "ERROR") == 0 || strstr(line, "+CME ERROR") != nullptr) {
+        if (strcmp(line, "ERROR") == 0 || strstr(line, "+CME ERROR") != nullptr ||
+            strstr(line, "+CMS ERROR") != nullptr) {
             if (!_res.hasCapturedLine) {
                 strlcpy(_res.capturedLine, line, sizeof(_res.capturedLine));
                 _res.hasCapturedLine = true;

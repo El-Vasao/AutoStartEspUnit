@@ -1,5 +1,6 @@
 // Символы, которые MqttClient.Commands / GsmController.Voice+Core тянут из Core, Config и соседних TU.
 // В прошивке их дают MqttClient.Core и остальные GSM/Core; здесь только то, без чего native не линкуется.
+// disconnect()/loop() — урезанное зеркало Core (идемпотентный online=false + тик FSM на слив).
 #include "Arduino.h"
 #include "HostFakes.h"
 #include "config/Config.h"
@@ -75,6 +76,29 @@ bool MqttClient::publishStatus(bool) { return false; }
 bool MqttClient::publishProgramsBody_() { return false; }
 bool MqttClient::publishHwMapBody_() { return false; }
 bool MqttClient::publishTrigMapBody_() { return false; }
+
+void MqttClient::disconnect() {
+    // Зеркало MqttClient.Core: повторный слив не кладёт второй online=false.
+    if (_fsm.isDisconnectPending()) return;
+    if (_fsm.isConnected() && _topicOnline[0]) {
+        static constexpr uint8_t kFalse[] = {'f', 'a', 'l', 's', 'e'};
+        (void)_fsm.publish(_topicOnline, kFalse, 5, true, true);
+    }
+    _fsm.requestDisconnect();
+    _subscribeQueued = false;
+    _mqttWasConnected = false;
+}
+
+void MqttClient::loop() {
+    MqttFsmClient::Budgets b{};
+    b.maxReadBytesPerTick = 512;
+    b.maxWriteBytesPerTick = 1024;
+    b.maxParseFramesPerTick = 8;
+    b.maxMsPerTick = 0;
+    _fsm.tick(b);
+    // Слив: только качать FSM, без subscribe/birth (как в Core).
+    if (_fsm.isDisconnectPending()) return;
+}
 
 void GsmController::drainAtResult_() {}
 void GsmController::timeFailStep_(const char*) {}
