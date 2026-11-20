@@ -3,7 +3,7 @@
  * @brief URC/await слой GsmController: парсинг строк модема, ожидание OK/ERROR/+CREG/IP.
  *
  * Назначение:
- * - Разделить URC-first обработку входящих строк (URC) и “ожидания” (await) от FSM.
+ * - Разделить обработку входящих строк с приоритетом URC и «ожидания» (await) от FSM.
  * - Дать FSM простые флаги `_awaitOk/_awaitError/_awaitGotIp/...` без тяжёлых строковых операций.
  *
  * Память:
@@ -98,7 +98,7 @@ void GsmController::handleUrc(const char* line) {
         return;
     }
     if (strncmp(line, "+CNTP:", 6) == 0) {
-        // SIMCom: 1=ok, 61=network, 62=DNS, 63=connect, 64=response, 65=timeout
+        // SIMCom: 1=ok, 61=сеть, 62=DNS, 63=соединение, 64=ответ, 65=таймаут
         int code = -1;
         if (sscanf(line, "+CNTP: %d", &code) == 1) {
             if (code == 1) {
@@ -138,7 +138,7 @@ void GsmController::handleUrc(const char* line) {
         ev(10);
         return;
     }
-    // NOTE: modem MQTT (+SM*) URCs forwarding was removed as we are moving to TCP URC-first transport.
+    // Заметка: пересылка URC модема MQTT (+SM*) убрана — переход на TCP-транспорт с приоритетом URC.
     int8_t v = -1;
     if (gsm_at::parseCregStat(line, v)) {
         _cregStat = v;

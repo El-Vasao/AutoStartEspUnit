@@ -46,37 +46,15 @@ public:
     // Состояние входа (с учётом active_state)
     bool getState(uint8_t index) const;
 
-    // Физический уровень на пине (без учёта active_state)
-    bool getRawState(uint8_t index) const;
-
-    // Флаг стабильности (после антидребезга)
-    bool isStable(uint8_t index) const;
-
     // ---- Детекция фронтов ----
 
     // Было ли нажатие (переход из неактивного в активное) для DIGITAL-входа
     bool wasPressed(uint8_t index);
 
-    // Было ли отпускание (переход из активного в неактивное)
-    bool wasReleased(uint8_t index);
-
-    // Было ли срабатывание на заданный уровень
-    bool wasTriggered(uint8_t index, bool level);
-
-    // ---- Длительные нажатия ----
-
-    // Удерживается ли кнопка дольше указанного времени (мс)
-    bool isHeld(uint8_t index, uint32_t ms);
-
-    // Время удержания (мс) для текущего нажатия
-    uint32_t getHoldTime(uint8_t index) const;
-
     // ---- Кнопка на плате (всегда индекс 2) ----
 
     bool isButtonPressed() const { return getState(2); }
     bool wasButtonPressed();
-    bool wasButtonReleased();
-    bool isButtonHeld(uint32_t ms);
 
     // ---- Для счётчика импульсов ----
 
@@ -89,12 +67,12 @@ public:
     // Обороты держатся на пороге `threshold_rpm` не меньше `Rpm::CONFIRM_MS` (вход включён, счётчик)
     bool isRpmConfirmed(uint8_t index) const;
 
-    // ---- Runtime управление ----
+    // ---- Управление во время работы ----
 
     // Включён ли вход в рантайме
     bool isRuntimeEnabled(uint8_t index) const;
 
-    // Установить runtime-флаг включения
+    // Установить флаг включения во время работы
     void setRuntimeEnabled(uint8_t index, bool en);
 
     // Найти физический индекс входа по стабильному id из конфига (или -1)

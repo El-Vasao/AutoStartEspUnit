@@ -12,8 +12,8 @@
 
 /**
  * @file ScheduleTriggerManager.cpp
- * @brief Local schedule triggers (HH:MM + weekday mask).
- * Marks the local day only after ProgramExecutor::start() succeeds.
+ * @brief Локальные триггеры расписания (ЧЧ:ММ и маска дней недели).
+ * Местные сутки помечаются только после успешного ProgramExecutor::start().
  */
 
 ScheduleTriggerManager::ScheduleTriggerManager(Config& config, TimeSyncManager& timeSync,

@@ -9,7 +9,7 @@
 #include "freertos/task.h"
 #endif
 
-// Defined in WebServer.Core.cpp (tests provide their own sink). Called only from the main loop task.
+// Определена в WebServer.Core.cpp (тесты подставляют свой приёмник). Вызывается только из задачи основного цикла.
 void sseBroadcastLog(const char* message);
 
 namespace {
@@ -24,7 +24,7 @@ TaskHandle_t s_loopTask = nullptr;
 portMUX_TYPE s_ringMux = portMUX_INITIALIZER_UNLOCKED;
 
 bool isrContext() { return xPortInIsrContext(); }
-// Before begin() everything runs in setup() on the loop task.
+// До begin() всё выполняется в setup() в задаче цикла.
 bool onLoopTask() { return s_loopTask == nullptr || xTaskGetCurrentTaskHandle() == s_loopTask; }
 void rememberLoopTask() { s_loopTask = xTaskGetCurrentTaskHandle(); }
 struct RingLock {
@@ -34,7 +34,7 @@ struct RingLock {
 #endif
 
 char s_ring[Logging::DEFERRED_SLOTS][Logging::MAX_MESSAGE_LENGTH];
-size_t s_ringHead = 0;   // next slot to read
+size_t s_ringHead = 0;   // следующий слот для чтения
 size_t s_ringCount = 0;
 
 void emit(const char* line) {

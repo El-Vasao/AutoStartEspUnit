@@ -277,7 +277,7 @@ void ProgramExecutor::executeStep(const CompiledStep& step, ActionId actionId) {
 
         case ActionId::UNKNOWN:
         default:
-            // start() rejects such programs; reaching this means the compiled copy is corrupt.
+            // start() такие программы отвергает; если дошли сюда — скомпилированная копия повреждена.
             logger.log(LogModule::ProgramExecutor, "Unknown actionId %u at step %u\n", (unsigned)actionId,
                        (unsigned)(_currentStep + 1));
             abortWithError("unknown step", ErrorCode::PROGRAM_INVALID_REF);

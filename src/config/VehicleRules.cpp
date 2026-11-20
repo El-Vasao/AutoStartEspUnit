@@ -151,8 +151,8 @@ uint8_t normalize(BaseConfig& cfg, NoteFn note, void* ctx) {
         v.start_method = StartMethod::Timed;
         report(note, ctx, "start input unusable -> start_method timed", fixes);
     }
-    // Interlock stays fail-safe: a misconfigured block input keeps engine start blocked instead of
-    // being silently dropped. Only reported, not changed.
+    // Блокировка остаётся безопасной при отказе: неверно настроенный вход блокировки держит запуск двигателя запрещённым, а не
+    // молча отбрасывается. Только сообщается, не меняется.
     if (const char* r = checkBlockInput(cfg)) {
         if (note) note(r, ctx);
         if (note) note("engine start stays blocked until start_block_input_id is fixed", ctx);

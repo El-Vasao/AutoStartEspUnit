@@ -9,8 +9,8 @@ class Config;
 class TimeSyncManager;
 
 /**
- * Local HH:MM (+ days_mask) schedule → program start on rising edge once per local day.
- * Fires only while TimeSyncManager::isSynced().
+ * Расписание локальных ЧЧ:ММ (+ days_mask) → старт программы по фронту один раз за местные сутки.
+ * Срабатывает только пока TimeSyncManager::isSynced().
  */
 class ScheduleTriggerManager {
 public:
@@ -19,7 +19,7 @@ public:
     void begin();
     void update();
 
-    /// Copy enabled flags from config without clearing last-fire day keys (OTA restore).
+    /// Копирует флаги включения из конфига, не очищая ключи дня последнего срабатывания (восстановление после OTA).
     void syncEnabledFromConfig();
 
     void setEnabled(uint8_t index, bool en);
@@ -31,7 +31,7 @@ private:
     ProgramExecutor& _executor;
 
     bool _enabled[Limits::MAX_SCHEDULE_TRIGGERS]{};
-    /// Packed local date of last fire: (year<<9)|(yday) — enough to detect new local day.
+    /// Упакованная местная дата последнего срабатывания: (year<<9)|(yday) — достаточно, чтобы заметить новые местные сутки.
     uint32_t _lastFireDayKey[Limits::MAX_SCHEDULE_TRIGGERS]{};
     uint32_t _lastCheck{0};
 };

@@ -27,7 +27,7 @@ public:
     uint16_t getCRC() const { return configCRC; }
     bool isLoaded() const { return loaded; }
 
-    /// Last distinct load failure (CONFIG_*), or NONE after successful load.
+    /// Последняя отдельная ошибка загрузки (CONFIG_*) или NONE после успешной загрузки.
     ErrorCode lastLoadError() const { return lastLoadError_; }
 
     void setWdtPort(const WdtPort& port) { wdtPort_ = port; }
@@ -38,29 +38,21 @@ public:
     bool reset();
     bool save();
 
-    /// Update wall-clock TZ in RAM; persist to flash only when value changes.
-    /// Returns false if flash save was required and failed.
+    /// Обновить часовой пояс настенных часов в RAM; писать во flash только если значение изменилось.
+    /// false, если запись во flash была нужна и не удалась.
     bool setTzOffsetHours(int8_t hours);
 
-    /// Сериализовать текущий `baseCache` в JSON (wire-формат как раньше; сейчас — потоковая печать, без ArduinoJson).
-    void emitCurrentBaseConfigJson(Print& p) const;
-
-    /// Apply posted `/config/save` body. If body contains ephemeral
-    /// `vehicle.adc_calibrate_voltage`, asks `sensors` for coeff (raw stays inside sensors).
-    /// Calibrate field is never persisted.
+    /// Применить тело отправленного `/config/save`. Если в теле есть эфемерное
+    /// `vehicle.adc_calibrate_voltage`, просит у `sensors` коэффициент (raw остаётся внутри sensors).
+    /// Поле калибровки никогда не сохраняется.
     bool applyPostedConfigJsonFile(const char* tmpPath, SensorsController& sensors);
     bool commitPostedProgramFile(const char* tmpPath, uint8_t* outId = nullptr, ErrorCode* outErr = nullptr);
 
     bool loadProgramCompiled(uint8_t id, CompiledStep* outSteps, uint8_t maxSteps,
                              uint8_t* outCount, char* outName, size_t outNameSize);
-    bool writeProgramFile(const Program& prog);
     bool rebuildProgramIndex();
-    bool saveProgram(const Program& prog);
     bool deleteProgram(uint8_t id);
     bool resetPrograms();
-
-    /** `{"programs":[{id,name},...]}` из `/programs/index.json` (для MQTT и др.). */
-    bool emitProgramListWrapped(Print& p) const;
 
     /** Только массив `[{id,name},...]` для обёртки reply envelope. */
     bool emitProgramIndexArray(Print& p) const;
@@ -68,7 +60,7 @@ public:
     bool isProgramUsed(uint8_t id) const;
     bool ensureProgramIndex();
 
-    /// FNV-1a of the current program index array (`[{id,name},...]`). 0 until the index is accepted.
+    /// FNV-1a сырых байт `/programs/<id>.json` в порядке возрастания id. 0, пока индекс не принят.
     uint32_t programsRev() const { return programsRev_; }
 
 private:
@@ -84,8 +76,6 @@ private:
     bool loadBaseFromFile(const char* path, BaseConfig& target, size_t& outLen, uint16_t* outFileCrc = nullptr);
     bool saveBaseConfig(const BaseConfig& cfg);
     bool validateCross(const BaseConfig& cfg);
-
-    bool programExists(uint8_t id);
 };
 
 extern Config config;

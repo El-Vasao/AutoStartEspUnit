@@ -49,7 +49,7 @@ void GsmController::handleRegistering() {
         return;
     }
 
-    // Searching / not registered: re-poll on short cadence (do not burn MAX_RETRIES).
+    // Поиск / нет регистрации: короткий повторный опрос (не тратить MAX_RETRIES).
     const bool searching =
         (_awaitOk && _awaitGotCreg) || awaitTimedOut(now);
     if (searching) {

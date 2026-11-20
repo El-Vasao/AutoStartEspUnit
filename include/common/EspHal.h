@@ -8,7 +8,7 @@
 #endif
 
 /**
- * Thin ESP32-C3 HAL shims (chip id, heap, task watchdog).
+ * Тонкие прослойки HAL ESP32-C3 (id чипа, куча, сторожевой таймер задачи).
  */
 inline uint32_t espHalFreeHeap() {
     return ESP.getFreeHeap();
@@ -26,10 +26,10 @@ inline void espHalFeedWdt() {
 }
 
 inline void espHalWdtEnable() {
-    // Arduino-ESP32 enables the task WDT; feeding is espHalFeedWdt().
+    // Arduino-ESP32 включает task WDT; кормление — espHalFeedWdt().
 }
 
-/** Lower 24 bits of eFuse MAC — stable MQTT client-id suffix (replaces ESP.getChipId()). */
+/** Младшие 24 бита MAC из eFuse — устойчивый суффикс MQTT client-id (вместо ESP.getChipId()). */
 inline uint32_t espHalChipId() {
     const uint64_t mac = ESP.getEfuseMac();
     return static_cast<uint32_t>(mac & 0xFFFFFFull);

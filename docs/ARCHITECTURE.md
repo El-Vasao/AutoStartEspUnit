@@ -80,7 +80,7 @@ flowchart TD
 Дополнение:
 - Для рантайм-исполнения программ — компактные шаги без строк (`CompiledStep`).
 - Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`).
-- MQTT: выделенные топики из конфигурации; payload статуса (`STATUS_PAYLOAD_MAX_BYTES=900`) меньше кадра `MqttFsmClient::TX_MAX` (3072, вместе с ответом `hwmap`). Нормативный JSON статуса — `docs/modules/mqtt.md` §4 (вложенные `time`/`hw`/`radio`/`program`/`runtime`/`diag`/`rev`, `full` marker, snapshot/delta merge).
+- MQTT: топики `online`/`state`/`programs`/`hwMap`/`trigMap`/`cmd`/`reply`; payload статуса ≤900; кадр ≤ `MQTT_CIPSEND_MAX` (1400), слот `TX_MAX` 3072. Birth: каталоги → full retained `state` → `online=true`. Период = full retain; край = delta. Норматив — `docs/modules/mqtt.md`.
 
 ## 3.0) MQTT contract (топики, сообщения, доставка)
 MQTT чувствителен к стабильности цикла (SIM800 + SoftAP).
@@ -88,18 +88,15 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
 Фиксируем контракт:
 - **Идентификация устройства только по топику**: никаких `deviceId`/`unitId` в payload.
 - **Топики**: пользователь задаёт только `BaseConfig.mqtt.topic_prefix`; суффиксы фиксированы:
-  `/avail` (presence), `/status` (JSON), `/cmd` (команды), `/reply` (ответы).
+  `/online`, `/state`, `/programs`, `/hwMap`, `/trigMap`, `/cmd`, `/reply`.
 - **Delivery по умолчанию**:
-  - LWT `"offline"` на `{prefix}/avail`: QoS1 + retained
-  - `"online"` при connect на `{prefix}/avail`: retained (независимо от JSON)
-  - периодический JSON на `{prefix}/status`: best-effort, not-retained, раз в `publish_interval_sec`
-    (full только после connect до успешного TX и по `get_status`; иначе delta/skip; контракт: `docs/modules/mqtt.md` §4)
-- **Anti-hang**: публикация JSON-статуса по таймеру (delta/skip) плюс first/full и `get_status`; чтение/запись в транспорт режутся лимитами `MqttFsmClient::Budgets`.
-  Локальное время «измерить + застейджить» JSON ограничивают **логируемым** порогом
-  (~10 мс в `MqttClient::publishStatus`) и не приводят к принудительному `disconnect()` сами по себе.
-  SIM800: send-epoch до `SEND OK`, selective discard (raw UART junk drop / `+IPD` keep),
-  `POST_BOOT_SETTLE_MS` до `gsm.begin()`, `mqtt.loop()` всегда при READY (TX no-op mid-CIPSEND, RX дренируется; см. [`modules/gsm.md`](modules/gsm.md), [`modules/modem.md`](modules/modem.md)).
-  MQTT outbound: очередь Ctrl/Tele (`TX_Q_DEPTH=3`, Tele не занимает последний слот, FIFO send), атомарный CIPSEND, presence после SUBACK или timeout+retry (см. `docs/modules/mqtt.md`). RX overflow → reconnect.
+  - LWT `false` на `{prefix}/online`: QoS1 + retained
+  - Birth: три retained-хэша каталогов → full retained `state` → один `online=true` (без keepalive-повтора)
+  - Период/`status`: full retained `state`; край ~250 мс: delta без retain; каталоги retain = 8 hex (см. `docs/modules/mqtt.md`)
+  - Кадр ≤ `MQTT_CIPSEND_MAX` (1400)
+- **Anti-hang**: чтение/запись режутся `MqttFsmClient::Budgets`. Локальное время encode+stage (~10 мс) только логируется.
+  SIM800: send-epoch до `SEND OK`, `mqtt.loop()` всегда при READY (см. [`modules/gsm.md`](modules/gsm.md)).
+  MQTT outbound: Ctrl/Tele (`TX_Q_DEPTH=3`, sticky Full/Catalog, Delta coalesce), атомарный CIPSEND. RX overflow → reconnect.
 
 ### Долгие операции и watchdog/cooperate
 Любые потенциально долгие операции (flash, большие сериализации, loop’ы по файлам):

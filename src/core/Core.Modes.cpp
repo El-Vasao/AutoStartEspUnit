@@ -45,7 +45,7 @@ void Core::startOTAUpdate() {
 void Core::onOtaHttpUploadStreamOpenedFromWeb() {
     CorePrivate& impl = *_impl;
     logHeapSnapshot("ota_upload_open");
-    // Always (re)start stream FSM before chunks arrive; deferred mode switch must not reset it.
+    // Всегда (пере)запускать автомат потока до прихода кусков; отложенная смена режима не должна его сбрасывать.
     impl.otaHandler.prepareHttpUploadSession();
     if (impl.modeManager.getCurrentMode() != CoreMode::OTA_UPDATE) {
         impl.pendingDeferredOtaFromWebUpload = true;
@@ -96,7 +96,7 @@ void Core::handleBoot() {
                 }
                 impl.errorManager.loadFromRtc();
                 {
-                    // Any abnormal reboot → undelivered fact for first MQTT full (see docs/modules/mqtt.md).
+                    // Любая нештатная перезагрузка → недоставленный факт для первого полного MQTT (см. docs/modules/mqtt.md).
                     const esp_reset_reason_t rr = esp_reset_reason();
                     ErrorCode bootCode = ErrorCode::NONE;
                     switch (rr) {
@@ -133,7 +133,7 @@ void Core::handleBoot() {
                 logger.log(LogModule::Core, "BOOT: LoadOrCreateConfig\n");
                 const ConfigLoadOutcome lo = config.loadWithOutcome();
                 if (lo == ConfigLoadOutcome::OkAfterFactoryDefaultsWrittenRebootRecommended) {
-                    // Preserve why load failed before factory defaults (RTC survives soft reboot).
+                    // Сохранить причину сбоя загрузки до заводских значений (RTC переживает мягкую перезагрузку).
                     if (config.lastLoadError() != ErrorCode::NONE) {
                         impl.errorManager.set(config.lastLoadError());
                     }
@@ -174,7 +174,7 @@ void Core::handleBoot() {
             }
             case CorePrivate::BootStage::InitHardware: {
                 logger.log(LogModule::Core, "BOOT: InitHardware\n");
-                // Validate pin maps.
+                // Проверить карты выводов.
                 const size_t inN = sizeof(Pin::INPUT_IDS) / sizeof(Pin::INPUT_IDS[0]);
                 const size_t rlN = sizeof(Pin::RELAY_IDS) / sizeof(Pin::RELAY_IDS[0]);
                 impl.bootHwMapBad = HwMap::idsHaveZeroOrDuplicates(Pin::INPUT_IDS, inN) ||
@@ -264,11 +264,12 @@ void Core::handleNormal() {
     impl.batterySaverManager.update();
     impl.thermostatManager.update();
     impl.timeSyncManager.update();
-    // SoftAP + cellular coexist on ESP32-C3. Same cellular policy as NORMAL_SILENT.
+    // SoftAP и сотовая связь сосуществуют на ESP32-C3. Та же политика сотовой связи, что в NORMAL_SILENT.
     serviceCellularLink();
     {
         uint8_t pid = 0;
-        if (impl.gsm.takePendingProgramStart(pid)) {
+        // takePending снимает команду. На шаге стартера start() всё равно откажет — запрос нельзя терять.
+        if (!impl.programExecutor.isInStarterStep() && impl.gsm.takePendingProgramStart(pid)) {
             logger.log(LogModule::Core, "inbound DTMF start program %u\n", (unsigned)pid);
             (void)impl.programExecutor.start(pid);
         }
@@ -291,7 +292,7 @@ void Core::handleNormal() {
 void Core::handleNormalSilent() {
     CorePrivate& impl = *_impl;
     impl.inputs.update();
-    // PCB button (IN3): wake SoftAP regardless of trigger enable on that input.
+    // Кнопка платы (IN3): разбудить SoftAP независимо от включения триггера на этом входе.
     if (impl.inputs.wasButtonPressed()) {
         (void)wakeWifiApFromSilent();
         return;
@@ -313,7 +314,8 @@ void Core::handleNormalSilent() {
     serviceCellularLink();
     {
         uint8_t pid = 0;
-        if (impl.gsm.takePendingProgramStart(pid)) {
+        // takePending снимает команду. На шаге стартера start() всё равно откажет — запрос нельзя терять.
+        if (!impl.programExecutor.isInStarterStep() && impl.gsm.takePendingProgramStart(pid)) {
             logger.log(LogModule::Core, "inbound DTMF start program %u\n", (unsigned)pid);
             (void)impl.programExecutor.start(pid);
         }

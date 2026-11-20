@@ -64,7 +64,7 @@ bool Config::loadBaseFromFile(const char* path, BaseConfig& target, size_t& outL
     }
     f.close();
 
-    // Never fail the load on rule violations: a failed load wipes the user config via reset().
+    // Не срывать загрузку из-за нарушений правил: неудачная загрузка стирает конфиг пользователя через reset().
     vehicle_rules::normalize(target, logVehicleFix, nullptr);
 
     lastLoadError_ = ErrorCode::NONE;
@@ -145,10 +145,6 @@ bool Config::setTzOffsetHours(int8_t hours) {
     }
     logger.log(LogModule::Config, "tz_offset_hours %+dh → %+dh\n", (int)prev, (int)hours);
     return true;
-}
-
-void Config::emitCurrentBaseConfigJson(Print& p) const {
-    config_internal::serializeBaseConfigToPrint(baseCache, p);
 }
 
 namespace config_storage_internal {

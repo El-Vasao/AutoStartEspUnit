@@ -122,7 +122,7 @@ static bool otaIsModeThunk(void* ctx) {
 
 static void logHeapTag_(const char* tag) {
     logger.log(LogModule::Core, "heap %s: free=%u maxBlk=%u frag=%u%%\n", tag, (unsigned)espHalFreeHeap(),
-               (unsigned)espHalMaxBlock(), (unsigned)0 /* heap frag N/A on ESP32 */);
+               (unsigned)espHalMaxBlock(), (unsigned)0 /* фрагментация кучи неприменима на ESP32 */);
 }
 
 static void drainDeferredOtaFromWebUpload_(CorePrivate& impl) {
@@ -132,7 +132,7 @@ static void drainDeferredOtaFromWebUpload_(CorePrivate& impl) {
         return;
     }
     logHeapTag_("before deferred OTA switch");
-    // Stream FSM already started in onOtaHttpUploadStreamOpenedFromWeb — do not reset it.
+    // Автомат потока уже запущен в onOtaHttpUploadStreamOpenedFromWeb — не сбрасывать его.
     impl.modeManager.switchMode(CoreMode::OTA_UPDATE);
     logHeapTag_("after deferred OTA switch");
 }
@@ -161,7 +161,7 @@ bool Core::begin() {
     logger.log(LogModule::Core, "begin\n");
     logger.log(LogModule::Core, "Reset reason: %s\n", getResetReason());
 
-    // Never use BLE on this product: release controller+host so RF cannot start this boot.
+    // На этом изделии BLE не используется: отпустить контроллер и хост, чтобы радио не стартовало в эту загрузку.
     {
         const esp_err_t btErr = esp_bt_mem_release(ESP_BT_MODE_BLE);
         logger.log(LogModule::Core, "BT mem_release: %s\n", esp_err_to_name(btErr));
@@ -299,7 +299,7 @@ void Core::update() {
     drainDeferredOtaFromWebUpload_(impl);
 
     if (getMode() == CoreMode::OTA_UPDATE) {
-        // Do not commit config/program flash while Update/OTA stream owns FS.
+        // Не фиксировать flash конфига и программ, пока поток Update/OTA владеет ФС.
     } else if (impl.programExecutor.isRunning()) {
         if (flashCommit.isPending()) {
             static uint32_t lastDeferredBusyLog = 0;

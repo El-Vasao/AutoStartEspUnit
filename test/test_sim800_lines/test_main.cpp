@@ -1,5 +1,6 @@
 #include <unity.h>
 
+#include <stdio.h>
 #include <string.h>
 
 #include "modem/Sim800Lines.h"
@@ -96,10 +97,59 @@ static void test_ipd_length_tolerates_whitespace() {
     TEST_ASSERT_EQUAL_UINT16(12, f.length());
 }
 
-static void test_ipd_length_saturates() {
+static void test_ipd_length_at_buffer_limit_is_payload() {
     IpdFramer f;
-    for (const char* p = "+IPD,99999:"; *p; ++p) f.feed(*p);
+    char hdr[24];
+    snprintf(hdr, sizeof(hdr), "+IPD,%u:", (unsigned)IpdFramer::kMaxIpdLen);
+    Ev last = Ev::Consumed;
+    for (const char* p = hdr; *p; ++p) last = f.feed(*p);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::DataStart, (uint8_t)last);
+    TEST_ASSERT_TRUE(f.inPayload());
+    TEST_ASSERT_FALSE(f.inDiscard());
     TEST_ASSERT_EQUAL_UINT16(IpdFramer::kMaxIpdLen, f.length());
+}
+
+static void test_ipd_oversize_is_discard_not_clamped_payload() {
+    IpdFramer f;
+    Ev last = Ev::Consumed;
+    for (const char* p = "+IPD,99999:"; *p; ++p) last = f.feed(*p);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)last);
+    TEST_ASSERT_TRUE(f.inDiscard());
+    TEST_ASSERT_FALSE(f.inPayload());
+    TEST_ASSERT_EQUAL_UINT16(0, f.length());
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)f.feed('O'));
+    TEST_ASSERT_EQUAL_STRING("", f.replay());
+    TEST_ASSERT_TRUE(f.inDiscard());
+}
+
+static void test_ipd_oversize_does_not_glue_following_ok() {
+    IpdFramer f;
+    const unsigned extra = 2;
+    const unsigned declared = (unsigned)IpdFramer::kMaxIpdLen + extra;
+    char hdr[24];
+    snprintf(hdr, sizeof(hdr), "+IPD,%u:", declared);
+    Ev last = Ev::Consumed;
+    for (const char* p = hdr; *p; ++p) last = f.feed(*p);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)last);
+    TEST_ASSERT_TRUE(f.inDiscard());
+
+    for (unsigned i = 0; i < IpdFramer::kMaxIpdLen; i++) {
+        last = f.feed('A');
+        TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)last);
+        TEST_ASSERT_TRUE(f.inDiscard());
+    }
+    // Bytes past the buffer stay inside the frame, so "OK" here is not a modem line.
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)f.feed('O'));
+    TEST_ASSERT_TRUE(f.inDiscard());
+    TEST_ASSERT_EQUAL_STRING("", f.replay());
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)f.feed('K'));
+    TEST_ASSERT_FALSE(f.inDiscard());
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IpdFramer::State::Idle, (uint8_t)f.state());
+
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Raw, (uint8_t)f.feed('O'));
+    TEST_ASSERT_EQUAL_STRING("", f.replay());
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Raw, (uint8_t)f.feed('K'));
+    TEST_ASSERT_EQUAL_STRING("", f.replay());
 }
 
 static void test_ipd_zero_length_does_not_consume_payload_byte() {
@@ -126,6 +176,11 @@ static void test_aborted_header_replays_consumed_bytes() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Raw, (uint8_t)f.feed('x'));
     TEST_ASSERT_EQUAL_STRING("+IPD,12", f.replay());
     TEST_ASSERT_EQUAL_UINT8((uint8_t)IpdFramer::State::Idle, (uint8_t)f.state());
+
+    // CR/LF around the length are consumed but were never part of the replay.
+    for (const char* p = "+IPD, 1\r\n2"; *p; ++p) f.feed(*p);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Raw, (uint8_t)f.feed('x'));
+    TEST_ASSERT_EQUAL_STRING("+IPD,12", f.replay());
 }
 
 static void test_plain_byte_is_raw_without_replay() {
@@ -152,7 +207,9 @@ int main(int, char**) {
     RUN_TEST(test_ipd_frame_events);
     RUN_TEST(test_ipd_payload_counters);
     RUN_TEST(test_ipd_length_tolerates_whitespace);
-    RUN_TEST(test_ipd_length_saturates);
+    RUN_TEST(test_ipd_length_at_buffer_limit_is_payload);
+    RUN_TEST(test_ipd_oversize_is_discard_not_clamped_payload);
+    RUN_TEST(test_ipd_oversize_does_not_glue_following_ok);
     RUN_TEST(test_ipd_zero_length_does_not_consume_payload_byte);
     RUN_TEST(test_aborted_header_replays_consumed_bytes);
     RUN_TEST(test_plain_byte_is_raw_without_replay);

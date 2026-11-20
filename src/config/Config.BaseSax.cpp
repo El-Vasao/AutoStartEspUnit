@@ -48,7 +48,7 @@ void initBaseLikeFillBasic(BaseConfig& t) {
     t.temperature_triggers_count = 0;
     t.schedule_triggers_count = 0;
     t.setup_required = false;
-    t.time = TimeConfig{}; // disabled + empty NTP until JSON `time` (or factory DefaultConfig) fills it
+    t.time = TimeConfig{}; // NTP выключен и пуст, пока его не заполнит JSON `time` (или заводской DefaultConfig)
 }
 
 enum class St : uint8_t {
@@ -305,7 +305,7 @@ public:
                     strlcpy(t_->mqtt.pass, v ? v : "", sizeof t_->mqtt.pass);
                 else if (streq(pending_, "topic_prefix")) {
                     strlcpy(t_->mqtt.topic_prefix, v ? v : "", sizeof t_->mqtt.topic_prefix);
-                    // Drop trailing '/' so joinTopic_ can append suffixes cleanly.
+                    // Убрать хвостовые '/', чтобы joinTopic_ ровно дописывал суффиксы.
                     size_t n = strlen(t_->mqtt.topic_prefix);
                     while (n > 0 && t_->mqtt.topic_prefix[n - 1] == '/') {
                         t_->mqtt.topic_prefix[--n] = '\0';
@@ -316,7 +316,7 @@ public:
             case St::Vehicle:
                 if (streq(pending_, "adc_voltage_coeff")) t_->vehicle.adc_voltage_coeff = json_scalar::parseF(v, 1.0f);
                 else if (streq(pending_, "adc_calibrate_voltage")) {
-                    // Ephemeral: not stored in BaseConfig; used only on posted apply.
+                    // Эфемерное: в BaseConfig не хранится; нужно только при применении отправленного тела.
                     hasAdcCalibrate_ = true;
                     adcCalibrateVoltage_ = json_scalar::parseF(v, 0.0f);
                 } else if (streq(pending_, "starter_max_time_sec"))
@@ -361,7 +361,7 @@ public:
                 break;
             case St::InputObj:
                 if (ii_ == 255 || ii_ >= HardwareLimits::INPUTS) break;
-                // "id" is ignored: input ids are hardware identity (Pin::INPUT_IDS), set in initBaseLikeFillBasic.
+                // "id" игнорируется: id входов — это идентичность железа (Pin::INPUT_IDS), их ставит initBaseLikeFillBasic.
                 if (streq(pending_, "enabled"))
                     t_->inputs[ii_].enabled = json_scalar::parseBool(v, true);
                 else if (streq(pending_, "type"))
@@ -418,8 +418,11 @@ public:
                 if (streq(pending_, "enabled")) t_->time.enabled = json_scalar::parseBool(v, true);
                 else if (streq(pending_, "ntp_server"))
                     strlcpy(t_->time.ntp_server, v ? v : "pool.ntp.org", sizeof t_->time.ntp_server);
-                else if (streq(pending_, "tz_offset_hours"))
-                    t_->time.tz_offset_hours = static_cast<int8_t>(json_scalar::parseI16(v, 3));
+                else if (streq(pending_, "tz_offset_hours")) {
+                    // parseI16 зажимает мусор в ±32767, а int8_t это обрезает. Вне -12..14 оставляем прежнее.
+                    const int16_t tz = json_scalar::parseI16(v, t_->time.tz_offset_hours);
+                    if (tz >= -12 && tz <= 14) t_->time.tz_offset_hours = static_cast<int8_t>(tz);
+                }
                 else if (streq(pending_, "sync_interval_hours"))
                     t_->time.sync_interval_hours = json_scalar::parseU32(v, Defaults::TIME_SYNC_INTERVAL_HOURS);
                 break;
@@ -483,7 +486,7 @@ private:
     BaseConfig* t_;
     St stk_[24]{};
     int sp_{-1};
-    // Longest config keys are "engine_running_voltage_threshold" / "..._stopped_..." (32 chars).
+    // Самые длинные ключи конфига — "engine_running_voltage_threshold" / "..._stopped_..." (32 символа).
     char pending_[40]{};
     uint8_t si_{255};
     uint8_t ii_{255};

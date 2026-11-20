@@ -14,16 +14,16 @@ enum class GsmState : uint8_t {
     INIT,                ///< инициализация (AT-команды)
     REGISTERING,         ///< регистрация в сети (AT+CREG?)
     GPRS_SETUP,          ///< настройка SAPBR Contype/APN/USER/PWD
-    GPRS_ATTACH,         ///< status-first SAPBR open (probe 2,1 → open 1,1)
+    GPRS_ATTACH,         ///< сначала статус SAPBR (опрос 2,1 → открытие 1,1)
     GPRS_GETIP,          ///< подтверждение IP (AT+SAPBR=2,1)
-    READY,               ///< модем готов, bearer up
+    READY,               ///< модем готов, bearer поднят
     ERROR                ///< ошибка, требуется перезапуск
 };
 
 /**
  * @brief Контроллер GSM-модема SIM800.
  * Реализует асинхронный конечный автомат для регистрации и подключения GPRS.
- * Используется как provider транспортной готовности для MQTT.
+ * Используется как поставщик транспортной готовности для MQTT.
  *
  * Важно по железу:
  * - по умолчанию UART0 (`Serial`) используется для AT-трафика с модемом (не для `logger`).
@@ -61,14 +61,14 @@ public:
     // Запуск/перезапуск автомата (после загрузки конфига)
     void begin();
 
-    // Остановить автомат и сбросить runtime-состояние
+    // Остановить автомат и сбросить рабочее состояние
     void stop();
 
     // Обновление состояния (вызывать в loop)
     void update();
     void requestReattach() { _reattachRequested = true; }
     void requestModemReboot() { _userRebootRequested = true; }
-    /// Clear reattach backoff after a stable MQTT data-plane session (not on every READY entry).
+    /// Сбросить паузу reattach после устойчивой сессии данных MQTT (не при каждом входе в READY).
     void clearReattachBackoff();
 
     // Проверить, готов ли модем к работе (GPRS подключён)
@@ -77,7 +77,7 @@ public:
     // Получить название оператора
     const char* getOperator() const { return _operator; }
 
-    // Получить уровень сигнала (0-31, 99 = unknown)
+    // Получить уровень сигнала (0-31, 99 = неизвестно)
     int16_t getSignalQuality() const { return _signal; }
 
     // BER из последнего AT+CSQ (0..7), или -1 если ещё не было ответа
@@ -89,45 +89,45 @@ public:
     // Текущее состояние в виде строки
     const char* getStateString() const;
 
-    // Текущее состояние (enum)
+    // Текущее состояние (перечисление)
     GsmState getState() const { return _state; }
 
     // Получить ссылку на клиент для MQTT
     Client& getClient() { return _stack.client; }
 
-    /// True while CIP TCP/send/close/recover epoch is active (not plain CSQ/COPS AT).
+    /// Пока активна эпоха CIP TCP: отправка/закрытие/восстановление (не обычный AT CSQ/COPS).
     bool tcpEpochBusy() const { return _stack.tcp.isTcpEpochBusy(); }
-    /// Epoch or any AtSession busy — use for reattach/drain.
+    /// Эпоха или любая занятость AtSession — для reattach/слива.
     bool tcpBusBusy() const { return _stack.tcp.isBusBusy(); }
 
-    /// True while CIP TCP socket is up or connecting (NTP must not run).
+    /// Пока сокет CIP TCP поднят или подключается (NTP запускать нельзя).
     bool tcpSocketActive() const {
         return _stack.tcp.isConnected() || _stack.tcp.isConnecting();
     }
 
-    /// Sticky TCP RX ring overflow (MQTT must reconnect).
+    /// Липкое переполнение кольца RX TCP (MQTT должен переподключиться).
     bool takeTcpRxOverflow() { return _stack.tcp.takeRxOverflow(); }
 
-    /// Log Sim800 +IPD / send-epoch snapshot (MQTT rx_incomplete forensics).
+    /// Журнал снимка Sim800 +IPD / эпохи отправки (разбор MQTT rx_incomplete).
     void logTcpRxForensic(const char* why) { _stack.tcp.logRxForensic(why); }
 
-    /// Who produced the last successful modem time sync (for status/debug).
+    /// Кто дал последнюю успешную синхронизацию времени модема (статус/отладка).
     enum class TimeSource : uint8_t { None = 0, Cclk, Cipgsmloc, Cntp };
 
-    /// Bits for takeTimeSyncFail when cascade ends without epoch.
+    /// Биты для takeTimeSyncFail, если каскад закончился без epoch.
     enum TimeFailBit : uint8_t {
         TimeFailCclk = 1u << 0,
         TimeFailCipgsmloc = 1u << 1,
         TimeFailCntp = 1u << 2,
     };
 
-    /// Wall-clock cascade steps (public so busy check can inline).
+    /// Шаги каскада часов (публичные, чтобы проверку занятости можно было встроить).
     enum class TimeStep : uint8_t {
         Idle = 0,
         CclkProbe,
-        Cipshut,           ///< AT+CIPSHUT before IP-dependent hops (after MQTT CIPCLOSE)
+        Cipshut,           ///< AT+CIPSHUT перед шагами, которым нужен IP (после MQTT CIPCLOSE)
         Cipgsmloc,
-        WaitCipgsmlocUrc,  ///< +CIPGSMLOC often arrives after OK
+        WaitCipgsmlocUrc,  ///< +CIPGSMLOC часто приходит после OK
         Cntpcid,
         CntpSet,
         CntpRun,
@@ -135,39 +135,39 @@ public:
         CclkAfterCntp,
     };
 
-    /// Non-blocking cascade: CCLK/NITZ → CIPSHUT → CIPGSMLOC → CNTP. Returns false if busy / not ready / TCP active.
-    /// `ntpServer` may be empty to skip CNTP after CCLK/CIPGSMLOC fail.
+    /// Неблокирующий каскад: CCLK/NITZ → CIPSHUT → CIPGSMLOC → CNTP. false, если занято / не готов / TCP активен.
+    /// `ntpServer` может быть пустым — тогда CNTP пропускается после неудачи CCLK/CIPGSMLOC.
     bool requestTimeSync(const char* ntpServer, int8_t tzOffsetHours);
-    /// AT-only CCLK probe; allowed while MQTT CIP is up. Stale clock → soft miss (no fail mask).
+    /// Только AT-опрос CCLK; допустим, пока MQTT CIP поднят. Устаревшие часы → мягкий промах (без маски ошибки).
     bool requestCclkProbe(int8_t tzOffsetHours);
     bool timeSyncBusy() const { return _timeStep != TimeStep::Idle; }
-    /// Heavy cascade owns CIP (not CCLK-lite) — defer reattach / block MQTT connect.
+    /// Тяжёлый каскад владеет CIP (не лёгкий CCLK) — отложить reattach / не пускать подключение MQTT.
     bool timeHeavySyncBusy() const {
         return _timeStep != TimeStep::Idle && !_timeCclkOnly;
     }
-    /// Consumes a successful sync result (UTC epoch). Returns false if none pending.
-    /// When CCLK carried a whole-hour TZ, `tzValidOut` is true and `tzHoursOut` is set.
+    /// Забирает успешный результат синхронизации (epoch UTC). false, если ничего не ждёт.
+    /// Если CCLK принёс целый час пояса, `tzValidOut` истинен и `tzHoursOut` задан.
     bool takeTimeEpochUtc(time_t& epochUtcOut, TimeSource* sourceOut = nullptr,
                           int8_t* tzHoursOut = nullptr, bool* tzValidOut = nullptr);
-    /// Consumes a terminal cascade failure. `failMaskOut` = TimeFailBit OR. Returns false if none.
+    /// Забирает конечную неудачу каскада. `failMaskOut` = ИЛИ битов TimeFailBit. false, если ничего нет.
     bool takeTimeSyncFail(uint8_t& failMaskOut);
 
-    /// Exclusive voice/SMS epoch (MQTT CIP must stay down). Covers outbound + inbound.
+    /// Эксклюзивная эпоха голоса/SMS (MQTT CIP должен быть опущен). Исходящие и входящие.
     bool modemServiceEpochBusy() const { return _voicePhase != VoicePhase::Idle; }
-    /// CellularCore: drain MQTT then call notifyMqttDrainedForServiceEpoch().
+    /// CellularCore: слить MQTT, затем вызвать notifyMqttDrainedForServiceEpoch().
     bool serviceEpochNeedsMqttDrain() const { return _voicePhase == VoicePhase::NeedMqttDrain; }
     void notifyMqttDrainedForServiceEpoch();
-    /// Program preempt / stop: hang up or cancel epoch so ATD/CMGS is not orphaned.
+    /// Прерывание/остановка программы: положить трубку или отменить эпоху, чтобы ATD/CMGS не остались без владельца.
     void abortModemServiceEpoch();
 
-    /// Outbound ring to owner_phone. Rings until answer or `Gsm::VOICE_DEFAULT_RING_MS`, then ATH.
-    /// Returns false if rejected.
+    /// Исходящий вызов на owner_phone. Звонит до ответа или `Gsm::VOICE_DEFAULT_RING_MS`, затем ATH.
+    /// false, если отклонено.
     bool requestCallOwner();
     bool requestSmsOwner(const char* message);
-    /// Consumes outbound completion. Returns false if not ready.
+    /// Забирает итог исходящей операции. false, если ещё не готов.
     bool takeVoiceOpResult(bool& okOut);
 
-    /// Inbound DTMF: pending program id to start (once). Returns false if none.
+    /// Входящий DTMF: id программы к запуску (один раз). false, если нет.
     bool takePendingProgramStart(uint8_t& programIdOut);
 
 private:
@@ -181,16 +181,16 @@ private:
     uint32_t _baud;                  ///< найденная/используемая скорость UART
     uint32_t _stateStartTime;        ///< время входа в текущее состояние (мс)
     uint32_t _lastCommandTime;       ///< время последней отправленной команды (мс)
-    uint32_t _lastRxByteMs{0};       ///< время последнего принятого байта (мс), для диагностического flush
-    // RX буфер ответа модема (кольцевой буфер). Нужен для простых contains-проверок (OK/ERROR/+CREG...).
+    uint32_t _lastRxByteMs{0};       ///< время последнего принятого байта (мс), для диагностического сброса
+    // RX буфер ответа модема (кольцевой буфер). Нужен для простых проверок вхождения (OK/ERROR/+CREG...).
     // Важно: без memmove/heap, чтобы выдерживать длинные сессии и шумный UART.
     char _responseBuffer[RESPONSE_BUF_SIZE];
     uint16_t _respHead{0};           ///< индекс первого (самого старого) байта
     uint16_t _respCount{0};          ///< сколько байт валидно в буфере (0..RESPONSE_BUF_SIZE)
-    // RX line framing is handled by ModemUart.
+    // Разбор строк RX делает ModemUart.
     char _operator[TextBytes::Gsm::OPERATOR]; ///< название оператора
     int16_t _signal;                 ///< уровень сигнала
-    int16_t _signalBer{-1};          ///< BER из AT+CSQ (0..7) или -1 unknown
+    int16_t _signalBer{-1};          ///< BER из AT+CSQ (0..7) или -1, неизвестно
     uint8_t _retryCount;             ///< счётчик повторных попыток
     bool _reattachRequested{false};
     bool _userRebootRequested{false};
@@ -199,14 +199,14 @@ private:
     uint8_t _reattachBackoffStep{0};
 
     // --- URC/парсинг строк ---
-    int8_t _cregStat{-1};            ///< -1 unknown, иначе stat из +CREG
-    int8_t _cgattStat{-1};           ///< -1 unknown, иначе 0/1 из +CGATT
+    int8_t _cregStat{-1};            ///< -1 неизвестно, иначе stat из +CREG
+    int8_t _cgattStat{-1};           ///< -1 неизвестно, иначе 0/1 из +CGATT
     bool _pdpDeactSeen{false};
     bool _closedSeen{false};
     uint32_t _tcpClosedFirstMs{0};
     uint8_t _tcpClosedStreak{0};
 
-    // --- Ожидание ответа на текущую команду (waiter) ---
+    // --- Ожидание ответа на текущую команду ---
     enum class AwaitKind : uint8_t { NONE, OK, CREG, IP };
     AwaitKind _await{AwaitKind::NONE};
     uint32_t _awaitDeadlineMs{0};
@@ -217,18 +217,18 @@ private:
     uint16_t _cmdId{0};
     uint16_t _awaitCmdId{0};
     uint8_t _gprsCfgStep{0};
-    /// GPRS_ATTACH: 0=probe SAPBR=2,1, 1=open SAPBR=1,1, 2=re-probe after open fail.
+    /// GPRS_ATTACH: 0=опрос SAPBR=2,1, 1=открытие SAPBR=1,1, 2=повторный опрос после неудачи открытия.
     uint8_t _attachProbeStep{0};
-    char _atCmdBuf[AT_CMD_BUF_SIZE]{}; ///< storage for currently queued AT command (AtSession uses non-owning pointers)
+    char _atCmdBuf[AT_CMD_BUF_SIZE]{}; ///< буфер текущей поставленной AT-команды (AtSession держит невладеющие указатели)
 
-    // Bring-up health
+    // Здоровье подъёма
     uint32_t _bringupStartMs{0};
     uint8_t _recoveryLevel{0};
     uint32_t _cooldownUntilMs{0};
     bool _restartPending{false};
-    /// ERROR L2/L3: waiting for CIPSHUT / SAPBR0 before arming begin().
+    /// ERROR L2/L3: ждём CIPSHUT / SAPBR0, прежде чем запустить begin().
     bool _errorRecoveryCmdPending{false};
-    /// Completed L1→L4 cycles since last READY; capped by ERROR_RECOVERY_MAX_CYCLES.
+    /// Завершённые циклы L1→L4 с последнего READY; потолок — ERROR_RECOVERY_MAX_CYCLES.
     uint8_t _errorRecoveryCycles{0};
     uint32_t _postLockQuietUntilMs{0};
     uint32_t _waitFirstUntilMs{0};
@@ -236,9 +236,9 @@ private:
     /// Липкий до `stop()`: хоть раз успешно пройден шаг `AT`+`AT+CGMI` (SIMCOM) в этой GSM‑сессии.
     bool _verifiedModemContactSinceStop{false};
     uint32_t _firstAtFallbackStartMs{0};
-    /// Не раньше этого millis() слать следующий hypothesis AT (spaced backoff).
+    /// Не раньше этого millis() слать следующий hypothesis AT (пауза между попытками).
     uint32_t _hypNextAttemptMs{0};
-    /// Подрежим INIT (hypothesis AT/CGMI, baud search, IPR NV, resume CREG…; см. GsmController.Fsm.Init.cpp).
+    /// Подрежим INIT (hypothesis AT/CGMI, поиск скорости, IPR NV, возобновление CREG…; см. GsmController.Fsm.Init.cpp).
     GsmInitPhase _initPhase{GsmInitPhase::None};
     bool _baudSearchActive{false};
     uint8_t _baudSearchRound{0};
@@ -246,14 +246,14 @@ private:
     uint32_t _baudSearchDeadlineMs{0};
     uint32_t _baudCooldownUntilMs{0};
     bool _didIprNvProbeThisCycle{false};
-    /// Один best-effort `AT+CFUN=1,1` на цикл до baud search (или уже сделан UI/ERROR L4).
+    /// Один `AT+CFUN=1,1` по возможности на цикл до поиска скорости (или уже сделан UI/ERROR L4).
     bool _didPreBaudSearchCfun{false};
     bool _resumeSapbrHadIp{false};
     GsmState _postResumeTarget{GsmState::REGISTERING};
     /// Счётчик повторов `AT+CGATT?` в INIT (SIM busy до CPIN READY).
     uint8_t _initCgattBusyRetries{0};
 
-    /// Last APN credentials written via SAPBR=3 (empty ⇒ never applied this session).
+    /// Последние учётные данные APN, записанные через SAPBR=3 (пусто ⇒ в этой сессии ещё не применялись).
     bool _apnAppliedValid{false};
     char _appliedApn[TextBytes::Gsm::APN]{};
     char _appliedApnUser[TextBytes::Gsm::APN_USER]{};
@@ -273,7 +273,7 @@ private:
     uint32_t _lastDiagMs{0};
     uint32_t _lastOperatorMs{0};
 
-    /// Wall-clock cascade (CCLK → CIPGSMLOC → CNTP) — advanced from handleReady when AT bus idle.
+    /// Каскад часов (CCLK → CIPGSMLOC → CNTP) — двигается из handleReady, когда шина AT свободна.
     TimeStep _timeStep{TimeStep::Idle};
     char _ntpServer[TextBytes::TimeCfg::NTP_SERVER]{};
     int8_t _ntpTzQuarters{0};
@@ -290,10 +290,10 @@ private:
     uint32_t _timeDeadlineMs{0};
     char _cclkSnap[48]{};
     char _cipgsmlocSnap[64]{};
-    /// When true, CclkProbe does not advance to CIPGSMLOC (lite path with MQTT up).
+    /// Если истина, CclkProbe не переходит к CIPGSMLOC (лёгкий путь при поднятом MQTT).
     bool _timeCclkOnly{false};
 
-    /// Voice / SMS exclusive epoch (CALL_OWNER, SMS_OWNER, inbound DTMF).
+    /// Эксклюзивная эпоха голоса/SMS (CALL_OWNER, SMS_OWNER, входящий DTMF).
     VoiceKind _voiceKind{VoiceKind::None};
     VoicePhase _voicePhase{VoicePhase::Idle};
     char _voicePhone[TextBytes::Gsm::PHONE]{};
@@ -310,12 +310,12 @@ private:
     bool _voiceResultOk{false};
     bool _voicePromptSeen{false};
     bool _voiceNoCarrier{false};
-    /// DialRing: +CLCC stat 0 — remote picked up.
+    /// DialRing: +CLCC stat 0 — удалённая сторона сняла трубку.
     bool _voiceAnswered{false};
     uint32_t _voiceNextClccMs{0};
     bool _voicePendingProgramValid{false};
     uint8_t _voicePendingProgramId{0};
-    /// Inbound: RING seen, waiting for matching +CLIP before starting epoch.
+    /// Входящий: видели RING, ждём подходящий +CLIP перед стартом эпохи.
     bool _inboundRingSeen{false};
     uint32_t _inboundClipDeadlineMs{0};
     char _inboundClipDigits[24]{};
@@ -330,23 +330,23 @@ private:
     bool gsmCgmiResponseManufacturerOk() const;
     bool gsmParseStoredIprBaud(uint32_t& baudOut) const;
     void gsmResetSessionAfterStop();
-    /// После soft-reboot модема: снять sticky verify, чтобы PreCfun/baud search снова были возможны.
+    /// После мягкой перезагрузки модема: снять липкую проверку, чтобы PreCfun/поиск скорости снова были возможны.
     void gsmNoteModemSoftReboot(bool cfunAlreadyDone);
     void gsmOpenUart(uint32_t baud);
 
     void onRxLine(const char* line);
     void handleUrc(const char* line);
     void handleAwaitLine(const char* line);
-    /// Enqueue AT; returns false if AtSession queue full (await not armed).
+    /// Поставить AT в очередь; false, если очередь AtSession полна (await не включён).
     bool sendAt(const char* cmd, const char* tag, AwaitKind kind, uint32_t timeoutMs);
-    /// Stop TCP and change to GPRS_ATTACH only when the AT bus is idle (C1 hangoff).
+    /// Остановить TCP и перейти в GPRS_ATTACH только когда шина AT свободна (отложенный уход C1).
     void leaveReadyForReattach_(const char* why);
     void beginAwait(AwaitKind kind, uint32_t timeoutMs);
     bool awaitTimedOut(uint32_t now) const;
     void resetAwait();
     uint32_t gsmStallFingerprint() const;
     void gsmMaybeLogStallWatchdog(uint32_t now);
-    /// Sole takeResult owner: TCP CIP* consume, else GSM await absorb.
+    /// Единственный владелец takeResult: сначала TCP забирает CIP*, иначе GSM впитывает в await.
     void drainAtResult_();
     void gsmAbsorbAtSessionResult(const AtSession::Result& r);
 
@@ -358,9 +358,9 @@ private:
     // Смена состояния
     void changeState(GsmState newState);
 
-    /// Clear sticky GSM bring-up errors (NO_RESPONSE / REG_FAIL / APN_FAIL) on READY.
+    /// Сбросить липкие ошибки подъёма GSM (NO_RESPONSE / REG_FAIL / APN_FAIL) при READY.
     void clearGsmBringupErrors_();
-    /// Prefer REG_FAIL when deregistered or no/weak CSQ; else APN_FAIL.
+    /// REG_FAIL, если нет регистрации или CSQ нет/слабый; иначе APN_FAIL.
     ErrorCode classifyBearerFail_() const;
 
     // Обновить уровень сигнала
@@ -379,7 +379,7 @@ private:
     void handleReady();
     void handleError();
 
-    /// Snapshot Contype/APN/USER/PWD last pushed in GPRS_SETUP (warm-resume / live change).
+    /// Снимок Contype/APN/USER/PWD, последний раз отправленных в GPRS_SETUP (тёплое возобновление / смена на лету).
     void snapshotAppliedApn_();
     bool apnMatchesApplied_() const;
     void clearAppliedApn_();

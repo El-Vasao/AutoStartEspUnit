@@ -1,10 +1,10 @@
 /**
  * @file RelayController.cpp
- * @brief Реализация подсистемы IO: управление реле и safety-ограничения (таймауты).
+ * @brief Реализация подсистемы IO: управление реле и ограничения безопасности (таймауты).
  *
  * Инварианты:
  * - Управление реле должно быть детерминированным и быстрым (без heap/`String`).
- * - Safety-check выполняется регулярно в `update()` и может форсировать OFF по таймауту.
+ * - Проверка безопасности выполняется регулярно в `update()` и может форсировать OFF по таймауту.
  *
  * Память:
  * - Состояние хранится компактно: битмаска + массивы таймеров фиксированной длины.
@@ -124,22 +124,6 @@ void RelayController::allOff() {
     }
 }
 
-void RelayController::allOn() {
-    for (int i = 0; i < HardwareLimits::RELAYS; i++) {
-        on(i);
-    }
-}
-
-void RelayController::setMask(uint8_t mask) {
-    for (int i = 0; i < HardwareLimits::RELAYS; i++) {
-        bool state = (mask >> i) & 1;
-        if (getState(i) != state) {
-            if (state) on(i);
-            else off(i);
-        }
-    }
-}
-
 bool RelayController::getState(uint8_t relay) const {
     if (relay >= HardwareLimits::RELAYS) return false;
     return (_state >> relay) & 1;
@@ -177,7 +161,7 @@ void RelayController::checkSafety() {
     for (int i = 0; i < HardwareLimits::RELAYS; i++) {
         if (getState(i) && _maxOnTime[i] > 0) {
             if (now - _turnOnTime[i] > _maxOnTime[i]) {
-                // Safety-net: реле “не должно” оставаться включённым дольше лимита.
+                // Страховка: реле «не должно» оставаться включённым дольше лимита.
                 // Особенно критично для стартера/нагревателей — принудительно выключаем и фиксируем ошибку.
                 logger.log(LogModule::RelayController, "⚠️ Relay %d timeout! Forcing OFF\n", i+1);
                 setRelay(i, false);

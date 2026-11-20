@@ -13,17 +13,6 @@
 
 FlashCommitCoordinator flashCommit;
 
-const char* FlashCommitCoordinator::getCurrentFlashOpString() const {
-    if (deferredPostedConfigApply_) return "save_config";
-    if (deferredPostedProgramApply_) return "save_program";
-    switch (pendingFsOp_) {
-        case PendingFsOp::DELETE_PROGRAM: return "delete_program";
-        case PendingFsOp::RESET_CONFIG: return "reset_config";
-        case PendingFsOp::RESET_PROGRAMS: return "reset_programs";
-        default: return "none";
-    }
-}
-
 void FlashCommitCoordinator::recordFlashCommitSnapshot(FlashCommitOp op, bool ok, bool changed, uint16_t crc) {
     lastFlashOp_ = op;
     lastFlashOk_ = ok;
@@ -77,7 +66,7 @@ void FlashCommitCoordinator::tick(Core& core) {
     core.feedWatchdog();
     espHalFeedWdt();
 
-    // Program-running pause is owned by Core::update (tick is not called while PE runs).
+    // Пауза на время программы принадлежит Core::update (tick не вызывается, пока исполнитель работает).
 
     if (deferredPostedConfigApply_) {
         core.feedWatchdog();
@@ -134,7 +123,7 @@ void FlashCommitCoordinator::tick(Core& core) {
                 webServer.broadcastStatusForce();
                 core.feedWatchdog();
                 espHalFeedWdt();
-                return; // next tick will rebuild index
+                return; // следующий тик пересоберёт индекс
             }
         } else {
             logger.log(LogModule::FlashCommitCoordinator, "program: deferred rebuildProgramIndex (heap=%u)\n", espHalFreeHeap());

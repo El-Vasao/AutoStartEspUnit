@@ -30,9 +30,9 @@ bool isControlLine(const char* s, size_t len) {
     if (len >= 7 && memcmp(s, "SHUT OK", 7) == 0) return true;
     if (len >= 7 && memcmp(s, "SEND OK", 7) == 0) return true;
     if (len >= 9 && memcmp(s, "SEND FAIL", 9) == 0) return true;
-    if (s[0] == '>') return true;                                   // CIPSEND prompt
+    if (s[0] == '>') return true;                                   // приглашение CIPSEND
 
-    // URCs start with '+'; also stripped forms if the +IPD matcher ate '+'.
+    // URC начинаются с '+'; также формы без '+', если распознаватель +IPD его съел.
     if (s[0] == '+') return true;
     if (len >= 4 && memcmp(s, "CSQ:", 4) == 0) return true;
     if (len >= 5 && memcmp(s, "CREG:", 5) == 0) return true;
@@ -45,6 +45,8 @@ void IpdFramer::reset() {
     _state = State::Idle;
     _len = 0;
     _read = 0;
+    _declared = 0;
+    _discardLeft = 0;
     _digitCount = 0;
     _digits[0] = '\0';
     _replay[0] = '\0';
@@ -68,6 +70,8 @@ IpdFramer::Event IpdFramer::abort_() {
     _state = State::Idle;
     _len = 0;
     _read = 0;
+    _declared = 0;
+    _discardLeft = 0;
     _digitCount = 0;
     _digits[0] = '\0';
     return Event::Raw;
@@ -104,6 +108,8 @@ IpdFramer::Event IpdFramer::feed(char c) {
             if (c == ',') {
                 _len = 0;
                 _read = 0;
+                _declared = 0;
+                _discardLeft = 0;
                 _digitCount = 0;
                 _digits[0] = '\0';
                 _state = State::ReadLen;
@@ -111,27 +117,49 @@ IpdFramer::Event IpdFramer::feed(char c) {
             }
             return abort_();
         case State::ReadLen:
-            // Some firmwares insert spaces/CRLF around the length.
+            // Некоторые прошивки вставляют пробелы/CRLF вокруг длины.
             if (c == ' ' || c == '\r' || c == '\n' || c == '\t') return Event::Consumed;
             if (c >= '0' && c <= '9') {
-                const uint32_t v = (uint32_t)_len * 10UL + (uint32_t)(c - '0');
-                _len = (v > (uint32_t)kMaxIpdLen) ? kMaxIpdLen : (uint16_t)v;
                 if (_digitCount < kMaxDigits) {
                     _digits[_digitCount++] = c;
                     _digits[_digitCount] = '\0';
+                }
+                // Не зажимать до буфера: иначе хвост кадра уйдёт в следующую строку модема.
+                if (_declared > (UINT32_MAX / 10u)) {
+                    _declared = UINT32_MAX;
+                } else {
+                    _declared = _declared * 10u + (uint32_t)(c - '0');
                 }
                 return Event::Consumed;
             }
             if (c == ':') {
                 _read = 0;
-                if (_len == 0) {
+                if (_declared == 0) {
+                    _len = 0;
                     _state = State::Idle;
                     return Event::DataStart;
                 }
+                if (_declared > (uint32_t)kMaxIpdLen) {
+                    _discardLeft = _declared;
+                    _len = 0;
+                    _state = State::Discard;
+                    return Event::Discard;
+                }
+                _len = (uint16_t)_declared;
                 _state = State::ReadData;
                 return Event::DataStart;
             }
             return abort_();
+        case State::Discard:
+            // Выбрасываем всю заявленную длину, не только kMaxIpdLen.
+            if (_discardLeft > 0) _discardLeft--;
+            if (_discardLeft == 0) {
+                _state = State::Idle;
+                _declared = 0;
+                _len = 0;
+                _read = 0;
+            }
+            return Event::Discard;
         case State::ReadData:
             if (++_read >= _len) {
                 _state = State::Idle;

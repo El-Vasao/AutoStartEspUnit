@@ -1,6 +1,6 @@
 /**
  * @file GsmController.Fsm.Init.cpp
- * @brief INIT под-FSM: PreCfun @ UART_BAUD, baud search, NV IPR, resume CREG/CGATT/SAPBR, modem policy.
+ * @brief Под-FSM INIT: PreCfun на UART_BAUD, поиск скорости, NV IPR, возобновление CREG/CGATT/SAPBR, политика модема.
  */
 #include "gsm/GsmController.h"
 
@@ -18,7 +18,7 @@ inline const uint32_t* baudCandidates() {
     return Gsm::UART_BAUD_CANDIDATES;
 }
 
-/// Порог эскалации hypothesis: PreCfun или baud search.
+/// Порог эскалации hypothesis: PreCfun или поиск скорости.
 inline uint32_t hypEscalateAfterMs(bool didPreCfun) {
     return didPreCfun ? Gsm::POST_CFUN_RETRY_MS : Gsm::PRE_CFUN_AFTER_MS;
 }
@@ -544,7 +544,7 @@ void GsmController::handleInit() {
             resetAwait();
             clearResponse();
             const bool regOk = (_cregStat == 1 || _cregStat == 5);
-            // Warm SAPBR IP alone is not enough: Contype/APN may differ from config (SIM/APN change).
+            // Одного тёплого IP SAPBR мало: Contype/APN могут отличаться от конфига (смена SIM/APN).
             if (regOk && _resumeSapbrHadIp && apnMatchesApplied_()) {
                 _postResumeTarget = GsmState::READY;
             } else if (regOk) {
@@ -596,7 +596,7 @@ void GsmController::handleInit() {
         return;
     case GsmInitPhase::ModClts:
         if (_lastCommandTime == 0) {
-            // Network time sync (NITZ) → modem CCLK; best-effort fallback if CNTP fails later.
+            // Синхронизация времени сети (NITZ) → CCLK модема; запасной путь, если CNTP позже не удастся.
             sendAt("AT+CLTS=1", "CFG", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             return;
         }
@@ -648,7 +648,7 @@ void GsmController::handleInit() {
         return;
     case GsmInitPhase::ModDdet:
         if (_lastCommandTime == 0) {
-            // SIM800: enable DTMF detection URCs (+DTMF:).
+            // SIM800: включить URC детекции DTMF (+DTMF:).
             sendAt("AT+DDET=1", "CFG", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
             return;
         }

@@ -2,18 +2,18 @@
 
 #include <stdint.h>
 
-/// Compiled action id for program execution (no strings in hot-path).
+/// Скомпилированный id действия для исполнения программы (без строк на горячем пути).
 enum class ActionId : uint8_t {
     UNKNOWN = 0,
 
-    // Timed / stateful
+    // С таймером / с состоянием
     WAIT,
     RELAY_PULSE_ON_OFF_ON,
     RELAY_PULSE_OFF_ON_OFF,
-    /// Engine start: algorithm, input, timings and attempts come from config.vehicle.
+    /// Запуск двигателя: алгоритм, вход, тайминги и попытки берутся из config.vehicle.
     ENGINE_START,
 
-    // Instant
+    // Мгновенные
     RELAY_ON,
     RELAY_OFF,
     RELAY_TOGGLE,
@@ -28,20 +28,20 @@ enum class ActionId : uint8_t {
     THERMOSTAT_ON,
     THERMOSTAT_OFF,
 
-    /// Dial config.gsm.owner_phone (voice); wait `ms` then hang up.
+    /// Звонок на config.gsm.owner_phone (голос); ждать `ms`, затем положить трубку.
     CALL_OWNER,
-    /// SMS to owner_phone with step `message` text.
+    /// SMS на owner_phone с текстом шага `message`.
     SMS_OWNER,
 };
 
-/// Single source for ActionId ↔ JSON/program string mapping.
+/// Единственный источник соответствия ActionId ↔ строка JSON/программы.
 ActionId actionIdFromString(const char* action);
-/// Returns canonical action name, or "" for UNKNOWN / invalid.
+/// Каноническое имя действия или "" для UNKNOWN / неверного id.
 const char* actionIdToString(ActionId id);
 
-/// Step drives the starter relay (guards, battery saver, preemption rules).
+/// Шаг крутит реле стартера (защиты, экономия АКБ, правила прерывания).
 bool isStarterAction(ActionId id);
 
-/// Step addresses a relay through `relay_id` (RELAY_ON/OFF/TOGGLE/PULSE_*).
+/// Шаг адресует реле через `relay_id` (RELAY_ON/OFF/TOGGLE/PULSE_*).
 bool isRelayAction(ActionId id);
 

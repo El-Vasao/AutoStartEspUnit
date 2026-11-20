@@ -8,14 +8,14 @@
 
 /**
  * @file ErrorManager.cpp
- * @brief Error history ring + RTC persist + MQTT one-shot delivery flags.
- *        Multiple distinct ErrorCodes may be active concurrently.
+ * @brief Кольцо истории ошибок, сохранение в RTC и флаги одноразовой доставки MQTT.
+ *        Несколько разных ErrorCode могут быть активны одновременно.
  */
 
 namespace {
 RTC_DATA_ATTR RtcErrorBlock s_rtcErrorBlock;
 
-/// CRC over everything before `crc` (padding included; blocks are memset before filling).
+/// CRC по всему, что до поля `crc` (с выравниванием; блоки обнуляются перед заполнением).
 uint16_t rtcBlockCrc(const RtcErrorBlock& b) {
     return calculateCRC16(reinterpret_cast<const uint8_t*>(&b), offsetof(RtcErrorBlock, crc));
 }
@@ -75,13 +75,13 @@ void ErrorManager::set(ErrorCode err) {
 
     const uint32_t nowSec = millis() / Time::MS_PER_SEC;
 
-    // Same code already active — refresh uptime, keep undelivered if not yet sent.
+    // Тот же код уже активен — обновить аптайм, недоставку сохранить, если ещё не отправлено.
     for (uint8_t i = 0; i < _count; i++) {
         if (_ring[i].active && _ring[i].code == err) {
             _ring[i].uptimeSec = nowSec;
             _lastError = err;
             _errorTime = nowSec;
-            // Move refreshed entry to front so newest-first order stays correct.
+            // Перенести обновлённую запись в начало, чтобы порядок «сначала новые» остался верным.
             if (i > 0) {
                 ErrorHistoryEntry e = _ring[i];
                 for (uint8_t j = i; j > 0; j--) {
@@ -94,7 +94,7 @@ void ErrorManager::set(ErrorCode err) {
         }
     }
 
-    // New distinct active code — do not deactivate other actives.
+    // Новый отдельный активный код — другие активные не снимать.
     ErrorHistoryEntry e{};
     e.code = err;
     e.uptimeSec = nowSec;
@@ -113,7 +113,7 @@ void ErrorManager::clear() {
     deactivateActives_();
     _lastError = ErrorCode::NONE;
     _errorTime = 0;
-    // Keep ring history for MQTT one-shot; do not wipe RTC ring.
+    // Историю кольца оставить для одноразовой доставки MQTT; кольцо RTC не стирать.
     persist_();
     logger.log(LogModule::ErrorManager, "Cleared (history kept)\n");
 }
@@ -140,7 +140,7 @@ void ErrorManager::recordBootReset(ErrorCode err) {
 
     const uint32_t nowSec = millis() / Time::MS_PER_SEC;
 
-    // Prefer marking boot reset active when nothing else is currently active.
+    // Предпочитать помечать сброс на старте активным, если сейчас больше ничего не активно.
     bool anyActive = false;
     for (uint8_t i = 0; i < _count; i++) {
         if (_ring[i].active) {
@@ -155,7 +155,7 @@ void ErrorManager::recordBootReset(ErrorCode err) {
     e.uptimeSec = nowSec;
     e.active = active;
     e.delivered = false;
-    e.fromRtc = true; // deliver with first full alongside RTC restores
+    e.fromRtc = true; // доставить с первым полным статусом вместе с восстановлениями из RTC
 
     pushFront_(e);
 
@@ -216,7 +216,7 @@ void ErrorManager::markDelivered(const ErrorSnapshotEntry* sent, uint8_t n) {
             break;
         }
     }
-    // delivered is RAM-only; no RTC write required
+    // delivered только в RAM; запись в RTC не нужна
 }
 
 void ErrorManager::loadFromRtc() {
@@ -234,7 +234,7 @@ void ErrorManager::loadFromRtc() {
         _ring[i].code = record.entries[i].code;
         _ring[i].uptimeSec = record.entries[i].uptimeSec;
         _ring[i].active = (record.entries[i].flags & 0x01u) != 0;
-        _ring[i].delivered = false; // reboot → redeliver
+        _ring[i].delivered = false; // перезагрузка → доставить снова
         _ring[i].fromRtc = true;
     }
     for (uint8_t i = _count; i < ErrorHistory::CAPACITY; i++) {
@@ -244,7 +244,7 @@ void ErrorManager::loadFromRtc() {
     _lastError = record.current;
     _errorTime = record.currentUptime;
 
-    // Ensure current matches remaining actives (supports multi-active RTC restore).
+    // Текущий код должен совпадать с оставшимися активными (нужно при восстановлении нескольких активных из RTC).
     recomputeCurrent_();
 
     logger.log(LogModule::ErrorManager, "Loaded from RTC: current=%s count=%u\n", errorCodeToString(_lastError),

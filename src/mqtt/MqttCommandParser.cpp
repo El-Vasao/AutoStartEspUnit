@@ -110,6 +110,7 @@ MqttCommandKind cmdFrom(const char* c) {
     if (strcmp(c, "stop") == 0) return MqttCommandKind::Stop;
     if (strcmp(c, "list") == 0) return MqttCommandKind::List;
     if (strcmp(c, "status") == 0) return MqttCommandKind::Status;
+    if (strcmp(c, "seq") == 0) return MqttCommandKind::Seq;
     if (strcmp(c, "set") == 0) return MqttCommandKind::Set;
     if (strcmp(c, "set_time") == 0) return MqttCommandKind::SetTime;
     if (strcmp(c, "hwmap") == 0) return MqttCommandKind::HwMap;
@@ -200,7 +201,7 @@ bool parseMqttCommandJson(const char* json, MqttCommand& out) {
                     break;
             }
         } else if (*p == 't' || *p == 'f') {
-            // bare true/false
+            // голые true/false
             char vbuf[8]{};
             size_t i = 0;
             while (*p && isalpha((unsigned char)*p) && i + 1 < sizeof(vbuf)) vbuf[i++] = *p++;

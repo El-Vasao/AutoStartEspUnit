@@ -1,6 +1,6 @@
 /**
  * @file GsmController.Core.cpp
- * @brief “Ядро” GsmController: RX hooks, update-диспетчер, общие утилиты и состояние.
+ * @brief «Ядро» GsmController: хуки RX, диспетчер update, общие утилиты и состояние.
  *
  * Цель разбиения:
  * - Убрать монолит `src/GsmController.cpp` из корня, привести структуру к `src/gsm/`.
@@ -13,7 +13,7 @@
  *
  * Запрещено:
  * - Возвращать/хранить большие строки в `String` внутри GsmController.
- * - Делать логирование UART RX/TX как “сырой дамп” в high-frequency путях.
+ * - Делать логирование UART RX/TX как «сырой дамп» на высокочастотных путях.
  */
 #include "gsm/GsmController.h"
 
@@ -107,7 +107,7 @@ void GsmController::logRxSnippet(const char* tag) const {
         if (c == '\r') continue;
         if (c == '\n') c = ' ';
         const uint8_t u = static_cast<uint8_t>(c);
-        // RX буфер может содержать бинарь (например, +IPD payload). Не печатаем его “как есть”.
+        // RX буфер может содержать бинарь (например, полезная нагрузка +IPD). Не печатаем его «как есть».
         if (u < 0x20 || u > 0x7E) {
             out[j++] = '.';
         } else {
@@ -115,19 +115,19 @@ void GsmController::logRxSnippet(const char* tag) const {
         }
     }
     out[j] = '\0';
-    // RX snippets are high-frequency during reconnect storms; keep them off SSE to reduce queue pressure.
+    // Фрагменты RX частые при шторме переподключений; не слать их в SSE, чтобы не давить очередь.
     logger.logSerialOnly(LogModule::GsmController, "<< %s: %s\n", tag ? tag : "", out);
 }
 
 bool GsmController::sendAt(const char* cmd, const char* tag, AwaitKind kind, uint32_t timeoutMs) {
     _cmdId++;
     ev(3, _cmdId); // sendAt
-    // Unified AT pipeline: enqueue into AtSession (ModemUart owns actual UART writes).
+    // Единый конвейер AT: постановка в AtSession (реальную запись UART делает ModemUart).
     snprintf(_atCmdBuf, sizeof(_atCmdBuf), "%s", cmd ? cmd : "");
     const char* effectiveTag = (tag && tag[0]) ? tag : nullptr;
     AtSession::Request r{ _atCmdBuf, timeoutMs, atExpectMask(AtSession::Expect::Ok), nullptr, effectiveTag };
     if (!_stack.at.enqueue(r)) {
-        // Do not arm await — otherwise FSM stalls until a phantom timeout.
+        // Не включать await — иначе FSM зависнет до фантомного таймаута.
         resetAwait();
         _lastCommandTime = 0;
         logger.log(LogModule::GsmController, "sendAt enqueue full: %s\n", _atCmdBuf);
@@ -168,11 +168,11 @@ void GsmController::changeState(GsmState newState) {
     _lastCommandTime = 0;
     resetAwait();
     clearResponse();
-    ev(2, (uint16_t)newState); // enter state
+    ev(2, (uint16_t)newState); // вход в состояние
 
     if (newState == GsmState::READY) {
-        // Sticky GSM bring-up errors clear on READY. Reattach backoff is cleared only after a
-        // stable MQTT session (clearReattachBackoff) — not here — so fail→reattach loops back off.
+        // Липкие ошибки подъёма GSM сбрасываются в READY. Пауза reattach сбрасывается только после
+        // устойчивой сессии MQTT (clearReattachBackoff) — не здесь — чтобы циклы сбой→reattach отступали.
         _errorRecoveryCycles = 0;
         clearGsmBringupErrors_();
         core.logHeapSnapshot("gsm_ready");
@@ -273,11 +273,11 @@ void GsmController::clearGsmBringupErrors_() {
 }
 
 ErrorCode GsmController::classifyBearerFail_() const {
-    // Antenna loss / out of coverage: deregistered or no usable RF — not an APN config problem.
+    // Потеря антенны / вне покрытия: нет регистрации или нет годного RF — это не ошибка настройки APN.
     if (_cregStat != 1 && _cregStat != 5) {
         return ErrorCode::GSM_REG_FAIL;
     }
-    // _signalBer < 0 ⇒ never got CSQ; do not treat constructor _signal=0 as dead RF.
+    // _signalBer < 0 ⇒ CSQ ещё не было; не считать конструкторный _signal=0 мёртвым RF.
     if (_signalBer >= 0 && (_signal == 99 || _signal <= 1)) {
         return ErrorCode::GSM_REG_FAIL;
     }
@@ -290,12 +290,12 @@ void GsmController::clearReattachBackoff() {
 }
 
 void GsmController::leaveReadyForReattach_(const char* why) {
-    // Stop TCP first so CIPCLOSE finishes before SAPBR on the shared AT bus.
+    // Сначала остановить TCP, чтобы CIPCLOSE завершился до SAPBR на общей шине AT.
     if (_stack.tcp.isConnected() || _stack.tcp.isConnecting() || _stack.tcp.isBusBusy()) {
         _stack.tcp.stop(why ? why : "reattach");
     }
     if (_stack.tcp.isBusBusy() || _stack.at.isBusy() || _stack.at.hasResult()) {
-        // Keep request pending; handleReady retries when bus is idle.
+        // Запрос остаётся висеть; handleReady повторит, когда шина свободна.
         _reattachRequested = true;
         return;
     }
@@ -311,7 +311,7 @@ void GsmController::leaveReadyForReattach_(const char* why) {
     _reattachRequested = false;
     logger.log(LogModule::GsmController, "Reattach (%s) backoff=%us rssi=%d\n",
                why ? why : "?", (unsigned)(delayMs / 1000UL), (int)rssi);
-    // APN credentials may have changed in config — rewrite Contype/APN before attach.
+    // Учётные данные APN могли смениться в конфиге — переписать Contype/APN перед подключением.
     if (_apnAppliedValid && !apnMatchesApplied_()) {
         changeState(GsmState::GPRS_SETUP);
     } else {

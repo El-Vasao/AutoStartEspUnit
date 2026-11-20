@@ -15,11 +15,11 @@
 
 /**
  * @file TimeSyncManager.cpp
- * @brief Soft wall clock + SIM800 time cascade (CCLK → CIPSHUT → CIPGSMLOC → CNTP).
+ * @brief Мягкие настенные часы и каскад времени SIM800 (CCLK → CIPSHUT → CIPGSMLOC → CNTP).
  *
- * CCLK + CIPGSMLOC always run on full cascade. CNTP only when time.enabled (NTP).
- * With MQTT up: CCLK-lite probes first; heavy cascade yields MQTT after lite misses.
- * Failures use stepped backoff (2→5→15→30 min).
+ * CCLK и CIPGSMLOC всегда идут в полном каскаде. CNTP только при time.enabled (NTP).
+ * При поднятом MQTT: сначала пробы CCLK-lite; тяжёлый каскад отдаёт MQTT после промахов lite.
+ * Неудачи используют ступенчатый backoff (2→5→15→30 мин).
  */
 
 namespace {
@@ -163,7 +163,7 @@ bool TimeSyncManager::tryStartCascade_(uint32_t now, const char* ntpServer, int8
         logger.log(LogModule::TimeSyncManager, "boot time budget %u ms\n", (unsigned)Gsm::BOOT_TIME_BUDGET_MS);
     }
 
-    // ntp_server may be empty: CCLK + CIPGSMLOC still run; CNTP skipped inside GSM.
+    // ntp_server может быть пустым: CCLK и CIPGSMLOC всё равно идут; CNTP внутри GSM пропускается.
     if (!_gsm.requestTimeSync(ntpServer, tzOffsetHours)) {
         return false;
     }
@@ -171,7 +171,7 @@ bool TimeSyncManager::tryStartCascade_(uint32_t now, const char* ntpServer, int8
     _forceRequest = false;
     _heavyAttempt = true;
     _cclkLiteStarted = false;
-    // Floor until success / scheduleRetry_ on fail.
+    // Нижняя граница до успеха или scheduleRetry_ при неудаче.
     _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
     return true;
 }
@@ -218,7 +218,7 @@ void TimeSyncManager::applyEpochUtc(time_t epochUtc, const char* source) {
 }
 
 void TimeSyncManager::applyEpochInternal_(time_t epochUtc, const char* source, bool persistRtc) {
-    if (epochUtc < TimeSync::MIN_SANE_EPOCH_UTC) { // sanity: before ~2023-11
+    if (epochUtc < TimeSync::MIN_SANE_EPOCH_UTC) { // проверка вменяемости: раньше ~2023-11
         logger.log(LogModule::TimeSyncManager, "reject epoch=%ld source=%s\n", (long)epochUtc, source ? source : "?");
         return;
     }
@@ -278,7 +278,7 @@ void TimeSyncManager::update() {
         }
     }
 
-    // Always drain modem success so a mid-flight change cannot stick the GSM time FSM.
+    // Всегда забирать успех модема, чтобы смена на полпути не застряла в автомате времени GSM.
     time_t got = 0;
     GsmController::TimeSource src = GsmController::TimeSource::None;
     int8_t tzFromModem = 0;
@@ -299,7 +299,7 @@ void TimeSyncManager::update() {
         return;
     }
 
-    // Terminal cascade failure → per-method ErrorCode(s).
+    // Окончательный провал каскада → код(ы) ErrorCode по методам.
     uint8_t failMask = 0;
     if (_gsm.takeTimeSyncFail(failMask)) {
         applyTimeSyncFailMask_(failMask);
@@ -308,9 +308,9 @@ void TimeSyncManager::update() {
         _forceRequest = false;
         _cclkLiteStarted = false;
         if (_heavyAttempt) {
-            _liteMisses = 0; // after heavy, try lite again before next drain
+            _liteMisses = 0; // после тяжёлого снова пробовать lite до следующего слива
             _heavyAttempt = false;
-            scheduleRetry_(now); // fail-backoff only after a real heavy attempt
+            scheduleRetry_(now); // fail-backoff только после настоящей тяжёлой попытки
         } else {
             if (_liteMisses < 255) _liteMisses++;
             _heavyAttempt = false;
@@ -319,7 +319,7 @@ void TimeSyncManager::update() {
         return;
     }
 
-    // CCLK-lite soft miss (stale / tcp_epoch / reattach) — no fail-backoff.
+    // Мягкий промах CCLK-lite (устарело / tcp_epoch / повторное присоединение) — без fail-backoff.
     if (_cclkLiteStarted && !_gsm.timeSyncBusy()) {
         _cclkLiteStarted = false;
         if (_liteMisses < 255) _liteMisses++;
@@ -328,12 +328,12 @@ void TimeSyncManager::update() {
         return;
     }
 
-    // Boot cascade finished without success (e.g. request never started).
+    // Каскад на старте закончился без успеха (например, запрос так и не начался).
     if (!_bootTimeSettled && _bootAttemptStarted && !_gsm.timeSyncBusy()) {
         markBootTimeSettled_("attempt_done");
     }
 
-    // Yield budget: release MQTT hold phase; keep `_heavyAttempt` while GSM cascade still runs.
+    // Бюджет yield: отпустить фазу удержания MQTT; `_heavyAttempt` держать, пока каскад GSM ещё идёт.
     if (_yieldPhase != YieldPhase::Idle && _yieldDeadlineMs != 0 &&
         (int32_t)(now - _yieldDeadlineMs) >= 0) {
         clearYield_("budget");
@@ -342,13 +342,13 @@ void TimeSyncManager::update() {
             _heavyAttempt = false;
             scheduleRetry_(now);
         } else {
-            // Cascade still running — takeFail/ok will schedule; keep a short floor.
+            // Каскад ещё идёт — takeFail/ok сами назначат время; держать короткий нижний порог.
             _nextAttemptMs = now + Timing::TIME_SYNC_RETRY_MS;
         }
     }
 
-    // Yield cascade finished without a result (fail / abort) — release MQTT.
-    // (Normal fail path already clearYield + scheduleRetry via takeTimeSyncFail.)
+    // Каскад yield закончился без результата (неудача / отмена) — отпустить MQTT.
+    // (Обычный путь неудачи уже делает clearYield и scheduleRetry через takeTimeSyncFail.)
     if (_yieldPhase == YieldPhase::CascadeArmed && _yieldCascadeStarted && !_gsm.timeSyncBusy()) {
         clearYield_("attempt_done");
         _forceRequest = false;
@@ -358,7 +358,7 @@ void TimeSyncManager::update() {
 
     if (_gsm.timeSyncBusy()) return;
 
-    // --- Yield path: waiting for CellularCore drain, then start cascade ---
+    // --- Путь yield: ждём слив CellularCore, затем старт каскада ---
     if (_yieldPhase == YieldPhase::NeedMqttDrain) {
         return;
     }
@@ -369,21 +369,21 @@ void TimeSyncManager::update() {
         if (tryStartCascade_(now, ntpSrv, tcfg.tz_offset_hours)) {
             _yieldCascadeStarted = true;
         } else {
-            scheduleLiteRetry_(now); // busy — do not escalate fail-backoff
+            scheduleLiteRetry_(now); // занято — не усиливать fail-backoff
         }
-        // Stay armed until busy finishes (success → apply clears; fail → takeTimeSyncFail) or budget.
+        // Оставаться взведённым, пока занятость не кончится (успех → apply снимает; неудача → takeTimeSyncFail) или не истечёт бюджет.
         return;
     }
 
-    // --- Idle: due check ---
+    // --- Простой: проверка срока ---
     if (!_forceRequest && _nextAttemptMs != 0 && (int32_t)(now - _nextAttemptMs) < 0) return;
 
     if (!_gsm.isReady()) return;
 
-    // Do not fight voice/SMS exclusive epoch.
+    // Не спорить с исключительной эпохой голоса/SMS.
     if (_gsm.modemServiceEpochBusy() || _gsm.serviceEpochNeedsMqttDrain()) return;
 
-    // MQTT CIP up: CCLK-lite without drain, or heavy yield after misses / force.
+    // MQTT CIP поднят: CCLK-lite без слива либо тяжёлый yield после промахов или force.
     if (_gsm.tcpSocketActive() || _gsm.tcpBusBusy()) {
         if (wantHeavyCascade_()) {
             _yieldPhase = YieldPhase::NeedMqttDrain;
@@ -398,7 +398,7 @@ void TimeSyncManager::update() {
         return;
     }
 
-    // TCP already down — start full cascade immediately (boot / post-disconnect).
+    // TCP уже опущен — сразу полный каскад (старт или после отключения).
     if (!tryStartCascade_(now, ntpSrv, tcfg.tz_offset_hours)) {
         scheduleLiteRetry_(now);
     }

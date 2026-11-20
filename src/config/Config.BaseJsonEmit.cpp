@@ -14,7 +14,7 @@ namespace config_internal {
 
 namespace {
 
-/// Arduino Print(float) defaults to 2 decimals — small coeffs (e.g. 0.004) become 0.00.
+/// Arduino Print(float) по умолчанию печатает 2 знака — маленькие коэффициенты (например 0.004) становятся 0.00.
 void printJsonFloat(Print& p, float v) {
     if (!isfinite(v)) {
         p.print("0");

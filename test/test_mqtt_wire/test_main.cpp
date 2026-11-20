@@ -144,10 +144,30 @@ static void test_connect_requires_client_id_and_room() {
 static void test_subscribe_packet() {
     uint8_t buf[32];
     const uint16_t n = buildSubscribe(buf, sizeof(buf), 0x1234, "a/b");
-    const uint8_t expect[] = {0x82, 0x08, 0x12, 0x34, 0x00, 0x03, 'a', '/', 'b', 0x00};
+    const uint8_t expect[] = {0x82, 0x08, 0x12, 0x34, 0x00, 0x03, 'a', '/', 'b', 0x01};
     TEST_ASSERT_EQUAL_UINT16(sizeof(expect), n);
     TEST_ASSERT_EQUAL_MEMORY(expect, buf, sizeof(expect));
     TEST_ASSERT_EQUAL_UINT16(0, buildSubscribe(buf, sizeof(buf), 0, "a/b"));
+}
+
+static void test_publish_qos1_and_puback_parse() {
+    uint8_t buf[32];
+    const uint8_t payload[] = {'x'};
+    const uint16_t n = buildPublish(buf, sizeof(buf), "t", payload, 1, true, 1, 0x0007, false);
+    TEST_ASSERT_TRUE(n > 0);
+    TEST_ASSERT_EQUAL_HEX8(0x33, buf[0]); // PUBLISH qos1 retain
+    FrameHead h;
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Head::Ok, (uint8_t)parseHead(buf, n, h));
+    PublishView v;
+    TEST_ASSERT_TRUE(parsePublish(h.flags, buf + h.headerLen, h.remLen, v));
+    TEST_ASSERT_EQUAL_UINT8(1, v.qos);
+    TEST_ASSERT_EQUAL_UINT16(7, v.packetId);
+    TEST_ASSERT_TRUE(v.retained);
+
+    uint16_t pid = 0;
+    const uint8_t ackBody[] = {0x00, 0x07};
+    TEST_ASSERT_TRUE(parsePuback(ackBody, 2, pid));
+    TEST_ASSERT_EQUAL_UINT16(7, pid);
 }
 
 static void test_publish_packet_and_retain_flag() {
@@ -250,6 +270,7 @@ int main(int, char**) {
     RUN_TEST(test_connect_password_requires_username);
     RUN_TEST(test_connect_requires_client_id_and_room);
     RUN_TEST(test_subscribe_packet);
+    RUN_TEST(test_publish_qos1_and_puback_parse);
     RUN_TEST(test_publish_packet_and_retain_flag);
     RUN_TEST(test_publish_failure_leaves_buffer_untouched);
     RUN_TEST(test_publish_head_with_two_byte_remaining_length);

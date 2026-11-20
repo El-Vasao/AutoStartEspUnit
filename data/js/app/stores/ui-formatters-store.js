@@ -50,6 +50,17 @@
         } catch (e) {}
         return String(rom || '');
       },
+      programLabel(id) {
+        try {
+          const pid = Number(id) || 0;
+          if (!pid) return '—';
+          const items = Alpine.store('programs')?.items || [];
+          const hit = items.find(p => p && Number(p.id) === pid);
+          const name = String(hit?.name || '').trim();
+          return name || String(pid);
+        } catch (e) {}
+        return '—';
+      },
       sensorLabelById(id) {
         try {
           const sid = Number(id) || 0;

@@ -52,12 +52,6 @@ public:
     // Выключить все реле
     void allOff();
 
-    // Включить все реле
-    void allOn();
-
-    // Установить состояние по битовой маске
-    void setMask(uint8_t mask);
-
     // Получить состояние конкретного реле
     bool getState(uint8_t relay) const;
 

@@ -3,7 +3,7 @@
  * @brief Публичный интерфейс контроллера сенсоров (DS18B20 + ADC).
  *
  * Инварианты по памяти:
- * - Публичный заголовок не тянет OneWire/DallasTemperature (compile fanout).
+ * - Публичный заголовок не тянет OneWire/DallasTemperature (чтобы не раздувать компиляцию).
  * - Горячие методы (`update`) не должны требовать динамических аллокаций.
  *
  * Запрещено:
@@ -16,7 +16,7 @@
 #include "common/Constants.h"
 #include "common/ErrorCodes.h"
 
-/// ROM / 1-Wire address (8 bytes). Kept as raw bytes so public headers stay free of Dallas types.
+/// Адрес ROM / 1-Wire (8 байт). Сырые байты, чтобы публичные заголовки не тянули типы Dallas.
 using SensorRomAddress = uint8_t[8];
 
 // Структура для хранения данных одного температурного датчика
@@ -48,7 +48,7 @@ public:
     // Обновление показаний (вызывается в loop)
     void update();
 
-    /// When true, use longer ADC/DS18B20 intervals (no program / no UI sessions).
+    /// Если истина — более длинные интервалы ADC/DS18B20 (нет программы и нет сессий UI).
     void setPollIdle(bool idle) { _pollIdle = idle; }
     bool isPollIdle() const { return _pollIdle; }
 
@@ -91,14 +91,14 @@ public:
     // Время последнего измерения напряжения
     uint32_t getLastVoltageTime() const { return _voltageData.lastReadTime; }
 
-    /// Drop collected samples (e.g. the cranking dip); the average restarts from the next reading.
+    /// Сбросить набранные выборки (например просадку при прокрутке); среднее начинается со следующего чтения.
     void resetVoltageWindow();
 
-    /// True once the window holds Adc::SAMPLES readings taken after the last reset.
+    /// Истина, когда в окне Adc::SAMPLES чтений после последнего сброса.
     bool isVoltageWindowFull() const { return _adcFillCount >= Adc::SAMPLES; }
 
-    /// Derive `adc_voltage_coeff` from a multimeter reading. Uses private raw only;
-    /// returns false if filter not ready, raw too low, or measuredVolts ≤ 0.
+    /// Вывести `adc_voltage_coeff` из показания мультиметра. Берёт только закрытое сырое значение;
+    /// false, если фильтр не готов, сырое слишком мало или measuredVolts ≤ 0.
     bool computeAdcVoltageCoeff(float measuredVolts, float& outCoeff) const;
 
 private:
@@ -110,8 +110,8 @@ private:
     uint32_t _conversionStartTime;                   ///< время запуска преобразования (мс)
     uint32_t _lastTemperatureRequest;                ///< время последнего запроса (мс)
     bool _pollIdle{false};                           ///< растянутые интервалы опроса
-    uint8_t _owTimeoutStreak{0};                     ///< consecutive DS18B20 conversion timeouts
-    uint8_t _adcSatStreak{0};                        ///< consecutive saturated/zero ADC samples
+    uint8_t _owTimeoutStreak{0};                     ///< подряд таймауты конверсии DS18B20
+    uint8_t _adcSatStreak{0};                        ///< подряд насыщенные или нулевые выборки АЦП
 
     // Обновление температуры (опрос датчиков)
     void updateTemperatures();
@@ -129,8 +129,8 @@ private:
     uint16_t _voltageBuffer[Adc::SAMPLES];  ///< буфер для скользящего среднего
     uint8_t _voltageIndex;                   ///< текущий индекс в буфере
     uint32_t _lastVoltageRead;                ///< время последнего чтения АЦП (мс)
-    uint8_t _adcFillCount{0};                 ///< samples collected toward a full filter window
-    uint16_t _lastAdcAvg{0};                  ///< last averaged raw for calibration
+    uint8_t _adcFillCount{0};                 ///< выборки, набранные к полному окну фильтра
+    uint16_t _lastAdcAvg{0};                  ///< последнее усреднённое сырое значение для калибровки
 
     // Обновление напряжения (чтение АЦП, скользящее среднее)
     void updateVoltage();

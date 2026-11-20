@@ -4,7 +4,7 @@
 
 class Core;
 
-/// Result of last completed flash commit operation (for UI).
+/// Результат последней завершённой фиксации во flash (для UI).
 enum class FlashCommitOp : uint8_t {
     NONE = 0,
     SAVE_CONFIG,
@@ -14,7 +14,7 @@ enum class FlashCommitOp : uint8_t {
     RESET_PROGRAMS
 };
 
-/// Deferred FS operation posted from HTTP (non-POST tmp).
+/// Отложенная операция ФС, поставленная из HTTP (не временный файл POST).
 enum class PendingFsOp : uint8_t {
     NONE = 0,
     DELETE_PROGRAM,
@@ -23,10 +23,10 @@ enum class PendingFsOp : uint8_t {
 };
 
 /**
- * @brief Orchestrates deferred flash commits (LittleFS + config/program writes).
+ * @brief Дирижирует отложенными фиксациями во flash (LittleFS и запись конфига/программ).
  *
- * Owned by the application/core. Web posts only set flags/queue ops;
- * actual flash work is executed from `Core::update()` when it is safe.
+ * Принадлежит приложению/ядру. Веб только ставит флаги и операции в очередь;
+ * сама работа с flash выполняется из `Core::update()`, когда это безопасно.
  */
 class FlashCommitCoordinator {
 public:
@@ -37,7 +37,7 @@ public:
         deferredPostedProgramIndexPhase_ = false;
     }
 
-    /// Returns false if another flash op is already queued (does not overwrite).
+    /// false, если другая операция flash уже в очереди (не перезаписывает).
     bool queueResetConfig();
     bool queueResetPrograms();
     bool queueDeleteProgram(uint8_t id);
@@ -46,13 +46,11 @@ public:
         return deferredPostedConfigApply_ || deferredPostedProgramApply_ || pendingFsOp_ != PendingFsOp::NONE;
     }
 
-    const char* getCurrentFlashOpString() const;
-
     FlashCommitOp getLastFlashOp() const { return lastFlashOp_; }
     bool getLastFlashOk() const { return lastFlashOk_; }
     uint32_t getLastFlashMillis() const { return lastFlashMillis_; }
 
-    /// Perform at most one step; designed to be called from `Core::update()`.
+    /// Делает не больше одного шага; рассчитан на вызов из `Core::update()`.
     void tick(Core& core);
 
 private:

@@ -57,7 +57,7 @@ void WebServerRuntime::update(WebServer& ws) {
     processUiSessions(ws);
     processSseDiagnostics(ws);
 
-    // AP start FSM (non-blocking).
+    // Автомат старта AP (неблокирующий).
     if (ws.apStartState_ != WebServer::ApStartState::Idle) {
         const uint32_t now = millis();
 
@@ -310,7 +310,7 @@ void WebServerRuntime::broadcastLog(WebServer& ws, const char* message) {
     static bool s_haveLast;
     static uint32_t s_dropped;
 
-    // Dedup identical consecutive lines — not counted as a drop.
+    // Одинаковые подряд строки схлопываются — это не считается потерей.
     if (s_haveLast && strcmp(s_lastLog, message) == 0) return;
     strlcpy(s_lastLog, message, sizeof s_lastLog);
     s_haveLast = true;
@@ -318,7 +318,7 @@ void WebServerRuntime::broadcastLog(WebServer& ws, const char* message) {
     const bool hasViewer =
         ws.activeUiSessionCount_ != 0 && refreshSseClientCount(ws) != 0;
     if (!hasViewer) {
-        // No UI/SSE client: do not accumulate drop stats or send.
+        // Нет клиента UI/SSE: не копить статистику потерь и не отправлять.
         return;
     }
 
@@ -327,12 +327,12 @@ void WebServerRuntime::broadcastLog(WebServer& ws, const char* message) {
     const size_t q = ws.events.avgPacketsWaiting();
 
     if (q >= soft) {
-        // Soft full: count drop; reserved slot kept for a future drop-notice flush.
+        // Мягкий порог полон: считать потерю; зарезервированный слот оставлен под будущий сброс уведомления о потерях.
         s_dropped++;
         return;
     }
 
-    // Soft has room: flush drop notice first (uses reserved headroom vs hard=soft+1).
+    // В мягком пороге есть место: сначала сбросить уведомление о потерях (использует запас до жёсткого порога soft+1).
     if (s_dropped >= 1) {
         if (q < reservedCap) {
             char notice[80];
@@ -341,7 +341,7 @@ void WebServerRuntime::broadcastLog(WebServer& ws, const char* message) {
             s_dropped = 0;
             ws.events.send(notice, "log", millis());
         }
-        // If reserved somehow unavailable, keep s_dropped and still try the message below.
+        // Если резерв всё же недоступен, сохранить s_dropped и всё равно попробовать сообщение ниже.
     }
 
     if (ws.events.avgPacketsWaiting() >= soft) {

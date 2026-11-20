@@ -7,7 +7,7 @@
 #include "common/Version.h"
 #include "common/Constants.h"
 
-// Forward declarations to keep Core.h lightweight.
+// Предварительные объявления, чтобы Core.h оставался лёгким.
 class RelayController;
 class SensorsController;
 class DigitalInputs;
@@ -64,7 +64,7 @@ public:
     // Свободная память кучи
     uint32_t getFreeHeap() const { return espHalFreeHeap(); }
 
-    /// Снимок кучи (free / max block / fragmentation + min с момента загрузки). `tag` — опциональная метка события.
+    /// Снимок кучи (свободно / наибольший блок / фрагментация + минимум с момента загрузки). `tag` — опциональная метка события.
     void logHeapSnapshot(const char* tag = nullptr) const;
 
     // Причина последней перезагрузки
@@ -76,13 +76,13 @@ public:
     // Запросить перезагрузку (выполняется из Core::update/loop)
     void requestReboot(uint32_t delayMs = 0);
 
-    /// Queue factory config reset; flash + reboot run from Core::update().
+    /// Поставить в очередь сброс конфига к заводскому; flash и перезагрузка идут из Core::update().
     void factoryReset();
 
-    // Stream OTA: POST /upload feeds Update + FS tail (no /update.bin).
+    // Потоковое OTA: POST /upload кормит Update и хвост ФС (без /update.bin).
     void startOTAUpdate();
 
-    /// `POST /upload` started: prepare stream + deferred switch to OTA_UPDATE.
+    /// Стартовал `POST /upload`: подготовить поток и отложенный переход в OTA_UPDATE.
     void onOtaHttpUploadStreamOpenedFromWeb();
 
     bool otaStreamFeed(const uint8_t* data, size_t len);
@@ -113,7 +113,7 @@ public:
     MqttClient& getMQTT();
     ErrorManager& getErrorManager();
 
-    // Runtime управление (делегируется менеджерам)
+    // Управление рантаймом (делегируется менеджерам)
     bool getThermostatRuntime() const;
     void setThermostatRuntime(bool en);
 
@@ -130,12 +130,12 @@ public:
     const TimeSyncManager& getTimeSync() const;
     void applyWallClockEpoch(uint32_t epochUtc);
 
-    /// OTA enter: stop domain automations (triggers / battery saver / thermostat).
+    /// Вход в OTA: остановить автоматику предметной области (триггеры / battery saver / термостат).
     void suspendDomainManagersForOta();
-    /// OTA exit: restore runtime enables from config without resetting trigger edges.
+    /// Выход из OTA: вернуть флаги runtime из конфига, не сбрасывая фронты триггеров.
     void restoreDomainManagersAfterOta();
 
-    /// NORMAL_SILENT → NORMAL (SoftAP on). Returns false if not in silent.
+    /// NORMAL_SILENT → NORMAL (SoftAP включён). false, если режим не тихий.
     bool wakeWifiApFromSilent();
 
     // Статус “двигатель работает” (для UI/логики)

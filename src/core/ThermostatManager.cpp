@@ -51,14 +51,14 @@ void ThermostatManager::update() {
         return;
     }
     const float temp = _sensors.getTemperature((uint8_t)idx);
-    const auto cmp = trigger_rules::compareFromString(ts.comparison);
     const float hyst = DS18B20::RELEASE_HYSTERESIS_C;
+    // comparison в JSON не задаёт направление: нижний порог всегда «ниже», верхний всегда «выше».
 
-    if (_lowerLatch.update(temp, ts.lower_threshold, cmp, hyst) && ts.program_id_lower != 0) {
+    if (_lowerLatch.update(temp, ts.lower_threshold, trigger_rules::Compare::Below, hyst) && ts.program_id_lower != 0) {
         logger.log(LogModule::ThermostatManager, "Lower threshold reached, starting program %u\n", ts.program_id_lower);
         _executor.start(ts.program_id_lower);
     }
-    if (_upperLatch.update(temp, ts.upper_threshold, cmp, hyst) && ts.program_id_upper != 0) {
+    if (_upperLatch.update(temp, ts.upper_threshold, trigger_rules::Compare::Above, hyst) && ts.program_id_upper != 0) {
         logger.log(LogModule::ThermostatManager, "Upper threshold reached, starting program %u\n", ts.program_id_upper);
         _executor.start(ts.program_id_upper);
     }

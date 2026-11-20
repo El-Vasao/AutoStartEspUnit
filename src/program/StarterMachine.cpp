@@ -21,7 +21,8 @@ void Machine::begin(const Params& p, uint32_t nowMs) {
 
 bool Machine::alreadyRunning(const Sample& s) const {
     if (p_.method == StartMethod::Timed) {
-        return s.voltageValid && s.voltage >= p_.runningVoltage;
+        // Один замер выше порога ещё не значит, что мотор жив — нужно полное окно.
+        return s.voltageValid && s.voltageWindowFull && s.voltage >= p_.runningVoltage;
     }
     return s.condition;
 }
@@ -74,6 +75,11 @@ Tick Machine::tick(const Sample& s) {
             phase_ = Phase::Idle;
             [[fallthrough]];
         case Phase::Idle:
+            if (p_.method == StartMethod::Timed && s.voltageValid && !s.voltageWindowFull &&
+                s.voltage >= p_.runningVoltage) {
+                // Окно ещё не полное, напряжение не просело — рано и крутить, и объявлять успех.
+                return t;
+            }
             if (alreadyRunning(s)) {
                 t.relay = RelayCmd::Off;
                 t.outcome = Outcome::Success;

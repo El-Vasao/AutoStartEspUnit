@@ -20,12 +20,12 @@ void WebServer::setupCaptivePortalRoutes_() {
             const char* contentType = contentTypeByPath(urlBuf);
 
             if (urlEndsWith(urlBuf, ".json")) {
-                // JSON schemas/config blobs stay uncompressed on FS (not UI shell assets).
+                // Схемы JSON и блобы конфига на ФС остаются без сжатия (это не файлы оболочки UI).
                 sendJsonFromFs(request, urlBuf, "no-cache, no-store, must-revalidate");
                 return;
             }
 
-            // Axiom: UI statics on LittleFS exist only as <path>.gz (build.py).
+            // Аксиома: статика UI на LittleFS есть только как <path>.gz (build.py).
             if (urlEndsWith(urlBuf, ".js") || urlEndsWith(urlBuf, ".css") || urlEndsWith(urlBuf, ".html") ||
                 urlEndsWith(urlBuf, ".ico")) {
                 char gzPath[BufferBytes::Fs::GZIP_PATH];

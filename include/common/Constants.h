@@ -12,7 +12,7 @@
  * Принципы:
  * - аппаратные лимиты берём строго из `Pins.h` (см. `HardwareLimits::*`);
  * - строки в конфиге — фиксированные `char[]` (без `String`) → лимиты задаём в байтах, включая '\0';
- * - лимиты JSON/буферов держим предсказуемыми (ESP32-C3 heap ~170 KB free after boot).
+ * - лимиты JSON/буферов держим предсказуемыми (ESP32-C3: после старта свободно ~170 КБ кучи).
  */
 
 // ============================================================
@@ -21,12 +21,12 @@
 namespace DS18B20 {
     /// В DallasTemperature это значение равно -127°C (DEVICE_DISCONNECTED_C).
     /// Важно: держим константу локально, чтобы `Constants.h` не тянул тяжёлые заголовки Dallas/OneWire
-    /// по всему проекту (compile fanout + лишняя связанность).
+    /// по всему проекту (разрастание компиляции и лишняя связанность).
     constexpr float DISCONNECTED = -127.0f; ///< значение “датчик отсутствует”
     constexpr uint8_t RESOLUTION = 9;                     ///< 9..12 бит; 9 = быстрее и стабильнее по времени
     constexpr uint16_t CONVERSION_TIMEOUT_MS = 1000;      ///< таймаут конвертации (мс)
     constexpr uint32_t READ_INTERVAL_MS = 5000;           ///< период опроса (мс)
-    /// Release hysteresis for thermostat / temperature triggers (°C).
+    /// Гистерезис отпускания термостата и температурных триггеров (°C).
     constexpr float RELEASE_HYSTERESIS_C = 0.5f;
 }
 
@@ -60,10 +60,10 @@ namespace Limits {
     constexpr uint8_t MAX_PASSWORD_LEN = 63;
 }
 
-/// MQTT/SSE error history ring (undelivered one-shot delivery).
+/// Кольцо истории ошибок MQTT/SSE (недоставленная одноразовая доставка).
 namespace ErrorHistory {
     constexpr uint8_t CAPACITY = 5;
-    constexpr size_t MSG_MAX = 40; ///< enough for errorCodeToString
+    constexpr size_t MSG_MAX = 40; ///< хватает для errorCodeToString
 }
 
 // ============================================================
@@ -91,9 +91,9 @@ namespace TextBytes {
         constexpr size_t CLIENT_ID = 33;
         constexpr size_t USER = 33;
         constexpr size_t PASS = 33;
-        /// Full derived topic `{prefix}/{suffix}` incl. NUL.
+        /// Полный производный топик `{prefix}/{suffix}` вместе с NUL.
         constexpr size_t TOPIC = 65;
-        /// User-configured prefix only; leave room for longest suffix `/status`.
+        /// Только префикс из настроек; запас под самый длинный суффикс `/programs`.
         constexpr size_t TOPIC_PREFIX = 48;
     }
 
@@ -125,22 +125,28 @@ namespace TextBytes {
         /// "RELAY_PULSE_ON_OFF_ON" и т.п.
         constexpr size_t STEP_ACTION = 24;
         constexpr size_t NAME = 32;
-        /// SMS_OWNER step text (GSM-7/ASCII) + NUL.
+        /// Текст шага SMS_OWNER (GSM-7/ASCII) + NUL.
         constexpr size_t STEP_MESSAGE = 65;
     }
 
     namespace TimeCfg {
-        /// NTP host for AT+CNTP (SIM800).
+        /// Хост NTP для AT+CNTP (SIM800).
         constexpr size_t NTP_SERVER = 48;
     }
 }
 
-/// Fixed MQTT topic suffixes under `mqtt.topic_prefix` (not user-configurable).
+/// Фиксированные суффиксы топиков MQTT под `mqtt.topic_prefix` (пользователь их не задаёт).
 namespace MqttTopics {
-    constexpr const char* AVAIL = "avail";
-    constexpr const char* STATUS = "status";
+    constexpr const char* ONLINE = "online";
+    constexpr const char* STATE = "state";
+    constexpr const char* PROGRAMS = "programs";
+    constexpr const char* HW_MAP = "hwMap";
+    constexpr const char* TRIG_MAP = "trigMap";
     constexpr const char* CMD = "cmd";
     constexpr const char* REPLY = "reply";
+    /// Устаревшие суффиксы: один раз очищаются после рождения, чтобы брокеры сбросили старый retain.
+    constexpr const char* LEGACY_AVAIL = "avail";
+    constexpr const char* LEGACY_STATUS = "status";
 }
 
 namespace BufferBytes {
@@ -179,11 +185,11 @@ namespace Timing {
     constexpr uint32_t WATCHDOG_FEED_INTERVAL_MS = 1000;
     constexpr uint32_t FS_MAINTENANCE_INTERVAL_MS = 3600000; // 1 час
     constexpr uint32_t ERROR_REPORT_INTERVAL_MS = 30000;
-    /// Periodic heap log cadence (tagged snapshots stay event-driven).
-    constexpr uint32_t HEAP_SNAPSHOT_INTERVAL_MS = 300000; // 5 min
-    /// Skip periodic heap log unless free or maxBlock moved by at least this.
+    /// Период журнала кучи (помеченные снимки остаются по событиям).
+    constexpr uint32_t HEAP_SNAPSHOT_INTERVAL_MS = 300000; // 5 мин
+    /// Периодический журнал кучи пропускается, пока free или maxBlock не сдвинулись хотя бы на это.
     constexpr uint32_t HEAP_SNAPSHOT_DELTA_BYTES = 4096;
-    /// Минимальная частота yield в длинных циклах (FreeRTOS fairness + lwIP).
+    /// Минимальная частота yield в длинных циклах (честность планировщика FreeRTOS и lwIP).
     constexpr uint32_t COOPERATE_INTERVAL_MS = 20;
     /// Период «диффа» SSE: сравнение блоков железа/режима без обязательной отправки каждого.
     /// 500 ms: период диффа SSE при SoftAP.
@@ -192,26 +198,26 @@ namespace Timing {
     constexpr uint32_t SSE_CLOCKS_INTERVAL_MS = 1000;
 
     constexpr uint32_t OTA_WAIT_LOG_INTERVAL_MS = 5000;
-    /// SoftAP stream OTA: idle without multipart final (large ~1.2 MB packages).
+    /// Потоковое OTA по SoftAP: простой без multipart final (крупные пакеты ~1.2 МБ).
     constexpr uint32_t OTA_HTTP_UPLOAD_IDLE_MS = 180000;
 
     constexpr uint32_t MILLIS_PER_DAY = 86400000UL;
 
-    /// TimeSync: first fail-retry delay (also backoff step 0).
+    /// TimeSync: первая задержка повтора после неудачи (она же шаг backoff 0).
     constexpr uint32_t TIME_SYNC_RETRY_MS = 120000;
-    /// Fail-retry backoff steps after step 0 (2 → 5 → 15 → 30 min cap).
+    /// Шаги backoff повтора после шага 0 (потолок 2 → 5 → 15 → 30 мин).
     constexpr uint32_t TIME_SYNC_BACKOFF_5MIN_MS = 300000UL;
     constexpr uint32_t TIME_SYNC_BACKOFF_15MIN_MS = 900000UL;
     constexpr uint32_t TIME_SYNC_BACKOFF_30MIN_MS = 1800000UL;
     constexpr uint8_t TIME_SYNC_BACKOFF_MAX_STEP = 3;
-    /// CCLK-lite misses while MQTT up before forcing a full drain cascade.
+    /// Промахи CCLK-lite при поднятом MQTT, после которых форсируется полный каскад со сливом.
     constexpr uint8_t TIME_SYNC_LITE_BEFORE_HEAVY = 3;
-    /// Short re-arm when CCLK-lite cannot start (AT bus busy mid-CIPSEND).
+    /// Короткий повтор, если CCLK-lite не стартовал (шина AT занята посреди CIPSEND).
     constexpr uint32_t TIME_SYNC_LITE_BUSY_RETRY_MS = 5000;
-    /// UI/status: mark sync stale after this age (still keep soft clock).
-    constexpr uint32_t TIME_SYNC_STALE_MS = 172800000UL; // 48 h
+    /// UI/статус: синхронизация устарела после этого возраста (мягкие часы сохраняются).
+    constexpr uint32_t TIME_SYNC_STALE_MS = 172800000UL; // 48 ч
 
-    /// Throttle for "flash busy, defer FS op" log lines (Core + FlashCommitCoordinator).
+    /// Троттлинг строк журнала «flash занят, операция ФС отложена» (Core + FlashCommitCoordinator).
     constexpr uint32_t DEFERRED_FLASH_BUSY_LOG_MS = 2000UL;
 }
 
@@ -232,12 +238,12 @@ namespace FsSpace {
 // ============================================================
 namespace Ota {
     constexpr uint32_t BUFFER_SIZE = 256;
-    constexpr uint32_t HEADER_SIZE = 4;      ///< little-endian fwSize (4 байта)
-    /// Max app image size = dual-OTA slot (`partitions.csv` app0/app1 = 0x140000).
+    constexpr uint32_t HEADER_SIZE = 4;      ///< fwSize в little-endian (4 байта)
+    /// Максимальный размер образа приложения = слот dual-OTA (`partitions.csv` app0/app1 = 0x140000).
     constexpr uint32_t APP_IMAGE_MAX = 0x140000;
-    /// Cap for streamed OTA package (fw + FS tail); below LittleFS partition 0x170000.
+    /// Потолок потокового пакета OTA (прошивка + хвост ФС); ниже раздела LittleFS 0x170000.
     constexpr size_t FILE_MAX_SIZE = 0x160000;
-    /// Free-space floor before stream: room for largest gzip UI asset + margin (not full package).
+    /// Нижняя граница свободного места перед потоком: место под самый большой gzip-ассет UI и запас (не весь пакет).
     constexpr size_t STREAM_FS_HEADROOM = 262144;
 }
 
@@ -245,21 +251,21 @@ namespace Ota {
 // ADC (измерение напряжения)
 // ============================================================
 namespace Adc {
-    /// ESP32-C3 ADC: voltage = raw × adc_voltage_coeff (field-calibrated).
+    /// АЦП ESP32-C3: напряжение = raw × adc_voltage_coeff (калибровка в поле).
     constexpr uint8_t RESOLUTION_BITS = 12;
-    constexpr uint16_t MAX_RAW = (1u << RESOLUTION_BITS) - 1u; ///< 12-bit ADC (0..4095)
+    constexpr uint16_t MAX_RAW = (1u << RESOLUTION_BITS) - 1u; ///< 12-битный АЦП (0..4095)
     constexpr uint8_t SAMPLES = 10;      ///< окно усреднения
-    /// Rough starter (~12 V at raw≈3000); calibrate via measured voltage on save.
+    /// Грубая оценка стартера (~12 В при raw≈3000); калибровка по измеренному напряжению при сохранении.
     constexpr float DEFAULT_COEFF = 0.004f;
 }
 
-/// DS18B20 / ADC fault escalation (SensorsController).
+/// Эскалация отказов DS18B20 / АЦП (SensorsController).
 namespace Sensors {
     constexpr uint8_t OW_TIMEOUT_FAIL_STREAK = 3;
     constexpr uint8_t ADC_SAT_FAIL_STREAK = 8;
 }
 
-/// Starter / engine start limits and defaults (vehicle section of config).
+/// Лимиты и значения по умолчанию стартера и запуска двигателя (секция vehicle конфига).
 namespace StarterLimits {
     constexpr float CRANK_TIME_MIN_SEC = 0.5f;
     constexpr float CRANK_TIME_MAX_SEC = 30.0f;
@@ -283,37 +289,37 @@ namespace StarterLimits {
     constexpr float RUNNING_VOLTAGE_DEFAULT = 13.2f;
     constexpr float STOPPED_VOLTAGE_DEFAULT = 12.8f;
 
-    /// Extra wait for a full ADC window after `wait_after_start_sec`.
+    /// Дополнительное ожидание полного окна АЦП после `wait_after_start_sec`.
     constexpr uint32_t VOLTAGE_WINDOW_EXTRA_MS = 2000UL;
-    /// Minimum starter lockout after a safety trip.
+    /// Минимальная блокировка стартера после срабатывания защиты.
     constexpr uint32_t LOCKOUT_MIN_MS = 5000UL;
-    /// esp_timer backstop fires this much later than `starter_max_time_sec`.
+    /// Страховка esp_timer срабатывает на столько позже `starter_max_time_sec`.
     constexpr uint32_t HW_BACKSTOP_MARGIN_MS = 300UL;
 }
 
-/// Engine RPM measurement (pulse inputs).
+/// Измерение оборотов двигателя (импульсные входы).
 namespace Rpm {
-    /// Edges closer than this RPM limit are rejected as noise.
+    /// Фронты чаще этого предела RPM отбрасываются как шум.
     constexpr uint32_t MAX_RPM = 12000;
-    /// No accepted edge for this long → 0 RPM.
+    /// Нет принятого фронта столько времени → 0 RPM.
     constexpr uint32_t ZERO_TIMEOUT_MS = 250;
-    /// Threshold must hold continuously this long to be confirmed.
+    /// Порог должен держаться непрерывно столько, чтобы подтвердиться.
     constexpr uint32_t CONFIRM_MS = 100;
-    /// Edge timestamp ring (power of two); one estimate spans at most RING-1 intervals.
+    /// Кольцо меток фронтов (степень двойки); одна оценка охватывает не больше RING-1 интервалов.
     constexpr uint8_t RING = 16;
-    /// Consecutive rejected edges before the chain restarts (avoids locking out a real fast signal).
+    /// Подряд отклонённых фронтов до перезапуска цепочки (чтобы не отсечь настоящий быстрый сигнал).
     constexpr uint8_t MAX_SUSPECT_STREAK = 3;
-    /// How often DigitalInputs::update() recomputes RPM.
+    /// Как часто DigitalInputs::update() пересчитывает RPM.
     constexpr uint32_t UPDATE_MS = 10;
 }
 
-/// Soft wall-clock sanity (reject pre-~2023-11 UTC).
+/// Проверка вменяемости мягких часов (отклонять UTC раньше ~2023-11).
 namespace TimeSync {
     constexpr long MIN_SANE_EPOCH_UTC = 1700000000L;
     constexpr int MIN_SANE_YEAR = 2023;
 }
 
-/// Factory / SAX fallback defaults (must match DefaultConfig.h intent).
+/// Заводские значения и запасной разбор SAX (должны совпадать с замыслом DefaultConfig.h).
 namespace Defaults {
     constexpr uint16_t MQTT_PUBLISH_INTERVAL_SEC = 60;
     constexpr uint8_t TIME_SYNC_INTERVAL_HOURS = 6;
@@ -327,7 +333,7 @@ namespace ApConfig {
     constexpr char DEFAULT_PASSWORD[] = "12345678";
     constexpr uint8_t CHANNEL = 1;
     constexpr uint8_t HIDDEN = 0;
-    /// SoftAP TX cap: Arduino `WIFI_POWER_8_5dBm` (0.25 dBm units).
+    /// Потолок TX SoftAP: Arduino `WIFI_POWER_8_5dBm` (единицы 0.25 дБм).
     constexpr int8_t TX_POWER = 34;
     /// SoftAP в SETUP: несколько одновременных STA.
     constexpr uint8_t SETUP_MAX_CONNECTIONS = 4;
@@ -375,7 +381,7 @@ namespace Logging {
 }
 
 // ============================================================
-// JSON: лимиты размеров на wire / статические буферы (парсинг через vendored JsonStreamingParser в lib/; единого JsonDocument в прошивке нет).
+// JSON: лимиты размеров на проводе / статические буферы (парсинг через JsonStreamingParser из lib/; единого JsonDocument в прошивке нет).
 // ============================================================
 namespace JsonBytes {
     /// Максимум байт для «больших» JSON как файлы конфигурации и программы, POST и atomic write (`Limits::CONFIG_JSON_SIZE`).
@@ -383,49 +389,57 @@ namespace JsonBytes {
 
     namespace Web {
         /// Максимальный размер сериализованного SSE payload для `/events` ("data: ...\n\n").
-        /// Лимит BSS для SSE (только incremental: hardware/program/... — полный live в GET /bootstrap).
-        /// Прежний monolithic статус был ~782 B; худший блок — hardware с tempSensors; 800 + малая маржа.
+        /// Лимит BSS для SSE (только по частям: hardware/program/... — полный снимок live в GET /bootstrap).
+        /// Прежний цельный статус был ~782 B; худший блок — hardware с tempSensors; 800 + малая маржа.
         constexpr size_t SSE_STATUS_JSON_MAX = 832;
-        /// Cap for buffered API JSON (`sendJsonBuffered`), incl. merged `/bootstrap`.
+        /// Потолок буферизованного JSON API (`sendJsonBuffered`), включая собранный `/bootstrap`.
         constexpr size_t BOOTSTRAP_JSON_MAX = 4096;
     }
 
     namespace Mqtt {
         constexpr size_t CMD_JSON_MAX = 256; ///< макс. размер входящей JSON-команды (payload) + '\0'
         /// Лимит тела MQTT PUBLISH (JSON) при длине топика до `TextBytes::Mqtt::TOPIC-1`.
-        /// Wire: payload + 1 (fixed) + ≤4 (RL) + 2 (topic len) + topicLen ≤ TX_MAX.
+        /// На проводе: payload + 1 (fixed) + ≤4 (RL) + 2 (длина топика) + topicLen ≤ TX_MAX.
         constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 900;
-        constexpr size_t LIST_PROGRAMS_JSON_MAX = 960; ///< list reply: envelope + programs array
-        /// status cmd fat /reply: id+code + nested status object (≤ STATUS_PAYLOAD_MAX_BYTES).
-        constexpr size_t STATUS_REPLY_JSON_MAX = 960;
-        /// hwmap reply: envelope + full hardware catalog (all trigger slots, long names).
-        constexpr size_t HWMAP_JSON_MAX = 2800;
-        /// Voltage change below this does not count as significant / does not enter a delta.
+        /// Тело retained-топика `programs` (только массив).
+        constexpr size_t PROGRAMS_TOPIC_JSON_MAX = 960;
+        /// Тело retained-топика `hwMap` (реле/входы/датчики/расписание).
+        constexpr size_t HWMAP_TOPIC_JSON_MAX = 1200;
+        /// Тело retained-топика `trigMap` (триггеры входов и температуры).
+        constexpr size_t TRIGMAP_TOPIC_JSON_MAX = 1200;
+        /// Короткий ответ `{id,code[,seq]}`.
+        constexpr size_t THIN_REPLY_JSON_MAX = 96;
+        /// Изменение напряжения меньше этого не считается значимым для периодической выборки.
         constexpr float STATUS_VOLTAGE_EPS = 0.05f;
-        /// Temperature change below this does not count as significant / does not enter a delta.
+        /// Изменение температуры меньше этого не считается значимым для периодической выборки.
         constexpr float STATUS_TEMP_EPS = 0.1f;
-        /// freeHeap change below this does not count as significant / does not enter a delta.
+        /// Публикация по фронту: напряжение должно сдвинуться хотя бы на столько.
+        constexpr float EDGE_VOLTAGE_EPS = 0.5f;
+        /// Публикация по фронту: температура должна сдвинуться хотя бы на столько.
+        constexpr float EDGE_TEMP_EPS = 1.0f;
+        /// Изменение freeHeap меньше этого не считается значимым и не попадает в дельту.
         constexpr uint32_t STATUS_HEAP_EPS = 2048;
-        /// timerRemaining (sec) change below this does not count as significant (unless running flips).
+        /// Изменение timerRemaining (сек) меньше этого не считается значимым (если не сменился флаг running).
         constexpr uint32_t STATUS_TIMER_EPS_SEC = 1;
     }
 }
 
-/// MQTT cmd/reply queue limits (wire contract in docs/modules/mqtt.md).
-/// No idempotency LRU on device — client may retry the same `id`.
+/// Лимиты очередей MQTT cmd/reply (контракт на проводе в docs/modules/mqtt.md).
 namespace MqttCmd {
     constexpr uint8_t INBOUND_DEPTH = 8;
     constexpr uint8_t PENDING_REPLY_DEPTH = 4;
     constexpr uint8_t ID_MAX_LEN = 16;
+    /// Кольцо идемпотентности для run/stop/set/set_time (только RAM; очищается при обрыве сессии).
+    constexpr uint8_t ID_RING_DEPTH = 16;
 
     constexpr uint16_t CODE_OK = 200;
-    constexpr uint16_t CODE_ACCEPTED = 202;  ///< received / queued
+    constexpr uint16_t CODE_ACCEPTED = 202;  ///< принято / поставлено в очередь
     constexpr uint16_t CODE_BAD_REQUEST = 400;
     constexpr uint16_t CODE_NOT_FOUND = 404;
     constexpr uint16_t CODE_CONFLICT = 409;
     constexpr uint16_t CODE_UNPROCESSABLE = 422;
     constexpr uint16_t CODE_INTERNAL = 500;
-    constexpr uint16_t CODE_UNAVAILABLE = 503; ///< inbound queue full
+    constexpr uint16_t CODE_UNAVAILABLE = 503; ///< входящая очередь полна
 }
 
 namespace PoolLimits {
@@ -437,33 +451,38 @@ namespace NetTiming {
     constexpr uint32_t MQTT_RECONNECT_INTERVAL_MS = 5000;
     /// Ожидание CONNACK после CONNECT на GSM (секунды RTT + очередь оператора).
     constexpr uint32_t MQTT_FSM_CONNECT_TIMEOUT_MS = 30000;
-    /// Keepalive dead-man: force Error if no MQTT RX for (keepAliveSec * NUM / DEN).
+    /// Сторож keepalive: принудительный Error, если нет MQTT RX в течение (keepAliveSec * NUM / DEN).
     constexpr uint16_t MQTT_KEEPALIVE_DEADMAN_NUM = 3;
     constexpr uint16_t MQTT_KEEPALIVE_DEADMAN_DEN = 2;
 
-    /// MQTT CONNECT keepAlive field (seconds); also drives PINGREQ cadence.
+    /// Поле keepAlive в MQTT CONNECT (секунды); им же задаётся период PINGREQ.
     constexpr uint16_t MQTT_KEEPALIVE_SEC = 30;
-    /// Delay before first status publish after session comes up.
+    /// Задержка перед первой публикацией статуса после подъёма сессии.
     constexpr uint32_t MQTT_FIRST_STATUS_DELAY_MS = 1500;
-    /// SUBACK wait / resubscribe timeout.
+    /// Ожидание SUBACK и таймаут повторной подписки.
     constexpr uint32_t MQTT_SUBACK_TIMEOUT_MS = 8000;
-    /// Wall budget for encode+queue of one status publish (ms).
+    /// Бюджет настенного времени на кодирование и постановку в очередь одной публикации статуса (мс).
     constexpr uint32_t MQTT_PUBLISH_BUDGET_MS = 10;
-    /// Min gap between edge-triggered `/status` deltas (program, relays, inputs, …).
+    /// Минимальный зазор между дельтами `/status` по фронту (программа, реле, входы, …).
     constexpr uint32_t MQTT_EDGE_STATUS_GAP_MS = 250;
-    /// MqttFsmClient TCP connect wall-clock (layered over Sim800Tcp CONNECT_TIMEOUT_MS).
+    /// Настенный таймер TCP-connect MqttFsmClient (поверх Sim800Tcp CONNECT_TIMEOUT_MS).
     constexpr uint32_t MQTT_TCP_CONNECT_TIMEOUT_MS = 45000;
 
-    /// One MQTT/TCP frame staging size (MqttFsm TX slot + Sim800Tcp RX/TX rings).
-    /// 3072 fits one `hwmap` reply (full catalog) plus the PUBLISH header.
+    /// Размер сборки одного кадра MQTT/TCP (слот TX MqttFsm + кольца RX/TX Sim800Tcp).
     constexpr uint16_t MQTT_FRAME_MAX = 3072;
-    /// MqttFsmClient outbound queue depth (Ctrl reserve + Tele + in-flight).
+    /// Жёсткий потолок одного CIPSEND (SIM800 ~1460). Кадры больше этого отвергаются до UART.
+    constexpr uint16_t MQTT_CIPSEND_MAX = 1400;
+    /// Ответ QoS1: ждать PUBACK, затем один DUP, затем освободить слот.
+    constexpr uint32_t MQTT_REPLY_PUBACK_TIMEOUT_MS = 5000;
+    /// Буфер копии одного незавершённого короткого ответа QoS1 (это не слот очереди TX).
+    constexpr uint16_t MQTT_REPLY_QOS1_COPY_MAX = 128;
+    /// Глубина исходящей очереди MqttFsmClient (резерв Ctrl + Tele + кадр в полёте).
     constexpr uint8_t MQTT_TX_Q_DEPTH = 3;
-    /// RX assemble buffer (incomplete frame).
+    /// Буфер сборки RX (неполный кадр).
     constexpr uint16_t MQTT_RX_ASSEMBLE_MAX = 320;
     constexpr uint32_t MQTT_RX_ASSEMBLE_TIMEOUT_MS = 3000;
 
-    /// Per-tick FSM budgets passed to MqttFsmClient::tick.
+    /// Бюджеты автомата на один тик, передаваемые в MqttFsmClient::tick.
     constexpr uint16_t MQTT_TICK_MAX_READ_BYTES = 256;
     constexpr uint16_t MQTT_TICK_MAX_WRITE_BYTES = MQTT_FRAME_MAX;
     constexpr uint8_t MQTT_TICK_MAX_PARSE_FRAMES = 4;
@@ -471,7 +490,7 @@ namespace NetTiming {
 }
 
 // ============================================================
-// Web/DNS/AP (captive portal)
+// Web/DNS/AP (перехватывающий портал)
 // ============================================================
 namespace HttpPostJson {
     constexpr const char* TMP_CONFIG = "/__http/cfg.tmp";
@@ -507,21 +526,21 @@ namespace WebSseLimits {
     /// Максимум одновременных SSE `/events` клиентов (ESP32-C3).
     constexpr uint8_t MAX_SSE_CLIENTS = 4;
     /// Мягкий порог avgPacketsWaiting() для обычных log/status (одна очередь `/events`).
-    /// Hard = SSE_MAX_QUEUED_MESSAGES в platformio.ini (= soft + 1 reserved под drop-notice).
+    /// Жёсткий лимит = SSE_MAX_QUEUED_MESSAGES в platformio.ini (= soft + 1 слот под drop-notice).
     constexpr size_t SSE_SOFT_QUEUE_MAX = 20;
     /// +1 reserved slot: soft+1 == hard; drop-notice может уйти, когда soft уже заполнен логикой soft gate.
     constexpr size_t SSE_QUEUE_RESERVED = 1;
     constexpr size_t STATUS_QUEUE_MAX = SSE_SOFT_QUEUE_MAX;
     constexpr size_t STATUS_FORCE_QUEUE_MAX = 8;
-    /// How long after last SSE activity to keep diag tail logging.
+    /// Сколько держать хвостовой диагностический журнал после последней активности SSE.
     constexpr uint32_t DIAG_TAIL_MS = 5000UL;
 }
 
 // ============================================================
-// Web assets (LittleFS) — список обязательных файлов UI
+// Web-ассеты LittleFS — список обязательных файлов UI
 // ============================================================
 namespace WebAssets {
-    /// Logical URL paths; on LittleFS the bytes live only as `<path>.gz` (build.py axiom).
+    /// Логические URL; на LittleFS байты лежат только как `<path>.gz` (аксиома build.py).
     static const char INDEX_HTML[] PROGMEM = "/index.html";
     static const char STYLE_CSS[] PROGMEM = "/style.css";
     static const char APP_JS[] PROGMEM = "/app.js";
@@ -545,7 +564,7 @@ namespace Delays {
 
     constexpr uint32_t OTA_MODE_SWITCH_MS = 100;
     constexpr uint32_t REBOOT_HTTP_REPLY_MS = 100;
-    /// Spin delay after failed ESP.restart() (delayMicroseconds).
+    /// Задержка кручения после неудачного ESP.restart() (delayMicroseconds).
     constexpr uint32_t HARD_RESTART_SPIN_US = 5000;
 }
 
@@ -558,7 +577,7 @@ namespace Gsm {
 
     /// Целевая скорость UART MCU↔модем (гипотеза по умолчанию; проверка/запись NV через `AT+IPR?` / `AT+IPR=`).
     constexpr uint32_t UART_BAUD = 115200;
-    /// Baud search table: hypothesis first, then common SIM800 rates.
+    /// Таблица перебора скоростей: сначала гипотеза, затем обычные скорости SIM800.
     inline constexpr uint32_t UART_BAUD_CANDIDATES[] = {
         UART_BAUD,
         57600,
@@ -570,17 +589,17 @@ namespace Gsm {
         sizeof(UART_BAUD_CANDIDATES) / sizeof(UART_BAUD_CANDIDATES[0]);
     /// Пауза после `Serial.begin` на старте и при возврате к гипотезе между раундами поиска скорости.
     constexpr uint32_t UART_SETTLE_MS = 80;
-    /// Quiet после `begin()` до первой hypothesis AT (модему нужно время после питания/рестарта ESP).
+    /// Тишина после `begin()` до первой пробы AT по гипотезе скорости (модему нужно время после питания/рестарта ESP).
     constexpr uint32_t POST_BOOT_QUIET_MS = 5000;
     /// CellularCore: не трогать модем N мс после первого service() (питание/USB/SoftAP стабилизация).
     constexpr uint32_t POST_BOOT_SETTLE_MS = 20000;
-    /// Пауза между повторными hypothesis `AT` / `AT+CGMI` (антиспам UART при нет ответа).
+    /// Пауза между повторными пробами гипотезы `AT` / `AT+CGMI` (антиспам UART при нет ответа).
     constexpr uint32_t HYP_RETRY_GAP_MS = 750;
-    /// После неудачной hypothesis на `UART_BAUD` — один best-effort `AT+CFUN=1,1` до baud search.
+    /// После неудачной пробы гипотезы на `UART_BAUD` — одна попытка `AT+CFUN=1,1` без гарантии, до перебора скоростей.
     constexpr uint32_t PRE_CFUN_AFTER_MS = 20000;
     /// Пауза после soft-reboot модема (`CFUN=1,1`) перед повторными AT.
     constexpr uint32_t POST_CFUN_QUIET_MS = 20000;
-    /// Окно повторной hypothesis на `UART_BAUD` после PreCfun; затем baud search.
+    /// Окно повторной пробы гипотезы на `UART_BAUD` после PreCfun; затем перебор скоростей.
     constexpr uint32_t POST_CFUN_RETRY_MS = 15000;
     /// Пауза между полными неудачными проходами таблицы скоростей (антиспам модема и loop).
     constexpr uint32_t BAUD_SEARCH_ROUND_COOLDOWN_MS = 30000;
@@ -601,65 +620,65 @@ namespace Gsm {
     constexpr int16_t URC_RSSI_LOG_DELTA = 3;
 
     constexpr uint32_t REG_TIMEOUT_MS = 60000;
-    /// Cadence for AT+CREG? while modem is still searching (stat ≠ 1/5).
+    /// Период AT+CREG?, пока модем ещё ищет сеть (stat ≠ 1/5).
     constexpr uint32_t REG_POLL_INTERVAL_MS = 5000;
     constexpr uint32_t APN_TIMEOUT_MS = 10000;
     constexpr uint32_t PDP_ACTIVATE_TIMEOUT_MS = 20000;
     constexpr uint32_t GET_IP_TIMEOUT_MS = 10000;
 
-    constexpr uint32_t READY_SIGNAL_INTERVAL_MS = 300000;   // 5 min
-    constexpr uint32_t READY_OPERATOR_INTERVAL_MS = 900000; // 15 min
-    constexpr uint32_t TCP_CLOSED_REATTACH_WINDOW_MS = 60000; // 1 min
-    constexpr uint8_t TCP_CLOSED_REATTACH_THRESHOLD = 3;      // 3 drops within window
+    constexpr uint32_t READY_SIGNAL_INTERVAL_MS = 300000;   // 5 мин
+    constexpr uint32_t READY_OPERATOR_INTERVAL_MS = 900000; // 15 мин
+    constexpr uint32_t TCP_CLOSED_REATTACH_WINDOW_MS = 60000; // 1 мин
+    constexpr uint8_t TCP_CLOSED_REATTACH_THRESHOLD = 3;      // 3 обрыва в окне
     constexpr uint32_t ERROR_RECOVERY_DELAY_MS = 30000;
     constexpr uint8_t ERROR_RECOVERY_MAX_CYCLES = 3;
-    /// After exhausting L1–L4 cycles, wait this long before another attempt (or until UI reboot).
-    constexpr uint32_t ERROR_RECOVERY_EXHAUSTED_MS = 300000UL; // 5 min
-    /// Short cooldown between ERROR recovery AT steps (CIPSHUT / SAPBR deact).
+    /// После исчерпания циклов L1–L4 ждать столько до следующей попытки (или до перезагрузки из UI).
+    constexpr uint32_t ERROR_RECOVERY_EXHAUSTED_MS = 300000UL; // 5 мин
+    /// Короткая пауза между шагами AT восстановления ERROR (CIPSHUT / деактивация SAPBR).
     constexpr uint32_t ERROR_RECOVERY_COOLDOWN_MS = 2000UL;
-    /// AT+SAPBR=0,1 deactivate accept timeout.
+    /// Таймаут принятия деактивации AT+SAPBR=0,1.
     constexpr uint32_t SAPBR_DEACT_TIMEOUT_MS = 8000UL;
-    /// AT+CFUN=1,1 AnyLine accept timeout during recovery.
+    /// Таймаут принятия AnyLine для AT+CFUN=1,1 во время восстановления.
     constexpr uint32_t CFUN_ACCEPT_TIMEOUT_MS = 1000UL;
-    /// Stall-fingerprint log cadence while INIT/GPRS is stuck.
+    /// Период журнала отпечатка зависания, пока INIT/GPRS не двигается.
     constexpr uint32_t STALL_LOG_INTERVAL_MS = 8000UL;
 
-    /// Reattach exponential backoff: base << (step-1), capped.
+    /// Экспоненциальный backoff повторного присоединения: base << (step-1), с потолком.
     constexpr uint32_t REATTACH_BACKOFF_BASE_MS = 5000UL;
     constexpr uint8_t REATTACH_BACKOFF_MAX_STEP = 6;
     constexpr uint32_t REATTACH_BACKOFF_MAX_MS = 180000UL;
-    /// Floor delay when RSSI is weak/unknown.
+    /// Нижняя задержка, когда RSSI слабый или неизвестен.
     constexpr uint32_t REATTACH_WEAK_RSSI_FLOOR_MS = 60000UL;
     constexpr int16_t REATTACH_WEAK_RSSI_MAX = 6;
     constexpr int16_t REATTACH_RSSI_UNKNOWN = 99;
-    /// Modem NTP (AT+CNTP): accept timeout for setup commands.
+    /// NTP модема (AT+CNTP): таймаут принятия команд настройки.
     constexpr uint32_t CNTP_AT_TIMEOUT_MS = 10000;
-    /// Wait for +CNTP: URC after AT+CNTP kick.
+    /// Ожидание URC +CNTP: после запуска AT+CNTP.
     constexpr uint32_t CNTP_SYNC_TIMEOUT_MS = 60000;
-    /// AT+CCLK? read (NITZ probe or after successful NTP).
+    /// Чтение AT+CCLK? (проба NITZ или после успешного NTP).
     constexpr uint32_t CCLK_TIMEOUT_MS = 5000;
-    /// AT+CIPGSMLOC=2,1 (GSM location time) — can be slow.
+    /// AT+CIPGSMLOC=2,1 (время по GSM-локации) — может быть медленным.
     constexpr uint32_t CIPGSMLOC_TIMEOUT_MS = 45000;
-    /// After CIPGSMLOC OK, wait this long for late +CIPGSMLOC URC.
+    /// После CIPGSMLOC OK ждать столько запоздалый URC +CIPGSMLOC.
     constexpr uint32_t CIPGSMLOC_URC_GRACE_MS = 5000UL;
-    /// Escalate ERROR recovery level if bring-up stuck this long (same order as exhausted wait).
+    /// Поднять уровень восстановления ERROR, если подъём застрял на столько (тот же порядок, что ожидание после исчерпания).
     constexpr uint32_t BRINGUP_ESCALATE_MS = ERROR_RECOVERY_EXHAUSTED_MS;
-    /// Max baud accepted when parsing AT+IPR? / IPR write.
+    /// Максимальная скорость, принимаемая при разборе AT+IPR? и записи IPR.
     constexpr uint32_t UART_BAUD_PARSE_MAX = 4000000UL;
-    /// Diagnostic event ring depth (GsmController).
+    /// Глубина кольца диагностических событий (GsmController).
     constexpr uint8_t EVENT_RING_SIZE = 8;
-    /// AtSession normal / high-priority queue depths.
+    /// Глубины обычной и высокоприоритетной очередей AtSession.
     constexpr uint8_t AT_QSIZE = 6;
     constexpr uint8_t AT_HQSIZE = 2;
-    /// ModemUart framed line buffer.
+    /// Буфер кадрированной строки ModemUart.
     constexpr uint16_t UART_LINE_BUF = 160;
 
-    // RX ring for waiter/diagnostic snippets. Keep compact to save RAM.
+    // Кольцо RX для ожидающих и диагностических фрагментов. Держим компактным, чтобы экономить RAM.
     constexpr size_t RESPONSE_BUFFER_SIZE = 128;
     constexpr size_t CMD_BUFFER_SIZE = 128;
 
-    /// Voice / SMS exclusive modem epoch (MQTT CIP suspended).
-    /// CALL_OWNER rings until CLCC reports active, or this long, then ATH.
+    /// Исключительная эпоха модема для голоса / SMS (MQTT CIP приостановлен).
+    /// CALL_OWNER звонит, пока CLCC не сообщит active, или столько времени, затем ATH.
     constexpr uint32_t VOICE_DEFAULT_RING_MS = 25000;
     constexpr uint32_t VOICE_CLCC_POLL_MS = 2000;
     constexpr uint32_t VOICE_PASSWORD_TIMEOUT_MS = 30000;
@@ -668,7 +687,7 @@ namespace Gsm {
     constexpr uint32_t VOICE_CLIP_WAIT_MS = 8000;
     constexpr uint32_t VOICE_HANGUP_TIMEOUT_MS = 8000;
     constexpr uint32_t SMS_CMGS_TIMEOUT_MS = 30000;
-    /// Min digit suffix length used when matching CLIP vs owner_phone.
+    /// Минимальная длина цифрового суффикса при сравнении CLIP с owner_phone.
     constexpr uint8_t PHONE_MATCH_MIN_DIGITS = 10;
 }
 
@@ -679,42 +698,42 @@ namespace Sim800Tcp {
     /// Дополнительные строки TCP (+IPD, часть URC) в лог; без `SERIAL_DEBUG` по умолчанию выкл.
     constexpr bool TCP_VERBOSE_LOG = false;
 
-    // Budget for waiting TCP CONNECT OK (URC) after CIPSTART.
-    // Must be <= broker/network worst-case, but not too high to avoid long blocks.
+    // Бюджет ожидания TCP CONNECT OK (URC) после CIPSTART.
+    // Не больше худшего случая брокера/сети и не слишком большой, чтобы не блокировать надолго.
     constexpr uint32_t CONNECT_TIMEOUT_MS = 15000;
 
-    // AT acceptance timeout for CIPSTART command (OK/ERROR), actual connect is via URC.
+    // Таймаут принятия AT для команды CIPSTART (OK/ERROR); само соединение приходит через URC.
     constexpr uint32_t CIPSTART_ACCEPT_TIMEOUT_MS = 15000;
 
-    /// Transport-side connect watchdog (from connectStart); clears stuck `_connecting`.
-    /// Layered with MqttFsmClient TCP wait (~45s): this WD recovers the modem sooner.
+    /// Сторож соединения на стороне транспорта (от connectStart); снимает застрявший `_connecting`.
+    /// Поверх ожидания TCP MqttFsmClient (~45 с): этот сторож поднимает модем раньше.
     constexpr uint32_t CONNECT_WATCHDOG_MS = CONNECT_TIMEOUT_MS;
 
-    /// After CIPSEND '>' / payload write: wait for SEND OK / SEND FAIL.
+    /// После CIPSEND '>' и записи payload: ждать SEND OK / SEND FAIL.
     constexpr uint32_t SEND_WATCHDOG_MS = 15000;
 
-    /// Min gap between CIPSTART attempts (non-blocking Client::connect retries every MQTT tick).
+    /// Минимальный зазор между попытками CIPSTART (неблокирующие повторы Client::connect на каждом тике MQTT).
     constexpr uint32_t CONNECT_RETRY_COOLDOWN_MS = 3000;
 
-    /// Min gap between CIPSHUT recover attempts.
+    /// Минимальный зазор между попытками восстановления CIPSHUT.
     constexpr uint32_t STACK_RECOVER_COOLDOWN_MS = 5000;
 
-    /// Stack recovers without CONNECT OK before asking GSM for bearer reattach.
+    /// Столько восстановлений стека без CONNECT OK, прежде чем просить GSM заново поднять bearer.
     constexpr uint8_t STACK_RECOVER_REATTACH_THRESHOLD = 3;
 
-    /// Short AT accept for CIPCLOSE / CIPRXGET / CIPHEAD / CIPMUX.
+    /// Короткое принятие AT для CIPCLOSE / CIPRXGET / CIPHEAD / CIPMUX.
     constexpr uint32_t AT_CONFIG_TIMEOUT_MS = 3000;
-    /// CIPSHUT accept (transport recover + GSM ERROR recovery).
+    /// Принятие CIPSHUT (восстановление транспорта и восстановление GSM ERROR).
     constexpr uint32_t CIPSHUT_TIMEOUT_MS = 10000;
-    /// CIPSEND wait for '>' prompt.
+    /// Ожидание приглашения '>' у CIPSEND.
     constexpr uint32_t CIPSEND_PROMPT_TIMEOUT_MS = 5000;
-    /// RX ring + TX staging size (must match NetTiming::MQTT_FRAME_MAX).
+    /// Размер кольца RX и сборки TX (должен совпадать с NetTiming::MQTT_FRAME_MAX).
     constexpr uint16_t TCP_BUF_SIZE = NetTiming::MQTT_FRAME_MAX;
-    /// Short CRLF control-line sniff buffer in raw push parser.
+    /// Короткий буфер подсматривания управляющей строки CRLF в сыром push-разборщике.
     constexpr uint8_t RAW_LINE_BUF = 64;
 }
 
-/// Boot/yield time cascade budget (defined after Sim800Tcp so CIPSHUT timeout is shared).
+/// Бюджет каскада времени на старте и при yield (после Sim800Tcp, чтобы делить таймаут CIPSHUT).
 namespace Gsm {
     constexpr uint32_t BOOT_BUDGET_SLACK_MS = 15000UL;
     constexpr uint32_t BOOT_TIME_BUDGET_MS =
@@ -722,16 +741,16 @@ namespace Gsm {
         CNTP_AT_TIMEOUT_MS * 3UL + CNTP_SYNC_TIMEOUT_MS + BOOT_BUDGET_SLACK_MS;
 }
 
-/// CellularCore glue (GSM + MQTT). Placed after Sim800Tcp to reuse stack-recover thresholds.
+/// Связка CellularCore (GSM + MQTT). Стоит после Sim800Tcp, чтобы переиспользовать пороги восстановления стека.
 namespace Cellular {
-    /// MQTT disconnect drain loop budget (gsm.update + mqtt.loop iterations).
+    /// Бюджет цикла слива отключения MQTT (итерации gsm.update + mqtt.loop).
     constexpr uint8_t MQTT_DRAIN_MAX_TICKS = 50;
     constexpr uint32_t MQTT_DRAIN_MAX_MS = 200;
-    /// Cadence for "settle remaining" progress log during post-boot quiet.
+    /// Период журнала прогресса «осталось до settle» во время тишины после старта.
     constexpr uint32_t SETTLE_LOG_INTERVAL_MS = 5000UL;
-    /// Consecutive MQTT connect fails before requesting GSM bearer reattach.
+    /// Подряд неудач соединения MQTT, после которых запрашивается повторный подъём bearer GSM.
     constexpr uint8_t MQTT_FAIL_STREAK_REATTACH = Sim800Tcp::STACK_RECOVER_REATTACH_THRESHOLD;
-    /// Min gap between Cellular→GSM reattach requests (same order as stack recover cooldown).
+    /// Минимальный зазор между запросами Cellular→GSM на повторное присоединение (тот же порядок, что пауза восстановления стека).
     constexpr uint32_t MQTT_REATTACH_REQUEST_COOLDOWN_MS = Sim800Tcp::STACK_RECOVER_COOLDOWN_MS;
 }
 
@@ -742,7 +761,7 @@ namespace FileMax {
     /// index.html на FS (CSS отдельно в style.css).
     constexpr uint32_t INDEX_HTML = 262144;
     constexpr uint32_t STYLE_CSS = 262144;
-    /// Bundled Alpine+app JS (несжатый); на FS обычно лежит .gz.
+    /// Собранный Alpine+app JS (несжатый); на FS обычно лежит .gz.
     constexpr uint32_t APP_JS = 786432;
     constexpr uint32_t FAVICON_ICO = 2048;
 }

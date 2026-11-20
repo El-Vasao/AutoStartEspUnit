@@ -13,8 +13,8 @@ class FlashCommitCoordinator;
 class MqttClient;
 
 /**
- * Narrow read-side port for SSE/bootstrap JSON builders.
- * Filled once per tick/snapshot from composition root; builders must not include Core.h.
+ * Узкий порт чтения для сборщиков JSON SSE и bootstrap.
+ * Заполняется один раз на тик или снимок из корня композиции; сборщики не должны подключать Core.h.
  */
 struct SseStatusPort {
     RelayController* relay{nullptr};
@@ -39,7 +39,7 @@ struct SseStatusPort {
     int16_t tzOffsetHours{0};
     char timeSource[12]{0};
 
-    /// GSM CSQ + MQTT session (compact SoftAP debug parity with MQTT /status).
+    /// GSM CSQ и сессия MQTT (компактный отладочный паритет SoftAP со MQTT /status).
     int16_t csqRssi{99};
     int16_t csqBer{-1};
     bool mqttConnected{false};

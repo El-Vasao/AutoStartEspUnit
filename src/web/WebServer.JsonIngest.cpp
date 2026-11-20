@@ -4,20 +4,13 @@
 #include "fs/FsManager.h"
 #include "core/FlashCommitCoordinator.h"
 #include "common/Logger.h"
+#include "web/internal/WebServerInternal.h"
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 
 namespace {
-static constexpr const char* kContentTypeJson = "application/json";
-
-static void sendBusy(AsyncWebServerRequest* request) {
-    AsyncWebServerResponse* resp = request->beginResponse(409, kContentTypeJson,
-        "{\"success\":false,\"error\":\"BUSY\",\"message\":\"Flash operation in progress\"}");
-    request->send(resp);
-}
-
 static void sendJsonSuccess(AsyncWebServerRequest* request) {
-    AsyncWebServerResponse* resp = request->beginResponse(200, kContentTypeJson, "{\"success\":true}");
+    AsyncWebServerResponse* resp = request->beginResponse(200, web_internal::kContentTypeJson, "{\"success\":true}");
     request->send(resp);
 }
 
@@ -213,7 +206,7 @@ void WebServer::jsonPostStreamOnRequest(JsonPostStreamKind k, AsyncWebServerRequ
                    k == JsonPostStreamKind::Config ? "config" : "program");
         releaseRawJsonCtx(ctx);
         request->_tempObject = nullptr;
-        sendBusy(request);
+        web_internal::sendBusy(request);
         return;
     }
     if (ctx->oversize) {

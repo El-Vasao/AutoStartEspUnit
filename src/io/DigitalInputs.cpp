@@ -8,7 +8,7 @@
  *
  * Память/устойчивость:
  * - Все структуры фиксированного размера (по `HardwareLimits::INPUTS`).
- * - Debounce и частота считаются по таймерам (`Timing::*`) без блокировок.
+ * - Антидребезг и частота считаются по таймерам (`Timing::*`) без блокировок.
  *
  * Запрещено:
  * - Увеличивать количество входов без проверки ISR-обработчиков (нужно добавить case в attach).
@@ -41,7 +41,7 @@ DigitalInputs::DigitalInputs() {
 }
 
 int8_t DigitalInputs::findIndexById(uint16_t inputId) const {
-    // Config input ids always equal Pin::INPUT_IDS (enforced by the config parser).
+    // Id входов в конфиге всегда равны Pin::INPUT_IDS (это обеспечивает разбор конфига).
     return HwMap::inputIndexById(inputId);
 }
 
@@ -52,7 +52,7 @@ void DigitalInputs::begin() {
         uint8_t pin = inputs[i].pin;
         pinMode(pin, INPUT_PULLUP);
 
-        // Устанавливаем runtime-флаг из конфига
+        // Устанавливаем флаг включения из конфига
         _runtimeEnabled[i] = cfg.enabled;
 
         if (cfg.type == InputType::PULSE_COUNTER) {
@@ -167,11 +167,6 @@ bool DigitalInputs::getState(uint8_t index) const {
     return (raw == cfg.active_state);
 }
 
-bool DigitalInputs::getRawState(uint8_t index) const {
-    if (index >= HardwareLimits::INPUTS) return HIGH;
-    return inputs[index].currentState;
-}
-
 bool DigitalInputs::isCounter(uint8_t index) const {
     if (index >= HardwareLimits::INPUTS) return false;
     return config.getBase().inputs[index].type == InputType::PULSE_COUNTER;
@@ -189,11 +184,6 @@ bool DigitalInputs::isRpmConfirmed(uint8_t index) const {
     return _rpmConfirm[index].confirmed();
 }
 
-bool DigitalInputs::isStable(uint8_t index) const {
-    if (index >= HardwareLimits::INPUTS) return false;
-    return inputs[index].stable;
-}
-
 bool DigitalInputs::wasPressed(uint8_t index) {
     if (index >= HardwareLimits::INPUTS) return false;
     if (!_runtimeEnabled[index]) return false;
@@ -205,51 +195,8 @@ bool DigitalInputs::wasPressed(uint8_t index) {
     return !wasActive && nowActive && inputs[index].stable;
 }
 
-bool DigitalInputs::wasReleased(uint8_t index) {
-    if (index >= HardwareLimits::INPUTS) return false;
-    if (!_runtimeEnabled[index]) return false;
-    const auto& cfg = config.getBase().inputs[index];
-    if (cfg.type != InputType::DIGITAL) return false;
-    bool wasActive = (prevStates[index] == cfg.active_state);
-    bool nowActive = (inputs[index].currentState == cfg.active_state);
-    return wasActive && !nowActive && inputs[index].stable;
-}
-
-bool DigitalInputs::wasTriggered(uint8_t index, bool level) {
-    if (index >= HardwareLimits::INPUTS) return false;
-    if (!_runtimeEnabled[index]) return false;
-    const auto& cfg = config.getBase().inputs[index];
-    if (cfg.type != InputType::DIGITAL) return false;
-    return prevStates[index] != level && inputs[index].currentState == level && inputs[index].stable;
-}
-
-bool DigitalInputs::isHeld(uint8_t index, uint32_t ms) {
-    if (index >= HardwareLimits::INPUTS) return false;
-    if (!_runtimeEnabled[index]) return false;
-    const auto& cfg = config.getBase().inputs[index];
-    if (cfg.type != InputType::DIGITAL) return false;
-    if (!inputs[index].stable) return false;
-    if (inputs[index].currentState != cfg.active_state) return false; // удерживается только активное состояние
-    return (millis() - inputs[index].lastChangeTime) >= ms;
-}
-
-uint32_t DigitalInputs::getHoldTime(uint8_t index) const {
-    if (index >= HardwareLimits::INPUTS) return 0;
-    if (!_runtimeEnabled[index]) return 0;
-    const auto& cfg = config.getBase().inputs[index];
-    if (cfg.type != InputType::DIGITAL) return 0;
-    if (inputs[index].currentState != cfg.active_state) return 0;
-    return millis() - inputs[index].lastChangeTime;
-}
-
 bool DigitalInputs::wasButtonPressed() {
     return wasPressed(2);
-}
-bool DigitalInputs::wasButtonReleased() {
-    return wasReleased(2);
-}
-bool DigitalInputs::isButtonHeld(uint32_t ms) {
-    return isHeld(2, ms);
 }
 
 bool DigitalInputs::isRuntimeEnabled(uint8_t index) const {

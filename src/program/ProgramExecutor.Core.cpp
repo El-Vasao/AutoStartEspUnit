@@ -27,14 +27,6 @@ ProgramExecutor::ProgramExecutor()
     _lastProgramName[0] = '\0';
 }
 
-void ProgramExecutor::begin() {}
-
-ActionId ProgramExecutor::currentActionId() const {
-    if (!_running) return ActionId::UNKNOWN;
-    if (_currentStep >= _localStepCount) return ActionId::UNKNOWN;
-    return _localActions[_currentStep];
-}
-
 uint32_t ProgramExecutor::getTimerRemainingMs() const {
     if (!_running) return 0;
     if (!_localSteps || !_localActions) return 0;
@@ -138,17 +130,16 @@ bool ProgramExecutor::start(uint8_t programId) {
 }
 
 void ProgramExecutor::stop() {
-    // Preempt may interrupt CALL_OWNER/SMS_OWNER — abort modem epoch so ATD/CMGS is not orphaned.
+    // Прерывание может оборвать CALL_OWNER/SMS_OWNER — отменить эпоху модема, чтобы ATD/CMGS не остались без владельца.
     if (core.getGSM().modemServiceEpochBusy()) {
         core.getGSM().abortModemServiceEpoch();
     }
     if (_running) {
         logger.log(LogModule::ProgramExecutor, "Stopping program id=%u name=%s at step=%u/%u\n",
                    (unsigned)_programId, _currentProgramName, (unsigned)_currentStep, (unsigned)_localStepCount);
-        if (isInStarterStep()) {
-            logger.log(LogModule::ProgramExecutor, "Engine start interrupted, all relays OFF\n");
-            core.getRelay().allOff();
-        }
+        // stop() рвёт любой шаг с уже включённым реле, не только ENGINE_START — иначе цепь останется под током.
+        // stop() может оборвать любой шаг, который уже включил реле, не только ENGINE_START.
+        core.getRelay().allOff();
         finish(false);
     }
 }

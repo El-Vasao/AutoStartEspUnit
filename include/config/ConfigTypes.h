@@ -65,7 +65,7 @@ struct MqttConfig {
     char client_id[TextBytes::Mqtt::CLIENT_ID];
     char user[TextBytes::Mqtt::USER];
     char pass[TextBytes::Mqtt::PASS];
-    /// Base path for fixed suffixes `/avail`, `/status`, `/cmd`, `/reply`.
+    /// Базовый путь для фиксированных суффиксов `/online`, `/state`, `/cmd`, `/reply` и каталогов.
     char topic_prefix[TextBytes::Mqtt::TOPIC_PREFIX];
     uint16_t publish_interval_sec;
 
@@ -213,7 +213,7 @@ struct ThermostatConfig {
 };
 
 // ------------------------------------------------------------------
-// Battery Saver
+// Защита АКБ
 // ------------------------------------------------------------------
 struct BatterySaverConfig {
     bool enabled;
@@ -237,16 +237,16 @@ struct BatterySaverConfig {
 };
 
 // ------------------------------------------------------------------
-// Wall clock / NTP (SIM800 CNTP)
+// Настенные часы / NTP (SIM800 CNTP)
 // ------------------------------------------------------------------
 struct TimeConfig {
     bool enabled;
     char ntp_server[TextBytes::TimeCfg::NTP_SERVER];
-    int8_t tz_offset_hours; ///< UTC offset in whole hours (MSK = +3)
-    uint32_t sync_interval_hours; ///< Period between successful syncs (whole hours)
+    int8_t tz_offset_hours; ///< Смещение от UTC в целых часах (МСК = +3)
+    uint32_t sync_interval_hours; ///< Период между успешными синхронизациями (целые часы)
 
-    /// RAM/parse defaults: sync off until config (or DefaultConfig factory JSON) enables it.
-    /// Avoids surprise NTP on old /config.json without a `time` section.
+    /// Значения по умолчанию в RAM и при разборе: синхронизация выключена, пока конфиг (или заводской JSON DefaultConfig) её не включит.
+    /// Чтобы старый /config.json без секции `time` внезапно не запустил NTP.
     TimeConfig()
         : enabled(false),
           tz_offset_hours(3),
@@ -256,14 +256,14 @@ struct TimeConfig {
 };
 
 // ------------------------------------------------------------------
-// Schedule triggers (local HH:MM → program)
+// Триггеры расписания (локальные ЧЧ:ММ → программа)
 // ------------------------------------------------------------------
 struct ScheduleTriggerConfig {
     uint16_t id;
     bool enabled;
     uint8_t hour;
     uint8_t minute;
-    uint8_t days_mask; // bit0=Mon … bit6=Sun; 0x7F = every day
+    uint8_t days_mask; // bit0=пн … bit6=вс; 0x7F = каждый день
     uint8_t program_id;
 
     ScheduleTriggerConfig()
@@ -316,7 +316,7 @@ struct Program {
 // BaseConfig – часто используемые данные (всегда в RAM)
 // ====================================================
 struct BaseConfig {
-    /// Если true — стартовать в SETUP_AP после factory default; с FE обычно не шлётся → false в JSON.
+    /// Если true — стартовать в SETUP_AP после заводских значений; с FE обычно не шлётся → false в JSON.
     bool setup_required;
     WifiConfig wifi;
     GsmConfig gsm;

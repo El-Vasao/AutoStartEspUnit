@@ -134,7 +134,7 @@ bool Config::commitPostedProgramFile(const char* tmpPath, uint8_t* outId, ErrorC
     if (outId) *outId = prog.id;
 
     char path[BufferBytes::Fs::PROGRAM_PATH];
-    snprintf(path, sizeof(path), "/programs/%u.json", prog.id);
+    program_json::formatProgramPath(path, sizeof(path), prog.id);
 
     if (!ensureProgramsDir()) return false;
 

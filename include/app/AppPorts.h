@@ -4,18 +4,18 @@
 #include <stddef.h>
 
 /**
- * Embedded-friendly dependency injection without virtuals/heap.
+ * Внедрение зависимостей без виртуальных методов и кучи, удобное для встраиваемых.
  *
- * Pattern:
- * - Modules store an `AppPorts` (or a subset) as plain data.
- * - `core` (composition root) wires function pointers to real methods.
- * - No vtable, no RTTI, no std::function.
+ * Схема:
+ * - Модули хранят `AppPorts` (или подмножество) как обычные данные.
+ * - `core` (корень композиции) связывает указатели на функции с настоящими методами.
+ * - Без vtable, без RTTI, без std::function.
  */
 
 struct WdtPort {
     void* ctx{nullptr};
     void (*feed)(void* ctx){nullptr};
-    void (*cooperate)(void* ctx){nullptr};  // yield/time-slicing
+    void (*cooperate)(void* ctx){nullptr};  // yield / отдача кванта времени
 
     inline void feedNow() const {
         if (feed) feed(ctx);
@@ -28,7 +28,7 @@ struct WdtPort {
 struct AppControlPort {
     void* ctx{nullptr};
     void (*requestReboot)(void* ctx, uint32_t delayMs){nullptr};
-    /// Returns false if program could not start.
+    /// false, если программу не удалось запустить.
     bool (*startProgram)(void* ctx, uint8_t programId){nullptr};
     void (*stopProgram)(void* ctx){nullptr};
     void (*startOtaUpdate)(void* ctx){nullptr};
@@ -36,16 +36,16 @@ struct AppControlPort {
 
     void (*setThermostat)(void* ctx, bool en){nullptr};
     void (*setBatterySaver)(void* ctx, bool en){nullptr};
-    /// Returns false if id not found.
+    /// false, если id не найден.
     bool (*setInputRuntime)(void* ctx, uint16_t id, bool en){nullptr};
     bool (*setInputTrigger)(void* ctx, uint16_t id, bool en){nullptr};
     bool (*setTempTrigger)(void* ctx, uint16_t id, bool en){nullptr};
-    /// NORMAL_SILENT → NORMAL SoftAP wake. Returns false if not silent or enabled==false.
+    /// Пробуждение SoftAP из NORMAL_SILENT в NORMAL. false, если режим не тихий или enabled==false.
     bool (*wakeWifiAp)(void* ctx, bool en){nullptr};
     void (*requestModemReboot)(void* ctx){nullptr};
 };
 
-/// Stream OTA from HTTP upload handlers (async-safe feed; mode switch deferred in Core::update).
+/// Потоковое OTA из обработчиков HTTP-загрузки (подача безопасна для async; смена режима отложена в Core::update).
 struct OtaStreamPort {
     void* ctx{nullptr};
     void (*onUploadOpened)(void* ctx){nullptr};

@@ -167,7 +167,7 @@ void ModeManager::exitNormalSilent() {
 
 void ModeManager::enterOTAUpdate() {
     logger.log(LogModule::ModeManager, "enterOTAUpdate\n");
-    // Unload domain work; keep SSE open for UI progress/logs during stream flash.
+    // Снять предметную работу; SSE оставить открытым для прогресса и журнала UI на время потоковой записи flash.
     core.logHeapSnapshot("mode_enter_ota");
     if (core.getProgramExecutor().isRunning()) {
         core.getProgramExecutor().stop();

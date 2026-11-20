@@ -1,6 +1,6 @@
 /**
  * @file GsmController.Fsm.Update.cpp
- * @brief Диспетчер update(), мост AtSession → await-флаги, редкий stall watchdog.
+ * @brief Диспетчер update(), мост AtSession → флаги await, редкий сторож зависания.
  */
 #include "gsm/GsmController.h"
 

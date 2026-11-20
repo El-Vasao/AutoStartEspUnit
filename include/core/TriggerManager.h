@@ -28,10 +28,10 @@ public:
     void begin();
     void update();
 
-    /// Copy enabled flags from config without resetting latches (OTA restore).
+    /// Копирует флаги включения из конфига, не сбрасывая защёлки (восстановление после OTA).
     void syncEnabledFromConfig();
 
-    /// When true, use Timing::TRIGGER_CHECK_INTERVAL_IDLE_MS.
+    /// Если true, используется Timing::TRIGGER_CHECK_INTERVAL_IDLE_MS.
     void setPollIdle(bool idle) { _pollIdle = idle; }
 
     void setInputTriggerEnabled(uint8_t index, bool en);

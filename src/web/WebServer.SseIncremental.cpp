@@ -1,7 +1,7 @@
 /**
  * @file WebServer.SseIncremental.cpp
- * @brief SSE incremental tick orchestration (dedup + baseline + queue gates).
- * Domain JSON builders live in WebServer.SseBuilders.cpp behind SseStatusPort.
+ * @brief Дирижирование инкрементальным тиком SSE (дедуп, базовая выдача и пороги очереди).
+ * Сборщики предметного JSON живут в WebServer.SseBuilders.cpp за SseStatusPort.
  */
 #include "web/WebServer.h"
 #include "web/internal/WebServerRuntime.h"
@@ -22,7 +22,7 @@
 
 namespace sse_inc_detail {
 
-/// --- Static dedup state (invalidated on resync / полный HTTP live). -----------------------------
+/// --- Статическое состояние дедупликации (сбрасывается при resync / полном HTTP live). -----------
 static uint32_t gLastClkMsSent{0};
 static uint32_t gLastHardwareHash{0};
 static uint32_t gLastRuntimeHash{0};
@@ -34,8 +34,8 @@ static FlashCommitOp gLastFlashOp{FlashCommitOp::NONE};
 static bool gLastFlashPending{false};
 static bool gLastFlashOk{true};
 static uint32_t gLastFlashMillisVal{0};
-/// After SSE connect: emit clocks→mode→gsm→hardware in one tick while soft queue allows.
-static uint8_t gBaselineStep{0}; // 0=idle/done, 1=clocks, 2=mode, 3=gsm, 4=hardware
+/// После подключения SSE: выдать clocks→mode→gsm→hardware за один тик, пока мягкая очередь позволяет.
+static uint8_t gBaselineStep{0}; // 0=простой или готово, 1=clocks, 2=mode, 3=gsm, 4=hardware
 
 static bool triggerRuntimeThunk(void* ctx, uint8_t index) {
     return static_cast<Core*>(ctx)->getTriggerRuntime(index);
@@ -136,14 +136,14 @@ static void invalidateDedupState() {
     gLastFlashMillisVal = 0;
 }
 
-/// New SSE client: clear dedup and request baseline burst (no HTTP live required).
+/// Новый клиент SSE: сбросить дедуп и запросить базовую пачку (полный HTTP live не нужен).
 static void requestBaselineResync() {
     invalidateDedupState();
     gLastClkMsSent = 0;
     gBaselineStep = 1;
 }
 
-/** True if another SSE enqueue this tick is unlikely to hit ESPAsync hard queue discard. */
+/** true, если ещё одна постановка SSE в этом тике вряд ли упрётся в жёсткий сброс очереди ESPAsync. */
 static bool sseTickMoreEventsSafe(WebServer& ws) {
 #if defined(SSE_MAX_QUEUED_MESSAGES)
     constexpr size_t cap = SSE_MAX_QUEUED_MESSAGES;
@@ -164,7 +164,7 @@ static bool sendJsonEvent(WebServer& ws, const char* sseEventName, PayloadPrint&
     return false;
 }
 
-/// Force status: pace baseline re-emit (same path as new SSE client). No HTTP live required.
+/// Принудительный статус: выдавать базу с тем же темпом, что новому клиенту SSE. Полный HTTP live не нужен.
 static void broadcastResync(WebServer& ws, size_t maxQueueDepth) {
     (void)maxQueueDepth;
     if (!WebServerRuntime::sseActiveUiOk(ws)) return;
@@ -369,10 +369,6 @@ void WebServerRuntime::broadcastStatusForce(WebServer& ws) {
 void WebServerRuntime::requestSseIncrementalBaseline(WebServer& ws) {
     (void)ws;
     sse_inc_detail::requestBaselineResync();
-}
-
-void WebServerRuntime::sendStatus(WebServer& ws, size_t maxQueueDepth) {
-    sse_inc_detail::broadcastResync(ws, maxQueueDepth);
 }
 
 void WebServerRuntime::tickSseIncremental(WebServer& ws, uint32_t now) {

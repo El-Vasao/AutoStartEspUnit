@@ -6,7 +6,7 @@
 #include "common/ErrorCodes.h"
 
 /**
- * One slot in the error history ring (RAM; mirrored to RTC without `delivered`).
+ * Одна ячейка кольца истории ошибок (RAM; в RTC зеркалится без `delivered`).
  */
 struct ErrorHistoryEntry {
     ErrorCode code{ErrorCode::NONE};
@@ -17,18 +17,18 @@ struct ErrorHistoryEntry {
 };
 
 /**
- * Wire/snapshot POD for one undelivered/active error (no ErrorCodes.h dependency beyond uint8).
+ * POD снимка/провода для одной недоставленной или активной ошибки (из ErrorCodes.h нужна только зависимость на уровне uint8).
  */
 struct ErrorSnapshotEntry {
     uint8_t code{0};
     bool active{false};
     char msg[ErrorHistory::MSG_MAX]{};
-    uint32_t uptimeSec{0}; ///< fingerprint for markDelivered
+    uint32_t uptimeSec{0}; ///< отпечаток для markDelivered
 };
 
 /**
- * RTC block: full history ring + current (most recent) active code.
- * Survives soft reset; not reliable across full power loss.
+ * Блок RTC: полное кольцо истории и текущий (самый свежий) активный код.
+ * Переживает мягкий сброс; при полном пропадании питания ненадёжен.
  */
 struct RtcErrorBlock {
     uint32_t magic;
@@ -38,13 +38,13 @@ struct RtcErrorBlock {
     struct PackedEntry {
         ErrorCode code;
         uint32_t uptimeSec;
-        uint8_t flags; ///< bit0 = active
+        uint8_t flags; ///< bit0 = активна
     } entries[ErrorHistory::CAPACITY];
     uint16_t crc;
 } __attribute__((aligned(4)));
 
 /**
- * Error manager: multi-active codes + history ring + RTC persist + MQTT delivery flags.
+ * Менеджер ошибок: несколько активных кодов, кольцо истории, сохранение в RTC и флаги доставки MQTT.
  */
 class ErrorManager {
 public:
@@ -52,10 +52,10 @@ public:
 
     void set(ErrorCode err);
     void clear();
-    /// Deactivate only matching code; recompute current from remaining actives.
+    /// Снять только совпавший код; текущий пересчитать по оставшимся активным.
     void clear(ErrorCode code);
 
-    /// Boot-only: always append undelivered fact (does not erase prior RTC history).
+    /// Только на старте: всегда дописать недоставленный факт (прежнюю историю RTC не стирает).
     void recordBootReset(ErrorCode err);
 
     ErrorCode get() const { return _lastError; }
@@ -67,29 +67,29 @@ public:
     void saveToRtc();
     void clearRtc();
 
-    /// Newest-first undelivered copy for MQTT status. Returns count written.
+    /// Копия недоставленных, сначала самые новые, для статуса MQTT. Возвращает число записанных.
     uint8_t copyUndelivered(ErrorSnapshotEntry* out, uint8_t cap) const;
 
-    /// Newest-first currently active errors (for UI/SSE). Returns count written.
+    /// Сейчас активные ошибки, сначала самые новые (для UI/SSE). Возвращает число записанных.
     uint8_t copyActive(ErrorSnapshotEntry* out, uint8_t cap) const;
 
-    /// Mark matching entries delivered after successful status PUBLISH stage.
+    /// Пометить совпавшие записи доставленными после успешной стадии PUBLISH статуса.
     void markDelivered(const ErrorSnapshotEntry* sent, uint8_t n);
 
     uint8_t historyCount() const { return _count; }
-    const ErrorHistoryEntry& historyAt(uint8_t i) const; ///< i=0 newest
+    const ErrorHistoryEntry& historyAt(uint8_t i) const; ///< i=0 — самая новая
 
 private:
     ErrorCode _lastError;
     uint32_t _errorTime;
 
     ErrorHistoryEntry _ring[ErrorHistory::CAPACITY]{};
-    uint8_t _count{0}; ///< valid entries, newest at index 0
+    uint8_t _count{0}; ///< число годных записей, самая новая по индексу 0
 
     void pushFront_(ErrorHistoryEntry e);
     void deactivateActives_();
     void recomputeCurrent_();
     void persist_();
 
-    static constexpr uint32_t RTC_MAGIC = 0xE11A70CCu; ///< bumped vs single-record layout
+    static constexpr uint32_t RTC_MAGIC = 0xE11A70CCu; ///< увеличен относительно раскладки с одной записью
 };

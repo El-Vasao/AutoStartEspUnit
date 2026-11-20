@@ -6,11 +6,11 @@
 #include "common/Constants.h"
 
 /**
- * @brief Centralized mapping between hardware channel IDs and internal indices.
+ * @brief Единое соответствие id каналов железа и внутренних индексов.
  *
- * Safety-first contract:
- * - External/business layers should use IDs.
- * - Drivers may store state by index, but must not accept indices from outside.
+ * Контракт с приоритетом безопасности:
+ * - Внешние и прикладные слои должны пользоваться id.
+ * - Драйверы могут хранить состояние по индексу, но не должны принимать индексы снаружи.
  */
 namespace HwMap {
 
@@ -30,7 +30,7 @@ inline int8_t inputIndexById(uint16_t inputId) {
     return -1;
 }
 
-/// Boot sanity check of a Pin::*_IDS table: an empty table, a zero id or a duplicate id is invalid.
+/// Проверка таблицы Pin::*_IDS при старте: пустая таблица, нулевой id или повтор id — неверно.
 inline bool idsHaveZeroOrDuplicates(const uint16_t* ids, size_t n) {
     if (!ids || n == 0) return true;
     for (size_t i = 0; i < n; i++) {

@@ -10,6 +10,7 @@ enum class MqttCommandKind : uint8_t {
     Stop,
     List,
     Status,
+    Seq,
     Set,
     SetTime,
     HwMap,
@@ -25,7 +26,7 @@ enum class MqttSetName : uint8_t {
     WifiAp,
 };
 
-/// Internal classification; mapped to HTTP-like MqttCmd::CODE_* on the wire.
+/// Внутренняя классификация; на линии отображается в MqttCmd::CODE_* по образцу HTTP.
 enum class MqttCmdErr : uint8_t {
     None = 0,
     Parse,
@@ -69,6 +70,7 @@ inline const char* mqttCmdKindStr(MqttCommandKind k) {
         case MqttCommandKind::Stop: return "stop";
         case MqttCommandKind::List: return "list";
         case MqttCommandKind::Status: return "status";
+        case MqttCommandKind::Seq: return "seq";
         case MqttCommandKind::Set: return "set";
         case MqttCommandKind::SetTime: return "set_time";
         case MqttCommandKind::HwMap: return "hwmap";

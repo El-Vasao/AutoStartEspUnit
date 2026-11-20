@@ -9,23 +9,23 @@ bool parseCregStat(const char* line, int8_t& statOut);
 bool parseCgattStat(const char* line, int8_t& statOut);
 bool isIpv4Line(const char* s);
 
-/// Usable SAPBR bearer: status==1 and non-zero quoted IPv4 (e.g. +SAPBR: 1,1,"1.2.3.4").
-/// Rejects closed bearer +SAPBR: 1,3,"0.0.0.0".
+/// Годный bearer SAPBR: status==1 и ненулевой IPv4 в кавычках (например +SAPBR: 1,1,"1.2.3.4").
+/// Отклоняет закрытый bearer +SAPBR: 1,3,"0.0.0.0".
 bool sapbrLineHasUsableBearer(const char* line);
 
-/// Copy only digits from `in` into `out` (NUL-terminated). Returns digit count.
+/// Копирует из `in` в `out` только цифры (с завершающим NUL). Возвращает число цифр.
 size_t extractPhoneDigits(const char* in, char* out, size_t outCap);
 
-/// Match owner vs CLIP: compare digit suffixes (Gsm::PHONE_MATCH_MIN_DIGITS, or full if shorter).
+/// Сверка владельца и CLIP: сравнение хвостов цифр (Gsm::PHONE_MATCH_MIN_DIGITS, или целиком, если короче).
 bool phonesMatch(const char* a, const char* b);
 
-/// Parse +CLIP: "number",... into digit buffer (digits only).
+/// Разбор +CLIP: "number",... в буфер цифр (только цифры).
 bool parseClipDigits(const char* line, char* digitsOut, size_t digitsCap);
 
-/// Parse +DTMF: X or +DDET: X into a single tone char ('0'-'9','*','#').
+/// Разбор +DTMF: X или +DDET: X в один символ тона ('0'-'9','*','#').
 bool parseDtmfTone(const char* line, char& toneOut);
 
-/// +CLCC stat: 0 active (answered), 2 dialing, 3 alerting. False if the line is not +CLCC.
+/// +CLCC stat: 0 активен (ответили), 2 набор, 3 вызов. false, если строка не +CLCC.
 bool parseClccStat(const char* line, int8_t& statOut);
 
 } // namespace gsm_at

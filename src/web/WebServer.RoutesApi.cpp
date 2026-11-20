@@ -20,6 +20,8 @@
 #include "app/AppPorts.h"
 #include "core/Core.h"
 #include "config/Config.h"
+#include "config/SensorRomResolve.h"
+#include "config/internal/ProgramJsonIo.h"
 #include "core/FlashCommitCoordinator.h"
 #include "common/Pins.h"
 #include "io/SensorsController.h"
@@ -72,8 +74,7 @@ void emitBootstrapJson(Print& p) {
             continue;
         }
         char romStr[TextBytes::Sensors::ADDR_STRING];
-        snprintf(romStr, sizeof(romStr), "%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
-                 addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7]);
+        formatSensorRomString(addr, romStr, sizeof(romStr));
         p.print('\"');
         p.print(romStr);
         p.print('\"');
@@ -180,7 +181,7 @@ void WebServer::setupApiRoutes_() {
         sendJsonSuccess(request);
     });
 
-    // OTA upload — stream package into Update + FS (no /update.bin).
+    // Загрузка OTA — поток пакета в Update и ФС (без /update.bin).
     struct UploadContext {
         size_t totalSize{0};
         bool errored{false};
@@ -190,7 +191,7 @@ void WebServer::setupApiRoutes_() {
 
     server.on("/upload", HTTP_POST,
         [](AsyncWebServerRequest* request) {
-            // Response is sent from the upload handler on final/error.
+            // Ответ уходит из обработчика загрузки на final или при ошибке.
             (void)request;
         },
         [](AsyncWebServerRequest* request, String filename, size_t index, uint8_t* data, size_t len, bool final) {
@@ -228,8 +229,8 @@ void WebServer::setupApiRoutes_() {
                 }
                 gUploadCtx = UploadContext{};
                 gUploadCtx.active = true;
-                // Async context: prepare stream FSM here; Core::update drains deferred OTA_UPDATE switch.
-                // See docs/modules/web.md § Concurrency.
+                // Контекст async: автомат потока готовится здесь; Core::update выполняет отложенный переход в OTA_UPDATE.
+                // См. docs/modules/web.md, раздел Concurrency.
                 if (const AppPorts* p = webPorts()) {
                     if (p->ota.onUploadOpened) p->ota.onUploadOpened(p->ota.ctx);
                 }
@@ -345,7 +346,7 @@ void WebServer::setupApiRoutes_() {
         }
         uint8_t id = request->getParam("id")->value().toInt();
         char path[BufferBytes::Fs::PROGRAM_PATH];
-        snprintf(path, sizeof(path), "/programs/%u.json", id);
+        program_json::formatProgramPath(path, sizeof(path), id);
         sendJsonFromFs(request, path, "no-cache, no-store, must-revalidate");
     });
 

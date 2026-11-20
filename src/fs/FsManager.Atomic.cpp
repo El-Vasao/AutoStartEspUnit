@@ -10,7 +10,7 @@
 
 namespace {
 void noteFsUnknown_() {
-    // Sticky: do not overwrite a more specific boot/config/GSM error.
+    // Липкая ошибка: не затирать более конкретную ошибку старта, конфига или GSM.
     auto& err = core.getErrorManager();
     if (err.get() == ErrorCode::NONE) {
         err.set(ErrorCode::FS_UNKNOWN);
@@ -242,41 +242,6 @@ bool FsManager::copyFileAtomic_(const char* srcPath, const char* destPath) {
     return true;
 }
 
-bool FsManager::writeFile(const char* path, const char* data, size_t len) {
-#ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "writeFile(%s, %u bytes)\n", path, len);
-#endif
-
-    if (!initialized) {
-        logger.log(LogModule::FsManager, "writeFile: FS not initialized\n");
-        errorCount++;
-        return false;
-    }
-
-    return atomicWrite(path, data, len);
-}
-
-bool FsManager::appendFile(const char* path, const char* data, size_t len) {
-    if (!initialized) return false;
-
-    auto meta = getMetadata(path);
-    if (meta) {
-        FileMetadata m;
-        memcpy_P(&m, meta, sizeof(FileMetadata));
-        if (m.access == FileAccess::ACCESS_READ_ONLY) {
-            return false;
-        }
-    }
-
-    File f = LittleFS.open(path, "a");
-    if (!f) return false;
-
-    size_t written = f.write((const uint8_t*)data, len);
-    f.close();
-
-    return written == len;
-}
-
 bool FsManager::deleteFile(const char* path) {
     if (!initialized) return false;
 
@@ -290,22 +255,6 @@ bool FsManager::deleteFile(const char* path) {
     }
 
     return LittleFS.remove(path);
-}
-
-bool FsManager::createBackup(const char* path) {
-    strlcpy(pathBuffer, path, sizeof(pathBuffer));
-    strlcat(pathBuffer, ".bak", sizeof(pathBuffer));
-    return copyFileAtomic_(path, pathBuffer);
-}
-
-bool FsManager::backup(const char* path) {
-    return createBackup(path);
-}
-
-bool FsManager::restore(const char* path) {
-    strlcpy(pathBuffer, path, sizeof(pathBuffer));
-    strlcat(pathBuffer, ".bak", sizeof(pathBuffer));
-    return copyFileAtomic_(pathBuffer, path);
 }
 
 File FsManager::openWriteStream(const char* path, size_t expectedSize) {
@@ -428,28 +377,44 @@ bool FsManager::closeWriteStream(File& f, const char* originalPath, bool commit)
         return removed;
     }
 
-    const char* targetPath = originalPath;
-
-#ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "closeWriteStream: temp=%s, target=%s\n", tempPath, targetPath ? targetPath : "");
-#endif
-
-    if (targetPath && exists(targetPath)) {
-        if (!LittleFS.remove(targetPath)) {
-            logger.log(LogModule::FsManager, "closeWriteStream: failed to remove target %s\n", targetPath);
-            LittleFS.remove(tempPath);
-            errorCount++;
-            return false;
-        }
-        espHalFeedWdt();
-    }
-
-    if (!targetPath || !LittleFS.rename(tempPath, targetPath)) {
-        logger.log(LogModule::FsManager, "closeWriteStream: rename FAILED %s\n", tempPath);
+    if (!originalPath || !originalPath[0]) {
+        logger.log(LogModule::FsManager, "closeWriteStream: missing target\n");
         LittleFS.remove(tempPath);
         errorCount++;
         return false;
     }
+
+#ifdef SERIAL_DEBUG
+    logger.log(LogModule::FsManager, "closeWriteStream: temp=%s, target=%s\n", tempPath, originalPath);
+#endif
+
+    // Сначала .bak, потом rename: если rename не удался, цель не остаётся дырой.
+    char bakPath[BufferBytes::Fs::TEMP_PATH];
+    snprintf(bakPath, sizeof(bakPath), "%s.bak", originalPath);
+    bakPath[sizeof(bakPath) - 1] = '\0';
+
+    bool hadBackup = false;
+    if (exists(originalPath)) {
+        if (exists(bakPath)) LittleFS.remove(bakPath);
+        hadBackup = LittleFS.rename(originalPath, bakPath);
+        if (!hadBackup && !LittleFS.remove(originalPath)) {
+            logger.log(LogModule::FsManager, "closeWriteStream: cannot free target %s\n", originalPath);
+            LittleFS.remove(tempPath);
+            errorCount++;
+            return false;
+        }
+    }
+
+    espHalFeedWdt();
+    if (!LittleFS.rename(tempPath, originalPath)) {
+        logger.log(LogModule::FsManager, "closeWriteStream: rename FAILED %s\n", tempPath);
+        LittleFS.remove(tempPath);
+        if (hadBackup) (void)LittleFS.rename(bakPath, originalPath);
+        errorCount++;
+        noteFsUnknown_();
+        return false;
+    }
+    if (hadBackup) LittleFS.remove(bakPath);
 
     espHalFeedWdt();
 #ifdef SERIAL_DEBUG

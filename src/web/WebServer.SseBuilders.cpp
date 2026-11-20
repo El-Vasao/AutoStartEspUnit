@@ -1,6 +1,6 @@
 /**
  * @file WebServer.SseBuilders.cpp
- * @brief Domain SSE/bootstrap JSON builders (hardware / runtime / program / flash / clocks / snapshot).
+ * @brief Сборщики предметного JSON для SSE и bootstrap (hardware / runtime / program / flash / clocks / snapshot).
  */
 #include "web/internal/SseIncCommon.h"
 

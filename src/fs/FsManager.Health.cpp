@@ -20,8 +20,8 @@ bool FsManager::refreshFsInfo() {
 size_t FsManager::reclaimOrphans() {
     if (!initialized) return 0;
 
-    // Known leftover temps from interrupted HTTP ingest / OTA staging.
-    // Do not walk all *.tmp — mid-write atomic temps must stay until rename.
+    // Известные остатки временных файлов после прерванного приёма HTTP или промежуточной OTA.
+    // Не обходить все *.tmp — атомарные временные файлы посреди записи должны дожить до rename.
     static const char* const kOrphans[] = {
         HttpPostJson::TMP_CONFIG,
         HttpPostJson::TMP_PROGRAM,
@@ -41,7 +41,7 @@ size_t FsManager::reclaimOrphans() {
 bool FsManager::gc() {
     if (!initialized) return false;
 
-    // ESP32 Arduino LittleFS has no LittleFS.gc(). Reclaim known orphans, then refresh free-space.
+    // У ESP32 Arduino LittleFS нет LittleFS.gc(). Вернуть известные осиротевшие файлы, затем обновить свободное место.
     reclaimOrphans();
     return refreshFsInfo();
 }
@@ -79,13 +79,6 @@ size_t FsManager::getFreeSpace() {
     fsInfo.totalBytes = LittleFS.totalBytes();
     fsInfo.usedBytes = LittleFS.usedBytes();
     return fsInfo.totalBytes - fsInfo.usedBytes;
-}
-
-size_t FsManager::getUsedSpace() {
-    if (!initialized) return 0;
-    fsInfo.totalBytes = LittleFS.totalBytes();
-    fsInfo.usedBytes = LittleFS.usedBytes();
-    return fsInfo.usedBytes;
 }
 
 void FsManager::printStats() {

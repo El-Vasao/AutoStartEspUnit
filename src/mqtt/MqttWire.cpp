@@ -16,13 +16,13 @@ uint16_t readU16(const uint8_t* p) { return (uint16_t)((p[0] << 8) | p[1]); }
 
 size_t mqttStrLen(const char* s) { return s ? strlen(s) : 0; }
 
-/// Whole packet size for a Remaining Length, or 0 when it is not encodable.
+/// Размер всего пакета при данном Remaining Length, или 0, если длину нельзя закодировать.
 uint32_t packetSize(uint32_t remLen) {
     const uint8_t rl = remainingLengthSize(remLen);
     return rl ? 1U + rl + remLen : 0;
 }
 
-/// Fixed header (type/flags + Remaining Length); the caller has checked that the packet fits.
+/// Фиксированный заголовок (тип/флаги + Remaining Length); вызывающий уже проверил, что пакет влезает.
 uint16_t writeFixedHeader(uint8_t* out, uint8_t typeFlags, uint32_t remLen) {
     uint8_t rl[4];
     const uint8_t n = encodeRemainingLength(remLen, rl);
@@ -155,39 +155,48 @@ uint16_t buildSubscribe(uint8_t* out, uint16_t cap, uint16_t packetId, const cha
     const uint32_t remLen = 2 + 2 + (uint32_t)topicLen + 1;
     const uint32_t total = packetSize(remLen);
     if (!total || total > cap) return 0;
-    uint16_t off = writeFixedHeader(out, 0x82, remLen);  // SUBSCRIBE, flags 0010
+    uint16_t off = writeFixedHeader(out, 0x82, remLen);  // SUBSCRIBE, флаги 0010
     off += putU16(out + off, packetId);
     off += putString(out + off, (uint16_t)(cap - off), topic);
-    out[off++] = 0x00;  // requested QoS0
+    out[off++] = 0x01;  // запрошенный QoS1
     return off;
 }
 
-uint16_t publishHeadLength(uint16_t topicLen, uint32_t payloadLen) {
-    const uint32_t remLen = 2U + (uint32_t)topicLen + payloadLen;
+uint16_t publishHeadLength(uint16_t topicLen, uint32_t payloadLen, uint8_t qos) {
+    if (qos > 1) return 0;
+    const uint32_t pidBytes = (qos > 0) ? 2U : 0U;
+    const uint32_t remLen = 2U + (uint32_t)topicLen + pidBytes + payloadLen;
     const uint8_t rl = remainingLengthSize(remLen);
     if (rl == 0) return 0;
-    return (uint16_t)(1U + rl + 2U + topicLen);
+    return (uint16_t)(1U + rl + 2U + topicLen + pidBytes);
 }
 
 uint16_t writePublishHead(uint8_t* out, uint16_t cap, const char* topic, uint16_t topicLen, uint32_t payloadLen,
-                          bool retained) {
+                          bool retained, uint8_t qos, uint16_t packetId, bool dup) {
     if (!topic || topicLen == 0) return 0;
-    const uint16_t head = publishHeadLength(topicLen, payloadLen);
+    if (qos > 1) return 0;
+    if (qos > 0 && packetId == 0) return 0;
+    const uint16_t head = publishHeadLength(topicLen, payloadLen, qos);
     if (!head || head > cap) return 0;
-    uint16_t off = writeFixedHeader(out, (uint8_t)(retained ? 0x31 : 0x30), 2U + (uint32_t)topicLen + payloadLen);
+    const uint32_t pidBytes = (qos > 0) ? 2U : 0U;
+    uint8_t typeFlags = (uint8_t)(0x30 | ((qos & 0x03) << 1) | (retained ? 0x01 : 0x00));
+    if (dup && qos > 0) typeFlags = (uint8_t)(typeFlags | 0x08);
+    uint16_t off = writeFixedHeader(out, typeFlags, 2U + (uint32_t)topicLen + pidBytes + payloadLen);
     off += putU16(out + off, topicLen);
     memcpy(out + off, topic, topicLen);
-    return (uint16_t)(off + topicLen);
+    off = (uint16_t)(off + topicLen);
+    if (qos > 0) off += putU16(out + off, packetId);
+    return off;
 }
 
 uint16_t buildPublish(uint8_t* out, uint16_t cap, const char* topic, const uint8_t* payload, uint16_t len,
-                      bool retained) {
+                      bool retained, uint8_t qos, uint16_t packetId, bool dup) {
     if (!topic || (!payload && len)) return 0;
     const size_t topicLen = strlen(topic);
     if (topicLen == 0 || topicLen > 0xFFFF) return 0;
-    const uint16_t head = publishHeadLength((uint16_t)topicLen, len);
+    const uint16_t head = publishHeadLength((uint16_t)topicLen, len, qos);
     if (!head || (uint32_t)head + len > cap) return 0;
-    writePublishHead(out, cap, topic, (uint16_t)topicLen, len, retained);
+    if (!writePublishHead(out, cap, topic, (uint16_t)topicLen, len, retained, qos, packetId, dup)) return 0;
     if (len) memcpy(out + head, payload, len);
     return (uint16_t)(head + len);
 }
@@ -224,6 +233,12 @@ bool parseSuback(const uint8_t* body, uint32_t remLen, uint16_t& packetId, uint8
     if (remLen < 3) return false;
     packetId = readU16(body);
     returnCode = body[2];
+    return true;
+}
+
+bool parsePuback(const uint8_t* body, uint32_t remLen, uint16_t& packetId) {
+    if (remLen < 2) return false;
+    packetId = readU16(body);
     return true;
 }
 

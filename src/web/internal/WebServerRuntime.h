@@ -22,8 +22,8 @@
 class WebServer;
 enum class CoreMode : uint8_t;
 
-/// Internal runtime for WebServer subsystem.
-/// Owns no memory; operates on WebServer state via friend access.
+/// Внутренний runtime подсистемы WebServer.
+/// Памятью не владеет; работает с состоянием WebServer через доступ друга.
 class WebServerRuntime {
 public:
     static void update(WebServer& ws);
@@ -38,9 +38,8 @@ public:
     static void broadcastLog(WebServer& ws, const char* message);
     static void broadcastStatus(WebServer& ws);
     static void broadcastStatusForce(WebServer& ws);
-    /// New EventSource client: invalidate SSE dedup so next tick sends mode/gsm/hardware/clocks.
+    /// Новый клиент EventSource: сбросить дедуп SSE, чтобы следующий тик послал mode/gsm/hardware/clocks.
     static void requestSseIncrementalBaseline(WebServer& ws);
-    static void sendStatus(WebServer& ws, size_t maxQueueDepth);
     static void tickSseIncremental(WebServer& ws, uint32_t nowMs);
 
     /// Stream full live JSON snapshot (bootstrap `live`, не SSE).

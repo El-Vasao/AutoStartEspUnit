@@ -12,7 +12,7 @@ constexpr bool kTcpWantVerbose = Sim800Tcp::TCP_VERBOSE_LOG;
 #endif
 } // namespace
 
-// Narrative TCP lines always log; +IPD/CIPSTART-chatter only when SERIAL_DEBUG or Sim800Tcp::TCP_VERBOSE_LOG.
+// Строки хода TCP пишутся всегда; болтовня +IPD/CIPSTART — только при SERIAL_DEBUG или Sim800Tcp::TCP_VERBOSE_LOG.
 
 void Sim800TcpTransport::clearIpConfigFlags_() {
     _ipConfigDone = false;
@@ -48,6 +48,9 @@ void Sim800TcpTransport::reset() {
     _txLen = 0;
     _sendLen = 0;
     _ipd.reset();
+    _ipdDiscardExit = false;
+    // Иначе обрыв посреди длинного +IPD оставляет UART без разбора строк.
+    _at.uart().setDataMode(false);
 }
 
 void Sim800TcpTransport::noteConnectOk_() {
@@ -61,18 +64,6 @@ void Sim800TcpTransport::clearTx_() {
     _txLen = 0;
     _sendLen = 0;
     _flushRequested = false;
-}
-
-void Sim800TcpTransport::clearRx_() {
-    _rxHead = 0;
-    _rxCount = 0;
-    _rxOverflow = false;
-    _rawLineLen = 0;
-    _promptLeak = 0;
-    if (_ipd.inPayload()) {
-        _at.uart().setDataMode(false);
-    }
-    _ipd.reset();
 }
 
 bool Sim800TcpTransport::takeRxOverflow() {
@@ -104,8 +95,8 @@ void Sim800TcpTransport::logRxForensic(const char* why) const {
 }
 
 bool Sim800TcpTransport::discardingTcpPayload_(bool fromIpd) const {
-    // Requires CIPHEAD=1 (see startConnect_): framed +IPD is real TCP and must arrive mid-CIPSEND.
-    // Raw (non-+IPD) bytes during send-epoch are modem echo/URC — keep them out of MQTT RX.
+    // Нужен CIPHEAD=1 (см. startConnect_): кадровый +IPD — настоящий TCP, его надо принять и посреди CIPSEND.
+    // Сырые байты (не +IPD) в эпоху отправки — эхо/URC модема, в RX MQTT их не пускать.
     if (fromIpd) return false;
     return _sendInProgress || _modemTxLocked;
 }
@@ -143,7 +134,7 @@ void Sim800TcpTransport::forceStackRecover_(const char* reason) {
 bool Sim800TcpTransport::connectStart(const char* host, uint16_t port) {
     if (!host || !host[0]) return false;
     if (_connecting || _connected) return false;
-    // Do not stack CIPSTART on top of CIPCLOSE/CIPSHUT, in-flight AT, or send-epoch.
+    // Не наслаивать CIPSTART поверх CIPCLOSE/CIPSHUT, AT в полёте или эпохи отправки.
     if (_closeQueued || _recoverQueued) return false;
     if (_modemTxLocked || _sendInProgress || _txLen != 0) return false;
     if (_at.isBusy() || _at.hasResult()) return false;
@@ -160,7 +151,7 @@ bool Sim800TcpTransport::connectStart(const char* host, uint16_t port) {
     _connecting = true;
     _connectStartMs = now;
     _lastConnectAttemptMs = now;
-    clearTx_(); // never leak a previous CIPSEND payload onto a new TCP session
+    clearTx_(); // не протечь нагрузкой прошлого CIPSEND в новый сеанс TCP
     logger.logSerialOnly(LogModule::Sim800TcpTransport, "connectStart host=%s port=%u\n", _host, (unsigned)_port);
     if (!startConnect_()) {
         _connecting = false;
@@ -175,27 +166,27 @@ void Sim800TcpTransport::stop(const char* reason) {
     const bool wasConnectedOrConnecting = (_connected || _connecting);
     _connected = false;
     _connecting = false;
-    // Abort mid-CIPSEND: clear send-epoch so tcpEpochBusy cannot block MQTT reconnect forever.
+    // Срыв посреди CIPSEND: снять эпоху отправки, чтобы tcpEpochBusy не блокировал переподключение MQTT навсегда.
     endSendEpoch_();
     _promptLeak = 0;
-    // Cooldown so the next MQTT tick does not CIPSTART-storm.
+    // Пауза, чтобы следующий тик MQTT не устроил шторм CIPSTART.
     _lastConnectAttemptMs = nowMs_();
     if (reason && reason[0]) {
         logger.log(LogModule::Sim800TcpTransport, "stop(): %s\n", reason);
     } else {
         logger.logSerialOnly(LogModule::Sim800TcpTransport, "stop()\n");
     }
-    // Only CIPCLOSE if we still believe a socket exists (CLOSED URC already tore it down).
+    // CIPCLOSE только если сокет ещё считается живым (URC CLOSED его уже снёс).
     if (wasConnectedOrConnecting && !_closeQueued) {
         _closeQueued = true;
-        // CIPMUX=0 (single connection): CIPCLOSE without link id.
+        // CIPMUX=0 (одно соединение): CIPCLOSE без id канала.
         AtSession::Request r{ "AT+CIPCLOSE", Sim800Tcp::AT_CONFIG_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPCLOSE" };
         (void)_at.enqueue(r);
     }
 }
 
 void Sim800TcpTransport::noteExternalCipShut() {
-    // Time-sync cascade owns AT+CIPSHUT (tag TIMESHUT) — invalidate warm CIPSTART cache.
+    // Каскад синхронизации времени владеет AT+CIPSHUT (тег TIMESHUT) — сбросить кэш прогретого CIPSTART.
     clearIpConfigFlags_();
     _didInitialCipShut = false;
     _connected = false;
@@ -206,7 +197,7 @@ void Sim800TcpTransport::noteExternalCipShut() {
 }
 
 bool Sim800TcpTransport::enqueueIpConfig_() {
-    // Order: CIPRXGET=0 → CIPHEAD=1 → CIPMUX=0. CIPHEAD is required for discardingTcpPayload_.
+    // Порядок: CIPRXGET=0 → CIPHEAD=1 → CIPMUX=0. CIPHEAD нужен для discardingTcpPayload_.
     if (_at.normalQueueFree() < 3) return false;
     if (!_at.enqueue({ "AT+CIPRXGET=0", Sim800Tcp::AT_CONFIG_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPRXGET0" })) {
         return false;
@@ -225,7 +216,7 @@ bool Sim800TcpTransport::enqueueIpConfig_() {
 }
 
 bool Sim800TcpTransport::enqueueCipStart_() {
-    // CIPMUX=0: CIPSTART without link id.
+    // CIPMUX=0: CIPSTART без id канала.
     snprintf(_cmdStart, sizeof(_cmdStart), "AT+CIPSTART=\"TCP\",\"%s\",%u", _host, (unsigned)_port);
     if (!_at.enqueue({ _cmdStart, Sim800Tcp::CIPSTART_ACCEPT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok),
                        nullptr, "CIPSTART" })) {
@@ -235,7 +226,7 @@ bool Sim800TcpTransport::enqueueCipStart_() {
 }
 
 bool Sim800TcpTransport::startConnect_() {
-    // Warm modem after ESP-only reboot may still hold a stale TCP session — clear once.
+    // Прогретый модем после перезагрузки только ESP может держать устаревший сеанс TCP — снять один раз.
     if (!_didInitialCipShut) {
         if (!_at.enqueue({ "AT+CIPSHUT", Sim800Tcp::CIPSHUT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
             return false;
@@ -243,7 +234,7 @@ bool Sim800TcpTransport::startConnect_() {
         _didInitialCipShut = true;
         clearIpConfigFlags_();
         logger.log(LogModule::Sim800TcpTransport, "CIPSHUT (initial, warm-safe)\n");
-        // CIPSTART after CIPSHUT OK → consumeAtResult continues config.
+        // CIPSTART после CIPSHUT OK → consumeAtResult продолжает конфиг.
         return true;
     }
 
@@ -251,7 +242,7 @@ bool Sim800TcpTransport::startConnect_() {
         if (!_ipConfigEnqueued) {
             if (!enqueueIpConfig_()) return false;
         }
-        // Wait for all three OK bits before CIPSTART (see consumeAtResult).
+        // Ждать все три бита OK до CIPSTART (см. consumeAtResult).
         return true;
     }
 
@@ -262,7 +253,7 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
     _lastNowMs = nowMs;
     _at.tick(nowMs);
 
-    // Connect / send watchdogs (modem hang / stuck flags).
+    // Сторожа соединения и отправки (зависание модема / застрявшие флаги).
     if (_connecting && _connectStartMs != 0 &&
         (nowMs - _connectStartMs) >= Sim800Tcp::CONNECT_WATCHDOG_MS) {
         logger.log(LogModule::Sim800TcpTransport, "connect watchdog\n");
@@ -281,9 +272,9 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
         forceStackRecover_("send_wd");
     }
 
-    // AtSession Done is drained only by GsmController::drainAtResult_ (take → consume → absorb).
+    // Done у AtSession забирает только GsmController::drainAtResult_ (забрать → потребить → поглотить).
 
-    // Start sealed CIPSEND when flushSend() was called.
+    // Начать запечатанный CIPSEND, если уже звали flushSend().
     if (_flushRequested && _connected && !_sendInProgress && !_modemTxLocked && _txLen > 0) {
         startSend_();
     }
@@ -297,9 +288,9 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
     }
     if (strcmp(r.tag, "CIPSHUT") == 0) {
         _recoverQueued = false;
-        _modemTxLocked = false; // recover completed — release send-epoch lock
+        _modemTxLocked = false; // восстановление кончилось — снять замок эпохи отправки
         clearIpConfigFlags_();
-        // After warm CIPSHUT (or recover), re-apply CIPHEAD before CIPSTART.
+        // После прогретого CIPSHUT (или восстановления) снова выставить CIPHEAD до CIPSTART.
         if (_connecting && !_ipConfigDone) {
             if (!enqueueIpConfig_()) {
                 _connecting = false;
@@ -309,7 +300,7 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
         return true;
     }
     if (strcmp(r.tag, "CIPSTART") == 0) {
-        // Command acceptance; actual connect is signaled via URC CONNECT OK / CONNECT FAIL.
+        // Команда принята; само соединение сигналит URC CONNECT OK / CONNECT FAIL.
         if (r.timedOut || r.error) {
             logger.log(LogModule::Sim800TcpTransport, "CIPSTART accept failed (timeout=%u error=%u)\n",
                        (unsigned)r.timedOut, (unsigned)r.error);
@@ -327,11 +318,11 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
     }
     if (strcmp(r.tag, "CIPSEND") == 0) {
         if (r.gotPrompt) {
-            // CIPSEND=<len>: send exactly the length frozen at startSend_ (no Ctrl+Z in len mode).
+            // CIPSEND=<len>: послать ровно длину, зафиксированную в startSend_ (в режиме длины нет Ctrl+Z).
             const uint16_t n = (_sendLen <= _txLen) ? _sendLen : _txLen;
             if (n) _at.uart().writeBytes(_tx, n);
-            _sendWatchMs = _lastNowMs ? _lastNowMs : millis(); // wait for SEND OK / SEND FAIL
-            // Keep _modemTxLocked + _sendInProgress until SEND OK (AtSession is Idle after '>').
+            _sendWatchMs = _lastNowMs ? _lastNowMs : millis(); // ждать SEND OK / SEND FAIL
+            // Держать _modemTxLocked и _sendInProgress до SEND OK (после '>' AtSession уже Idle).
         } else if (r.timedOut || r.error) {
             logger.log(LogModule::Sim800TcpTransport, "CIPSEND accept failed (timeout=%u error=%u)\n",
                        (unsigned)r.timedOut, (unsigned)r.error);
@@ -379,14 +370,14 @@ bool Sim800TcpTransport::consumeAtResult(const AtSession::Result& r) {
 
 void Sim800TcpTransport::onLine(const char* line) {
     if (!line || !line[0]) return;
-    // Connection URCs — do not treat bare ERROR (shared UART with GSM AT).
+    // URC соединения — голый ERROR не считать им (UART общий с AT GSM).
     if (strstr(line, "CONNECT OK") != nullptr) {
         _lastConnectOkMs = _lastNowMs;
         logger.log(LogModule::Sim800TcpTransport, "TCP connected\n");
         _connected = true;
         _connecting = false;
         _connectStartMs = 0;
-        endSendEpoch_(); // new socket — drop any pre-connect staging
+        endSendEpoch_(); // новый сокет — выбросить подготовку до соединения
         noteConnectOk_();
         return;
     }
@@ -406,7 +397,7 @@ void Sim800TcpTransport::onLine(const char* line) {
         _connected = false;
         _connecting = false;
         clearTx_();
-        // Keep bus locked if mid-send so CIPSTART cannot race until CIPSHUT finishes.
+        // Если отправка ещё идёт, шину держать запертой, чтобы CIPSTART не обогнал конец CIPSHUT.
         if (wasSending) {
             _modemTxLocked = true;
             forceStackRecover_("closed_mid_send");
@@ -447,12 +438,12 @@ void Sim800TcpTransport::onLine(const char* line) {
 }
 
 void Sim800TcpTransport::feedRawByte_(char c) {
-    // Raw path (fallback / modem text): CRLF control-line filter into MQTT RX.
-    // Do not treat 0x20 as text start — MQTT CONNACK begins with that byte.
+    // Сырой путь (запасной / текст модема): фильтр управляющих строк CRLF в RX MQTT.
+    // 0x20 не считать началом текста — с этого байта начинается CONNACK MQTT.
     const uint8_t ub = (uint8_t)c;
     const bool printable = (ub == '\r' || ub == '\n' || ub == '\t' || (ub >= 0x20 && ub <= 0x7E));
 
-    // Strip leaked CIPSEND '>' before printable/binary split.
+    // Снять утёкшее приглашение CIPSEND '>' до разделения на печать и двоичное.
     if (_connected && _promptLeak != 0) {
         if (_promptLeak == 1) {
             if (ub == '\r') {
@@ -464,19 +455,19 @@ void Sim800TcpTransport::feedRawByte_(char c) {
                 return;
             }
             _promptLeak = 0;
-            // Fall through: first real TCP byte after a lone '>'.
+            // Проваливаемся: первый настоящий байт TCP после одиночного '>'.
         } else if (_promptLeak == 2) {
             if (ub == '\n') {
                 _promptLeak = 0;
                 return;
             }
             _promptLeak = 0;
-            // Fall through
+            // Проваливаемся
         }
     }
 
     if (!printable) {
-        // Binary byte: flush any pending line bytes as payload and pass through.
+        // Двоичный байт: накопленные байты строки сбросить как нагрузку и пропустить дальше.
         _promptLeak = 0;
         for (uint8_t i = 0; i < _rawLineLen; i++) pushRx_((uint8_t)_rawLineBuf[i]);
         _rawLineLen = 0;
@@ -484,28 +475,28 @@ void Sim800TcpTransport::feedRawByte_(char c) {
         return;
     }
 
-    // New prompt leak: '>' must never be line-buffered as modem text (would glue to MQTT bytes).
+    // Новая утечка приглашения: '>' нельзя копить в строку как текст модема (склеится с байтами MQTT).
     if (_connected && _rawLineLen == 0 && ub == '>') {
         _promptLeak = 1;
         return;
     }
 
-    // Line start while connected: only buffer plausible modem-text starts; else TCP payload.
+    // Начало строки при соединении: копить только правдоподобные начала текста модема, иначе нагрузка TCP.
     if (_connected && _rawLineLen == 0) {
         if (ub == '\r' || ub == '\n') {
             return;
         }
         const bool maybeModemTextStart =
-            (ub == '+') || // URCs like +CREG, +CSQ, +IPD...
-            (ub == 'A') || // AT echoes / ALREADY CONNECT
+            (ub == '+') || // URC вроде +CREG, +CSQ, +IPD...
+            (ub == 'A') || // эхо AT / ALREADY CONNECT
             (ub == 'O') || // OK
             (ub == 'E') || // ERROR
-            (ub == 'C') || // CLOSED / CONNECT / CLOSE OK / CSQ (stripped)
+            (ub == 'C') || // CLOSED / CONNECT / CLOSE OK / CSQ (без '+')
             (ub == 'S') || // SEND OK/FAIL / SHUT OK
             (ub == 'R') || // RDY
-            (ub == 'N') || // NO CARRIER (rare)
-            (ub == 'F') || // FAIL fragments
-            (ub == 'I');   // IPD, (stripped +)
+            (ub == 'N') || // NO CARRIER (редко)
+            (ub == 'F') || // обрывки FAIL
+            (ub == 'I');   // IPD, (без '+')
 
         if (!maybeModemTextStart) {
             pushRx_(ub);
@@ -514,7 +505,7 @@ void Sim800TcpTransport::feedRawByte_(char c) {
     }
 
     if (_rawLineLen + 1 >= RAW_LINE_BUF_SIZE) {
-        // Too long for a control line: treat as payload.
+        // Слишком длинно для управляющей строки: считать нагрузкой.
         for (uint8_t i = 0; i < _rawLineLen; i++) pushRx_((uint8_t)_rawLineBuf[i]);
         _rawLineLen = 0;
         if (_connected) pushRx_(ub);
@@ -526,7 +517,7 @@ void Sim800TcpTransport::feedRawByte_(char c) {
         return;
     }
 
-    // Got a CRLF-terminated line candidate.
+    // Набрался кандидат в строку, заканчивающуюся CRLF.
     if (!sim800_lines::isControlLine(_rawLineBuf, _rawLineLen) && _connected) {
         for (uint8_t i = 0; i < _rawLineLen; i++) pushRx_((uint8_t)_rawLineBuf[i]);
     }
@@ -534,8 +525,14 @@ void Sim800TcpTransport::feedRawByte_(char c) {
 }
 
 void Sim800TcpTransport::onByte(char c) {
-    // +IPD framing (CIPHEAD=1) owns the byte while matching/reading; everything else is modem text.
+    // Кадрирование +IPD (CIPHEAD=1) владеет байтом на время сопоставления и чтения; остальное — текст модема.
     using Ev = sim800_lines::IpdFramer::Event;
+    if (_ipdDiscardExit) {
+        // Этот байт уже после заявленной длины — его можно собирать как строку.
+        _at.uart().setDataMode(false);
+        _rawLineLen = 0;
+        _ipdDiscardExit = false;
+    }
     switch (_ipd.feed(c)) {
         case Ev::Consumed:
             return;
@@ -556,10 +553,15 @@ void Sim800TcpTransport::onByte(char c) {
         case Ev::PayloadEnd:
             pushRx_((uint8_t)c, true);
             _at.uart().setDataMode(false);
-            _rawLineLen = 0; // drop any accidental "+IPD,n:" residue from the match path
+            _rawLineLen = 0; // выбросить случайный остаток "+IPD,n:" с пути сопоставления
+            return;
+        case Ev::Discard:
+            // Иначе UART склеит хвост кадра со следующим OK.
+            _at.uart().setDataMode(true);
+            if (!_ipd.inDiscard()) _ipdDiscardExit = true;
             return;
         case Ev::Raw:
-            // Replay bytes eaten by an aborted header so URCs like +CSQ keep their '+'.
+            // Повторить байты, съеденные сорванным заголовком, чтобы URC вроде +CSQ сохранили '+'.
             for (const char* p = _ipd.replay(); *p; ++p) feedRawByte_(*p);
             feedRawByte_(c);
             return;
@@ -573,7 +575,7 @@ void Sim800TcpTransport::pushRx_(uint8_t b, bool fromIpd) {
             _rxOverflow = true;
             logger.log(LogModule::Sim800TcpTransport, "RX overflow — MQTT stream desync risk\n");
         }
-        return; // do not drop-oldest (that desyncs MQTT framing)
+        return; // не выбрасывать старейшее (это рассинхронизирует кадры MQTT)
     }
     const uint16_t idx = (uint16_t)((_rxHead + _rxCount) % RX_SIZE);
     _rx[idx] = b;
@@ -599,7 +601,7 @@ int Sim800TcpTransport::peek() const {
 
 size_t Sim800TcpTransport::write(const uint8_t* data, size_t len) {
     if (!data || len == 0) return 0;
-    // Refuse append while a CIPSEND epoch owns the TX buffer (length was frozen in AT+CIPSEND=N).
+    // Не дописывать, пока эпоха CIPSEND владеет буфером TX (длина уже зафиксирована в AT+CIPSEND=N).
     if (_sendInProgress || _modemTxLocked || _flushRequested) return 0;
     const size_t room = TX_SIZE - _txLen;
     const size_t n = (len < room) ? len : room;
@@ -620,21 +622,21 @@ bool Sim800TcpTransport::flushSend() {
 void Sim800TcpTransport::startSend_() {
     if (_sendInProgress) return;
     if (_txLen == 0) return;
-    // Do not start CIPSEND while +IPD framing owns the UART byte stream —
-    // interleaving AT+CIPSEND with mid-payload ReadData risks truncating inbound MQTT.
+    // Не начинать CIPSEND, пока кадрирование +IPD владеет потоком байт UART —
+    // чередование AT+CIPSEND с ReadData посреди нагрузки может обрезать входящий MQTT.
     if (_ipd.state() != sim800_lines::IpdFramer::State::Idle) return;
     _sendLen = _txLen;
-    // CIPMUX=0: CIPSEND without link id.
+    // CIPMUX=0: CIPSEND без id канала.
     snprintf(_cmdSend, sizeof(_cmdSend), "AT+CIPSEND=%u", (unsigned)_sendLen);
-    // Expect prompt; when got prompt, bytes will be written using frozen _sendLen.
+    // Ждать приглашение; когда оно придёт, байты пишутся по зафиксированному _sendLen.
     if (!_at.enqueue({ _cmdSend, Sim800Tcp::CIPSEND_PROMPT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Prompt), nullptr, "CIPSEND" })) {
         logger.log(LogModule::Sim800TcpTransport, "CIPSEND enqueue failed\n");
         _sendLen = 0;
         return;
     }
     _sendInProgress = true;
-    _modemTxLocked = true; // held until SEND OK / FAIL / watchdog / recover
-    _sendWatchMs = _lastNowMs ? _lastNowMs : millis(); // covers prompt wait; refreshed after '>'
+    _modemTxLocked = true; // держится до SEND OK / FAIL / watchdog / recover
+    _sendWatchMs = _lastNowMs ? _lastNowMs : millis(); // покрывает ожидание приглашения; обновляется после '>'
 }
 
 int Sim800ClientAdapter::connect(IPAddress ip, uint16_t port) {
@@ -644,7 +646,7 @@ int Sim800ClientAdapter::connect(IPAddress ip, uint16_t port) {
 }
 
 int Sim800ClientAdapter::connect(const char* host, uint16_t port) {
-    // Non-blocking: kick CIPSTART once; FSM polls connected() each tick.
+    // Неблокирующе: один раз запустить CIPSTART; FSM опрашивает connected() каждый тик.
     if (_t.isConnected()) return 1;
     if (!_t.isConnecting()) {
         (void)_t.connectStart(host, port);
@@ -654,7 +656,7 @@ int Sim800ClientAdapter::connect(const char* host, uint16_t port) {
 
 size_t Sim800ClientAdapter::write(const uint8_t* buf, size_t size) {
     pump_();
-    // Buffer only — CIPSEND starts on flush() after a full MQTT packet is staged.
+    // Только буфер — CIPSEND начинается в flush(), когда целый пакет MQTT подготовлен.
     return _t.write(buf, size);
 }
 

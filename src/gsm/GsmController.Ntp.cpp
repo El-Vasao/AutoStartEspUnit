@@ -1,6 +1,6 @@
 /**
  * @file GsmController.Ntp.cpp
- * @brief Non-blocking wall-clock cascade: CCLK/NITZ → CIPSHUT → CIPGSMLOC → CNTP → CCLK.
+ * @brief Неблокирующий каскад часов: CCLK/NITZ → CIPSHUT → CIPGSMLOC → CNTP → CCLK.
  */
 #include "gsm/GsmController.h"
 
@@ -14,8 +14,8 @@
 
 namespace {
 
-/// Usable modem clock from a +CCLK snapshot. Fractional NITZ zones are logged and kept out of
-/// tz_offset_hours (config/UI store whole hours only).
+/// Годные часы модема из снимка +CCLK. Дробные пояса NITZ пишутся в журнал и не попадают в
+/// tz_offset_hours (конфиг/UI хранят только целые часы).
 bool readCclkSnapshot(const char* snap, gsm_time::CclkTime& out) {
     if (!snap[0] || !gsm_time::parseCclk(snap, out)) return false;
     if (!out.tzWholeHours) {
@@ -63,7 +63,7 @@ bool GsmController::requestCclkProbe(int8_t tzOffsetHours) {
     if (_timeStep != TimeStep::Idle) return false;
     if (_state != GsmState::READY) return false;
     if (modemServiceEpochBusy()) return false;
-    // Refuse during CIPSEND/connect — handleReady would skip serviceTimeSync and timeout.
+    // Отказ во время CIPSEND/connect — handleReady пропустил бы serviceTimeSync, и вышел бы таймаут.
     if (_stack.tcp.isTcpEpochBusy() || _stack.tcp.isBusBusy()) return false;
     if (_await != AwaitKind::NONE) return false;
 
@@ -168,7 +168,7 @@ void GsmController::timeFinishOk_(time_t epochUtc, TimeSource src, bool tzValid,
 }
 
 void GsmController::timeAdvanceToCipgsmloc_(uint32_t now) {
-    // Reset CIP stack after MQTT CIPCLOSE so CIPGSMLOC/CNTP see a clean IP session.
+    // Сбросить стек CIP после MQTT CIPCLOSE, чтобы CIPGSMLOC/CNTP видели чистую IP-сессию.
     resetAwait();
     clearResponse();
     _timeCmdSent = false;
@@ -217,8 +217,8 @@ void GsmController::timeSoftMissCclkLite_(const char* why) {
 void GsmController::serviceTimeSync(uint32_t now) {
     if (_timeStep == TimeStep::Idle) return;
 
-    // Hard rule: never share the modem IP stack with CIP TCP (CIPGSMLOC/CNTP).
-    // CCLK probe is AT-only and safe even if TCP is up.
+    // Жёсткое правило: не делить IP-стек модема с CIP TCP (CIPGSMLOC/CNTP).
+    // Опрос CCLK — только AT и безопасен, даже если TCP поднят.
     if (_timeStep != TimeStep::CclkProbe && tcpSocketActive()) {
         if (_timeStep == TimeStep::Cipshut || _timeStep == TimeStep::Cipgsmloc ||
             _timeStep == TimeStep::WaitCipgsmlocUrc) {
@@ -265,11 +265,11 @@ void GsmController::serviceTimeSync(uint32_t now) {
         }
         if (_awaitError || awaitTimedOut(now)) {
             if (_timeCclkOnly) {
-                // Soft miss — do not sticky TIME_CCLK_FAIL during MQTT-up lite probes.
+                // Мягкий промах — не липнуть TIME_CCLK_FAIL на лёгких опросах при поднятом MQTT.
                 timeSoftMissCclkLite_("cclk_only_at");
                 return;
             }
-            // Genuine AT fault — mark before fallback.
+            // Настоящий сбой AT — отметить до запасного пути.
             timeMarkMethodFail_(TimeFailCclk);
             timeAdvanceToCipgsmloc_(now);
             return;
@@ -285,7 +285,7 @@ void GsmController::serviceTimeSync(uint32_t now) {
                 timeSoftMissCclkLite_("stale");
                 return;
             }
-            // Expected path until NITZ fills the modem clock — do not set TIME_CCLK_FAIL.
+            // Ожидаемый путь, пока NITZ не заполнит часы модема — не ставить TIME_CCLK_FAIL.
             logger.log(LogModule::GsmController, "CCLK probe stale/unusable, next\n");
             timeAdvanceToCipgsmloc_(now);
         }
@@ -293,7 +293,7 @@ void GsmController::serviceTimeSync(uint32_t now) {
 
     case TimeStep::Cipshut:
         if (!_timeCmdSent) {
-            // Tag TIMESHUT (not CIPSHUT) so Sim800TcpTransport::consumeAtResult does not swallow OK.
+            // Метка TIMESHUT (не CIPSHUT), чтобы Sim800TcpTransport::consumeAtResult не проглотил OK.
             sendAt("AT+CIPSHUT", "TIMESHUT", AwaitKind::OK, Sim800Tcp::CIPSHUT_TIMEOUT_MS);
             _timeCmdSent = true;
             _timeDeadlineMs = now + Sim800Tcp::CIPSHUT_TIMEOUT_MS;
@@ -322,12 +322,12 @@ void GsmController::serviceTimeSync(uint32_t now) {
             return;
         }
         if (!_awaitOk) return;
-        // SIM800 often returns OK first, then +CIPGSMLOC — wait like WaitCntpUrc.
+        // SIM800 часто сначала даёт OK, потом +CIPGSMLOC — ждать, как WaitCntpUrc.
         resetAwait();
         clearResponse();
         _timeCmdSent = false;
         _timeStep = TimeStep::WaitCipgsmlocUrc;
-        // Always grant a full URC grace after OK (do not inherit a near-zero accept deadline).
+        // После OK всегда давать полную паузу на URC (не наследовать почти нулевой срок приёма).
         _timeDeadlineMs = now + Gsm::CIPGSMLOC_URC_GRACE_MS;
         return;
 

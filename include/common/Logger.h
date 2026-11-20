@@ -44,12 +44,6 @@ public:
     /// Сколько отложенных строк потеряно из-за переполнения кольца с момента старта.
     uint32_t deferredDropped() const { return _deferredDropped; }
 
-#ifdef SERIAL_DEBUG
-    bool isSerialEnabled() const { return true; }
-#else
-    bool isSerialEnabled() const { return false; }
-#endif
-
 private:
     uint32_t _deferredDropped = 0;
     uint32_t _deferredDroppedReported = 0;

@@ -1,5 +1,4 @@
 #include "config/Config.h"
-#include "common/EspHal.h"
 #include "fs/FsManager.h"
 #include "common/Logger.h"
 #include "common/Utils.h"
@@ -12,21 +11,12 @@
 
 using namespace config_storage_internal;
 
-namespace {
-
-size_t encodeProgramSave(Print& p, void* ctx) {
-    const auto* prog = reinterpret_cast<const Program*>(ctx);
-    return program_json::emitProgramToPrint(*prog, p);
-}
-
-} // namespace
-
 bool Config::loadProgramCompiled(uint8_t id, CompiledStep* outSteps, uint8_t maxSteps, uint8_t* outCount,
                                  char* outName, size_t outNameSize) {
     if (!outSteps || maxSteps == 0 || !outCount || !outName || outNameSize == 0) return false;
 
     char path[BufferBytes::Fs::PROGRAM_PATH];
-    snprintf(path, sizeof(path), "/programs/%u.json", id);
+    program_json::formatProgramPath(path, sizeof(path), id);
 
     File f = fileSystem.openRead(path);
     if (!f) {
@@ -39,12 +29,6 @@ bool Config::loadProgramCompiled(uint8_t id, CompiledStep* outSteps, uint8_t max
     const bool ok = program_json::parseProgramCompiledFile(f, id, outSteps, maxSteps, outCount, outName, outNameSize);
     f.close();
     return ok;
-}
-
-bool Config::programExists(uint8_t id) {
-    char path[BufferBytes::Fs::PROGRAM_PATH];
-    snprintf(path, sizeof(path), "/programs/%u.json", id);
-    return fileSystem.exists(path);
 }
 
 bool Config::isProgramUsed(uint8_t id) const {
@@ -74,38 +58,6 @@ bool Config::isProgramUsed(uint8_t id) const {
     return false;
 }
 
-bool Config::writeProgramFile(const Program& prog) {
-    char path[BufferBytes::Fs::PROGRAM_PATH];
-    snprintf(path, sizeof(path), "/programs/%u.json", prog.id);
-
-    if (!ensureProgramsDir()) return false;
-
-    prepareFlashWriteLogGcAndWdt();
-
-    wdtPort_.feedNow();
-    espHalFeedWdt();
-
-    if (!fileSystem.writeJsonAtomicStream(path, encodeProgramSave, const_cast<Program*>(&prog), Limits::CONFIG_JSON_SIZE)) {
-        logger.log(LogModule::Config, "Failed to write program file\n");
-        return false;
-    }
-
-    logger.log(LogModule::Config, "Program %u file written\n", prog.id);
-    return true;
-}
-
-bool Config::saveProgram(const Program& prog) {
-    if (!writeProgramFile(prog)) return false;
-    wdtPort_.feedNow();
-    espHalFeedWdt();
-    if (!rebuildProgramIndex()) {
-        logger.log(LogModule::Config, "Program file saved but index rebuild failed!\n");
-        return false;
-    }
-    logger.log(LogModule::Config, "Program %u saved\n", prog.id);
-    return true;
-}
-
 bool Config::deleteProgram(uint8_t id) {
     if (isProgramUsed(id)) {
         logger.log(LogModule::Config, "Program %u is in use, cannot delete\n", id);
@@ -113,7 +65,7 @@ bool Config::deleteProgram(uint8_t id) {
     }
 
     char path[BufferBytes::Fs::PROGRAM_PATH];
-    snprintf(path, sizeof(path), "/programs/%u.json", id);
+    program_json::formatProgramPath(path, sizeof(path), id);
     if (!fileSystem.deleteFile(path)) return false;
 
     if (!rebuildProgramIndex()) {
@@ -159,7 +111,7 @@ bool Config::resetPrograms() {
             }
 
             char pathBuf[BufferBytes::Fs::PROGRAM_PATH];
-            // ESP32 may return basename or full path; normalize to /programs/<name>.
+            // ESP32 может вернуть имя файла или полный путь; приводим к /programs/<name>.
             if (fns[0] == '/') {
                 strlcpy(pathBuf, fns, sizeof(pathBuf));
             } else {

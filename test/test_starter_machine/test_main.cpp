@@ -127,6 +127,36 @@ void test_timed_already_running_does_not_crank() {
     TEST_ASSERT_EQUAL_UINT8(0, m.attempt());
 }
 
+void test_timed_idle_waits_for_full_window_before_already_running() {
+    Machine m;
+    m.begin(timedParams(), 0);
+    Tick t = m.tick(at(0, 13.8f, false));
+    TEST_ASSERT_EQUAL((int)Outcome::Running, (int)t.outcome);
+    TEST_ASSERT_EQUAL((int)RelayCmd::None, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Idle, (int)m.phase());
+    TEST_ASSERT_EQUAL_UINT8(0, m.attempt());
+
+    t = m.tick(at(400, 13.8f, false));
+    TEST_ASSERT_EQUAL((int)Phase::Idle, (int)m.phase());
+    TEST_ASSERT_EQUAL((int)RelayCmd::None, (int)t.relay);
+
+    t = m.tick(at(800, 13.8f, true));
+    TEST_ASSERT_EQUAL((int)Outcome::Success, (int)t.outcome);
+    TEST_ASSERT_EQUAL((int)StopReason::AlreadyRunning, (int)m.last().reason);
+    TEST_ASSERT_EQUAL_UINT8(0, m.attempt());
+}
+
+void test_timed_idle_voltage_drop_before_window_cranks() {
+    Machine m;
+    m.begin(timedParams(), 0);
+    Tick t = m.tick(at(0, 13.8f, false));
+    TEST_ASSERT_EQUAL((int)Phase::Idle, (int)m.phase());
+    t = m.tick(at(200, 12.0f, false));
+    TEST_ASSERT_EQUAL((int)RelayCmd::On, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Cranking, (int)m.phase());
+    TEST_ASSERT_EQUAL_UINT8(1, m.attempt());
+}
+
 void test_engine_caught_during_rest_counts_as_success() {
     Machine m;
     m.begin(timedParams(), 0);
@@ -214,6 +244,38 @@ void test_blocked_while_cranking() {
     TEST_ASSERT_EQUAL((int)StopReason::Blocked, (int)m.last().reason);
 }
 
+void test_blocked_during_settling() {
+    Machine m;
+    m.begin(timedParams(), 0);
+    m.tick(at(0));
+    m.tick(at(2000));
+    TEST_ASSERT_EQUAL((int)Phase::Settling, (int)m.phase());
+    Sample s = at(2500, 14.0f);
+    s.blocked = true;
+    Tick t = m.tick(s);
+    TEST_ASSERT_EQUAL((int)RelayCmd::Off, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Outcome::Blocked, (int)t.outcome);
+    TEST_ASSERT_EQUAL((int)Phase::Idle, (int)m.phase());
+    TEST_ASSERT_EQUAL_UINT8(1, m.attempt());
+}
+
+void test_blocked_during_resting() {
+    Machine m;
+    m.begin(timedParams(), 0);
+    m.tick(at(0));
+    m.tick(at(2000));
+    m.tick(at(5000, 12.0f));
+    TEST_ASSERT_EQUAL((int)Phase::Resting, (int)m.phase());
+    TEST_ASSERT_EQUAL((int)StopReason::VoltageLow, (int)m.last().reason);
+    Sample s = at(6000, 12.0f);
+    s.blocked = true;
+    Tick t = m.tick(s);
+    TEST_ASSERT_EQUAL((int)RelayCmd::Off, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Outcome::Blocked, (int)t.outcome);
+    TEST_ASSERT_EQUAL((int)Phase::Idle, (int)m.phase());
+    TEST_ASSERT_EQUAL_UINT8(1, m.attempt());
+}
+
 void test_zero_rest_starts_next_attempt_same_tick() {
     Params p = condParams(StartMethod::Rpm);
     p.restMs = 0;
@@ -253,6 +315,8 @@ int main(int, char**) {
     RUN_TEST(test_timed_window_timeout_high_voltage_without_full_window_fails);
     RUN_TEST(test_timed_retries_then_failure);
     RUN_TEST(test_timed_already_running_does_not_crank);
+    RUN_TEST(test_timed_idle_waits_for_full_window_before_already_running);
+    RUN_TEST(test_timed_idle_voltage_drop_before_window_cranks);
     RUN_TEST(test_engine_caught_during_rest_counts_as_success);
     RUN_TEST(test_rpm_condition_stops_immediately);
     RUN_TEST(test_rpm_ignores_crank_time_and_runs_to_max);
@@ -260,6 +324,8 @@ int main(int, char**) {
     RUN_TEST(test_input_method_ignores_voltage);
     RUN_TEST(test_blocked_before_start);
     RUN_TEST(test_blocked_while_cranking);
+    RUN_TEST(test_blocked_during_settling);
+    RUN_TEST(test_blocked_during_resting);
     RUN_TEST(test_zero_rest_starts_next_attempt_same_tick);
     RUN_TEST(test_crank_clamped_to_max_and_gap_tracked);
     return UNITY_END();

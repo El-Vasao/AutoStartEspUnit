@@ -381,7 +381,7 @@
                                 :data-index="index"
                                 data-gesture="inputTrigger"
                             >
-                                <div class="tile-name" x-text="$store.uiFormat.inputLabelById(trigger.input_id) + ' → #' + trigger.program_id"></div>
+                                <div class="tile-name" x-text="$store.uiFormat.inputLabelById(trigger.input_id) + ' → ' + $store.uiFormat.programLabel(trigger.program_id)"></div>
                                 <div class="tile-sub" x-text="trigger.trigger_level ? 'Высокий' : 'Низкий'"></div>
                             </div>
                         </template>
@@ -399,7 +399,7 @@
                                 :data-index="index"
                                 data-gesture="tempTrigger"
                             >
-                                <div class="tile-name" x-text="$store.uiFormat.sensorLabelById(trigger.sensor_id) + ' → #' + trigger.program_id"></div>
+                                <div class="tile-name" x-text="$store.uiFormat.sensorLabelById(trigger.sensor_id) + ' → ' + $store.uiFormat.programLabel(trigger.program_id)"></div>
                                 <div class="tile-sub" x-text="(trigger.comparison === 'below' ? 'ниже' : 'выше') + ' ' + (trigger.threshold || 0) + '°C'"></div>
                             </div>
                         </template>
@@ -434,7 +434,7 @@
                                     <span x-text="$store.uiFormat.sensorLabelById($store.settings.thermostat.sensor_id)"></span>
                                     <span x-text="' | ' + ($store.settings.thermostat.comparison === 'above' ? 'выше' : 'ниже') + ' ' + $store.settings.thermostat.lower_threshold + '°C'"></span>
                                 </div>
-                                <div class="tile-sub" x-text="'Ниже ' + ($store.settings.thermostat.program_id_lower || '—') + ' · Выше ' + ($store.settings.thermostat.program_id_upper || '—')"></div>
+                                <div class="tile-sub" x-text="'Ниже ' + $store.uiFormat.programLabel($store.settings.thermostat.program_id_lower) + ' · Выше ' + $store.uiFormat.programLabel($store.settings.thermostat.program_id_upper)"></div>
                             </div>
                     </div>
                     <div class="loading-placeholder" x-show="!$store.deviceStatus.loaded">Загрузка…</div>
@@ -510,7 +510,7 @@
                                     <template x-for="p in $store.programs.items" :key="p.id">
                                         <div class="program-card">
                                             <div class="program-card-header">
-                                                <span x-text="'#' + p.id + ' – ' + p.name"></span>
+                                                <span x-text="(String(p.name || '').trim() || p.id)"></span>
                                             </div>
                                             <div class="program-card-actions">
                                                 <button class="btn" type="button" @click="$store.programs.run(p.id)" :disabled="$store.deviceOta.started">Запуск</button>

@@ -4,7 +4,7 @@
 #include "common/Constants.h"
 #include "program/ProgramAction.h"
 /**
- * Compact program step for runtime execution: POD, no heap, no strings except SMS text.
+ * Компактный шаг программы для исполнения: POD, без heap, без строк кроме текста SMS.
  */
 struct CompiledStep {
     ActionId action{ActionId::UNKNOWN};
@@ -16,6 +16,6 @@ struct CompiledStep {
     uint16_t input_trigger_id{0};
     uint16_t temp_trigger_id{0};
 
-    /// SMS_OWNER text (POD fixed buffer).
+    /// Текст SMS_OWNER (фиксированный POD-буфер).
     char message[TextBytes::Programs::STEP_MESSAGE]{};
 };

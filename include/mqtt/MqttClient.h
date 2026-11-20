@@ -13,9 +13,10 @@ struct AppPorts;
 #include "mqtt/MqttFsmClient.h"
 
 /**
- * MQTT: status/avail + cmd/reply.
- * Wire: ingress ack (202|4xx|503) then one final (thin id+code; list/status fat body).
- * `id` correlates request/reply only — no idempotency LRU.
+ * MQTT: online/state + programs/hwMap/trigMap + cmd/reply.
+ * На линии: ack на входе (202|4xx|503), затем один тонкий итоговый ответ.
+ * Слоты retain каталога — хеши из 8 hex; list/hwmap публикуют тела с retain=false.
+ * run/stop/set/set_time: кольцо id (16) резервируется на входе.
  */
 class MqttClient {
 public:
@@ -23,12 +24,10 @@ public:
 
     void begin();
     void setAppPorts(const AppPorts* ports) { _ports = ports; }
-    /// Modem control-plane busy (TCP epoch / time sync / voice) — gate TX, Ctrl replies, CIPSTART.
     void setCtrlPlaneBusy(bool (*fn)(void*), void* ctx) {
         _ctrlPlaneBusy = fn;
         _ctrlPlaneBusyCtx = ctx;
     }
-    /// Optional: transport/SoftAP forensic when MQTT RX assemble stalls incomplete.
     void setOnRxIncomplete(void (*fn)(void*, const uint8_t*, uint16_t, uint32_t), void* ctx) {
         _onRxIncomplete = fn;
         _onRxIncompleteCtx = ctx;
@@ -36,27 +35,42 @@ public:
 
     void loop();
     void setReconnectEnabled(bool enabled) { _reconnectEnabled = enabled; }
-    /// Transport RX ring overflow → force MQTT error/reconnect (stream desync).
     void onTransportRxOverflow();
     bool publishStatus(bool forceFull = false);
     void disconnect();
     bool needsDisconnectDrain() const;
     uint8_t getConsecutiveConnectFails() const;
-    /// True while MQTT FSM is in Connected (post-CONNACK).
     bool isSessionConnected() const { return _fsm.isConnected(); }
-    /// Last MQTT session fail reason (`keepalive_timeout` / `tcp_drop` / …); "" if none.
     const char* getLastConnectFailReason() const;
 
     void onProgramLifecycle(uint8_t programId, bool finishedOk);
     static void onProgramLifecycleThunk(void* ctx, uint8_t programId, bool finishedOk);
 
 private:
-    enum class PendingKind : uint8_t { None, Thin, List, Status, HwMap };
+    enum class PendingKind : uint8_t { None, Thin, Status, List, HwMap };
+
+    enum class BirthPhase : uint8_t {
+        WaitSuback,
+        CatalogPrograms,
+        CatalogHwMap,
+        CatalogTrigMap,
+        FullState,
+        OnlineTrue,
+        Steady,
+    };
 
     struct PendingReply {
         PendingKind kind{PendingKind::None};
         char id[MqttCmd::ID_MAX_LEN + 1]{};
         uint16_t code{0};
+        uint32_t statusSeq{0}; ///< для тонкого ответа Status
+    };
+
+    struct IdRingEntry {
+        char id[MqttCmd::ID_MAX_LEN + 1]{};
+        uint16_t code{0};
+        bool inFlight{false};
+        bool used{false};
     };
 
     Client& _netClient;
@@ -65,7 +79,6 @@ private:
     uint32_t _lastReconnectAttempt;
     bool _reconnectEnabled{true};
     uint8_t _connectFailStreak{0};
-    /// Latched while FSM is in/after Error until Connected edge clears it (avoids missing set when ensureTcp_ clears Error).
     bool _sessionErrorRecorded{false};
     const AppPorts* _ports{nullptr};
     bool (*_ctrlPlaneBusy)(void*){nullptr};
@@ -76,15 +89,34 @@ private:
     MqttFsmClient _fsm;
     bool _subscribeQueued{false};
     bool _mqttWasConnected{false};
-    bool _onlinePublishDue{false};
-    bool _awaitFirstStatus{false};
     bool _subackTimeoutLogged{false};
-    uint32_t _firstStatusAfterMs{0};
     uint32_t _subWaitStartMs{0};
-    StatusSnapshot _lastPublished{};
+
+    BirthPhase _birth{BirthPhase::WaitSuback};
+    bool _legacyTombstoneDue{false};
+    bool _prefixTombstoneDue{false};
+    char _bornPrefix[TextBytes::Mqtt::TOPIC_PREFIX]{};
+
+    uint32_t _statusSeq{0}; ///< последний выданный seq (в очереди или уже доставлен)
+    bool _haveSeq{false};
+    uint32_t _deliveredSeq{0}; ///< последний Tele state, вышедший из очереди TX
+    bool _haveDeliveredSeq{false};
+    uint32_t _queuedStateSeq{0}; ///< seq Tele state, который сейчас в очереди FSM (0 = нет)
+    bool _haveQueuedStateSeq{false};
+    bool _queuedStateIsFull{false};
+
+    StatusSnapshot _lastPublished{}; ///< база = последний снимок, кодированный к SEND OK
+    StatusSnapshot _queuedEncoded{}; ///< снимок, кодированный в Tele из очереди (база при снятии)
+    bool _haveQueuedEncoded{false};
     bool _havePublishedBaseline{false};
 
-    /// last_err staged into Tele TX but not yet confirmed past CIPSEND epoch.
+    uint32_t _publishedProgramsRev{0};
+    uint32_t _publishedHwMapRev{0};
+    uint32_t _publishedTrigMapRev{0};
+    bool _programsCatalogDirty{true};
+    bool _hwCatalogDirty{true};
+    bool _trigCatalogDirty{true};
+
     bool _lastErrAwaitConfirm{false};
     ErrorSnapshotEntry _lastErrPending[ErrorHistory::CAPACITY]{};
     uint8_t _lastErrPendingCount{0};
@@ -100,27 +132,43 @@ private:
     char _activeRunId[MqttCmd::ID_MAX_LEN + 1]{};
     uint8_t _activeRunProgram{0};
     bool _hasActiveRun{false};
+    // Прогон, который start()→stop() уже прервал; жизненный цикл ещё не пришёл.
+    char _preemptedRunId[MqttCmd::ID_MAX_LEN + 1]{};
+    uint8_t _preemptedRunProgram{0};
+    bool _hasPreemptedRun{false};
+
+    IdRingEntry _idRing[MqttCmd::ID_RING_DEPTH]{};
+    uint8_t _idRingNext{0};
 
     char _mqttClientId[TextBytes::Mqtt::CLIENT_ID]{};
     char _mqttUser[TextBytes::Mqtt::USER]{};
     char _mqttPass[TextBytes::Mqtt::PASS]{};
-    char _topicAvail[TextBytes::Mqtt::TOPIC]{};
-    char _topicStatus[TextBytes::Mqtt::TOPIC]{};
+    char _topicOnline[TextBytes::Mqtt::TOPIC]{};
+    char _topicState[TextBytes::Mqtt::TOPIC]{};
+    char _topicPrograms[TextBytes::Mqtt::TOPIC]{};
+    char _topicHwMap[TextBytes::Mqtt::TOPIC]{};
+    char _topicTrigMap[TextBytes::Mqtt::TOPIC]{};
     char _topicCmd[TextBytes::Mqtt::TOPIC]{};
     char _topicReply[TextBytes::Mqtt::TOPIC]{};
+    char _topicLegacyAvail[TextBytes::Mqtt::TOPIC]{};
+    char _topicLegacyStatus[TextBytes::Mqtt::TOPIC]{};
 
     void connect();
     void noteSessionErrorIfNeeded_();
     static void joinTopic_(char* out, size_t outSz, const char* prefix, const char* suffix);
+    void rebuildTopics_(const char* prefix);
 
     static void onPublishThunk(void* ctx, const char* topic, const uint8_t* payload, uint16_t len, bool retained);
+    static void onTeleDequeuedThunk(void* ctx, MqttFsmClient::TeleKind kind);
+    void onTeleDequeued_(MqttFsmClient::TeleKind kind);
     void handlePublish(const char* topic, const uint8_t* payload, uint16_t len, bool retained);
-    /// Ingress only: parse/validate/queue → ack 202 or reject; never runs handlers.
     void tryAckIngress_(const uint8_t* payload, uint16_t length);
     void dispatchCommand_(const MqttCommand& cmd);
 
     void clearPending_();
     void clearInbound_();
+    void clearIdRing_();
+    void resetSessionLocal_();
 
     bool enqueueInbound_(const MqttCommand& cmd);
     void drainInbound_();
@@ -129,14 +177,30 @@ private:
     void flushPending_();
     bool stageReply_(const PendingReply& pr);
     bool ctrlPlaneBlocked_() const;
-    bool publishThinReply_(const char* id, uint16_t code);
-    bool publishListReply_(const char* id);
-    bool publishStatusReply_(const char* id);
-    /// True only when an edge delta was staged. No edge and TX failure both return false.
+    bool publishThinReply_(const char* id, uint16_t code, uint32_t statusSeq = 0);
     bool tryPublishEdgeStatus_();
-    bool publishHwMapReply_(const char* id);
     void captureStatusSnapshot_(StatusSnapshot& out) const;
+
+    bool publishProgramsHash_();
+    bool publishHwMapHash_();
+    bool publishTrigMapHash_();
+    bool publishProgramsBody_();
+    bool publishHwMapBody_();
+    bool publishTrigMapBody_();
+    bool publishOnline_(bool on);
+    bool publishEmptyRetain_(const char* topic);
+    void tickBirth_(bool txOk, bool subReady, bool teleIdle);
+    void tickSteady_(bool txOk, bool subReady, bool teleIdle);
+
     bool validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const;
     void confirmLastErrDelivery_();
     void abandonLastErrDelivery_();
+
+    /// Поиск в кольце id. Возвращает запись или nullptr.
+    IdRingEntry* findIdRing_(const char* id);
+    /// Резервирует id как inFlight. false, если уже известен или каждый слот всё ещё inFlight (noSlotOut).
+    bool reserveIdRing_(const char* id, uint16_t* existingCodeOut, bool* existingInFlightOut, bool* noSlotOut);
+    void releaseIdRing_(const char* id);
+    void finalizeIdRing_(const char* id, uint16_t code);
+    void replyRunFinal_(const char* id, bool finishedOk);
 };

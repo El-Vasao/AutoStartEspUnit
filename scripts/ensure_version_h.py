@@ -8,7 +8,7 @@ Import("env")  # type: ignore  # PlatformIO SCons
 import os
 import time
 
-_HEADER = """// Auto-generated (scripts/ensure_version_h.py, dev build)
+_HEADER = """// Сгенерировано автоматически (scripts/ensure_version_h.py, сборка dev)
 #pragma once
 #define FIRMWARE_VERSION_NUM {ts}ULL
 #define FIRMWARE_VERSION_STR "{ts}"

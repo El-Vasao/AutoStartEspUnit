@@ -18,7 +18,7 @@
  * - выполнение происходит “с таймингом” в `update()`, поэтому `update()` должен вызываться часто.
  *
  * Инварианты:
- * - аварийные завершения выключают все реле (`RelayController::allOff()`), чтобы не оставить активные цепи;
+ * - аварийные завершения и `stop()` выключают все реле (`RelayController::allOff()`), чтобы не оставить активные цепи;
  *   это же относится к неудачному, прерванному или заблокированному шагу ENGINE_START;
  * - пока идёт шаг ENGINE_START, `start()` другой программы отклоняется.
  */
@@ -26,7 +26,6 @@ class ProgramExecutor {
 public:
     ProgramExecutor();
 
-    void begin();
     void update();
 
     bool start(uint8_t programId);
@@ -45,7 +44,7 @@ public:
     // Возвращает true только во время выполнения шага ENGINE_START.
     bool isInStarterStep() const;
 
-    /// MQTT / UI: finished=true штатно; false = stop/abort.
+    /// MQTT / UI: finished=true штатно; false = остановка/прерывание.
     using LifecycleCb = void (*)(void* ctx, uint8_t programId, bool finishedOk);
     void setLifecycleCallback(LifecycleCb cb, void* ctx) {
         _lifecycleCb = cb;
@@ -61,7 +60,7 @@ private:
     uint8_t _programId;                 ///< ID текущей программы (0, если не запущена)
     bool _running;                       ///< Флаг выполнения программы
     uint8_t _currentStep;                 ///< Номер текущего шага (0..step_count-1)
-    StepRuntime _rt;                      ///< runtime-состояние для RELAY_PULSE_*
+    StepRuntime _rt;                      ///< рабочее состояние для RELAY_PULSE_*
     starter::Machine _starter;            ///< автомат шага ENGINE_START
     int8_t _starterRelayIdx{-1};          ///< реле стартера на время шага
     int8_t _startInputIdx{-1};            ///< вход алгоритма rpm/input на время шага
@@ -81,8 +80,6 @@ private:
     bool _pendingLifecycle{false};
     uint8_t _pendingLifecycleId{0};
     bool _pendingLifecycleOk{false};
-
-    ActionId currentActionId() const;
 
     void executeStep(const CompiledStep& step, ActionId actionId);
     void nextStep();

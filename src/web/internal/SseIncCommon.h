@@ -21,7 +21,7 @@ inline uint32_t fnv1a32(const uint8_t* data, size_t len) {
     return hash;
 }
 
-/// Writes SSE JSON payloads into NUL-terminated capped buffer (`gSsePayload`).
+/// Пишет тела JSON SSE в ограниченный буфер с завершающим NUL (`gSsePayload`).
 class PayloadPrint : public Print {
 public:
     explicit PayloadPrint() : buf_(gSsePayload), cap_(kPayloadCap), len_(0), truncated_(false) {}

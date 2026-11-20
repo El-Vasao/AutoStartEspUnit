@@ -20,7 +20,7 @@ void emitRelays(Print& p, const BaseConfig&) {
         any = true;
         p.print("{\"id\":");
         p.print(static_cast<unsigned>(Pin::RELAY_IDS[i]));
-        p.print(",\"name\":\"\"}");
+        p.print('}');
     }
     p.print(']');
 }
@@ -146,19 +146,31 @@ void emitHwMapObject(const BaseConfig& cfg, Print& p) {
     p.print("\"sensors\":");
     emitSensors(p, cfg);
     comma(p, &c);
+    p.print("\"scheduleTriggers\":");
+    emitScheduleTriggers(p, cfg);
+    p.print('}');
+}
+
+void emitTrigMapObject(const BaseConfig& cfg, Print& p) {
+    p.print('{');
+    bool c = false;
+    comma(p, &c);
     p.print("\"inputTriggers\":");
     emitInputTriggers(p, cfg);
     comma(p, &c);
     p.print("\"tempTriggers\":");
     emitTempTriggers(p, cfg);
-    comma(p, &c);
-    p.print("\"scheduleTriggers\":");
-    emitScheduleTriggers(p, cfg);
     p.print('}');
 }
 
 uint32_t hwMapObjectFnv(const BaseConfig& cfg) {
     Fnv1aPrint fp;
     emitHwMapObject(cfg, fp);
+    return fp.hash();
+}
+
+uint32_t trigMapObjectFnv(const BaseConfig& cfg) {
+    Fnv1aPrint fp;
+    emitTrigMapObject(cfg, fp);
     return fp.hash();
 }

@@ -5,21 +5,21 @@
 #include "app/StatusSnapshot.h"
 #include "config/ConfigTypes.h"
 
-/// Canonical nested MQTT JSON status (see docs/modules/mqtt.md § StatusSnapshot).
-/// Full: `"full":true`, `uptime`, `mode`, `time`, `hw`, `radio`, `program`, `runtime`, `diag`, `rev`
-/// (`diag.last_err` omitted when empty). Compact wire (no pretty-print).
+/// Канонический вложенный JSON статуса MQTT (см. docs/modules/mqtt.md).
+/// Full: `"full":true`, `sid`, `seq`, `uptime`, `mode`, `time`, `io`, `csq`, `program`,
+/// `runtime`, `err` (опустить, если пусто), `rev`. Компактно на линии (без pretty-print).
 void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p);
 
-/// Partial status for merge consumers: `"full":false`, always `uptime`, then changed objects/fields.
+/// Частичный статус для слияния у получателя: `"full":false`, всегда `sid`/`seq`/`uptime`, затем изменившиеся ключи.
 void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& prev, const BaseConfig& cfg,
                              Print& p);
 
-/// True when meaningful fields differ (ignores `uptime`, `time.epoch` tick, temp `lastMs`;
-/// float/heap/timer ε from `JsonBytes::Mqtt`).
+/// Истина, когда значимые поля различаются (тик `uptime` и `time.epoch` не считается;
+/// ε float/таймера из `JsonBytes::Mqtt`). Heap на линии MQTT нет.
 bool mqttStatusHasSignificantChanges(const StatusSnapshot& cur, const StatusSnapshot& prev,
                                      const BaseConfig& cfg);
 
-/// Discrete changes that should publish a delta without waiting for `publish_interval_sec`.
-/// Not voltage, temperature, CSQ, heap, or `timerRemaining` alone.
+/// Дискретные изменения: дельту публиковать, не дожидаясь `publish_interval_sec`.
+/// Само по себе не считается ни напряжение, ни температура, ни CSQ, ни heap, ни один лишь `timerRemaining`.
 bool mqttStatusHasEdgeChanges(const StatusSnapshot& cur, const StatusSnapshot& prev,
                               const BaseConfig& cfg);

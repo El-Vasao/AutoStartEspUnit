@@ -16,9 +16,9 @@
  * Принципы:
  * - После бута — settle `Gsm::POST_BOOT_SETTLE_MS` до первого `gsm.begin()`.
  * - Неблокирующее обслуживание: GSM тикает в `service()`, MQTT — когда модем READY.
- * - First MQTT begin waits for boot time cascade (CCLK/CIPSHUT/CIPGSMLOC/CNTP before CIP).
- * - CCLK-lite probes may run with MQTT up; full cascade drains MQTT (same recipe as voice).
- * - Leave READY drains MQTT (same as suspend) before bearer AT continues.
+ * - Первый MQTT begin ждёт каскад времени на старте (CCLK/CIPSHUT/CIPGSMLOC/CNTP до CIP).
+ * - Пробы CCLK-lite могут идти при поднятом MQTT; полный каскад сливает MQTT (тот же приём, что у голоса).
+ * - Выход из READY сливает MQTT (как suspend), прежде чем AT bearer продолжится.
  * - Cellular suspend только в SETUP / EMERGENCY / OTA (см. Core.Modes); SoftAP в NORMAL
  *   сосуществует с GSM/MQTT.
  */
@@ -35,14 +35,14 @@ void CellularCore::init(GsmController& gsm, MqttClient& mqtt, WebServer& web, Ti
     _lastSettleLogMs = 0;
     _loggedBootNtpWait = false;
     _mqttStableNoted = false;
-    // MQTT Ctrl/CIPSTART: TCP epoch, heavy time cascade, CCLK-lite (mutex vs CIPSEND), or voice.
+    // MQTT Ctrl/CIPSTART: эпоха TCP, тяжёлый каскад времени, CCLK-lite (взаимоисключение с CIPSEND) или голос.
     _mqtt->setCtrlPlaneBusy(
         [](void* ctx) -> bool {
             auto* g = static_cast<GsmController*>(ctx);
             return g->tcpEpochBusy() || g->timeSyncBusy() || g->modemServiceEpochBusy();
         },
         _gsm);
-    // rx_incomplete forensics: transport +IPD/send state + SoftAP activity.
+    // Разбор rx_incomplete: состояние транспорта +IPD/send и активность SoftAP.
     _mqtt->setOnRxIncomplete(
         [](void* ctx, const uint8_t* /*head*/, uint16_t have, uint32_t need) {
             auto* self = static_cast<CellularCore*>(ctx);
@@ -75,7 +75,7 @@ bool CellularCore::drainMqttDisconnect_() {
         if ((uint32_t)(millis() - t0) >= Cellular::MQTT_DRAIN_MAX_MS) break;
         yield();
     }
-    // Incomplete — keep draining next service(); do not arm voice/time AT yet.
+    // Не закончено — продолжать слив на следующем service(); голос и AT времени пока не запускать.
     return false;
 }
 
@@ -107,7 +107,7 @@ void CellularCore::service() {
 
     _gsm->update();
 
-    // Exclusive voice/SMS epoch: drain MQTT before ATD/ATA/CMGS.
+    // Исключительная эпоха голоса/SMS: слить MQTT до ATD/ATA/CMGS.
     if (_gsm->serviceEpochNeedsMqttDrain()) {
         if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
             if (_mqttStarted) {
@@ -120,8 +120,8 @@ void CellularCore::service() {
         _gsm->notifyMqttDrainedForServiceEpoch();
     }
 
-    // Heavy time-sync yield: drain MQTT so CCLK→CIPSHUT→CIPGSMLOC→CNTP can run.
-    // CCLK-lite does not request drain. Skip while voice owns the modem (mutual exclude).
+    // Тяжёлый yield синхронизации времени: слить MQTT, чтобы прошёл CCLK→CIPSHUT→CIPGSMLOC→CNTP.
+    // CCLK-lite слив не просит. Пропускать, пока голос владеет модемом (взаимное исключение).
     if (_timeSync && _timeSync->needsMqttDrainForSync() && !_gsm->modemServiceEpochBusy() &&
         !_gsm->serviceEpochNeedsMqttDrain()) {
         if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
@@ -137,21 +137,21 @@ void CellularCore::service() {
 
     if (_gsm->isReady()) {
         if (_gsm->modemServiceEpochBusy()) {
-            // Keep MQTT down for the whole voice/SMS epoch.
+            // Держать MQTT выключенным всю эпоху голоса/SMS.
             return;
         }
 
         if (_timeSync && _timeSync->isSyncYieldEpochBusy()) {
-            // Keep MQTT down for drain + cascade (boot-like full time sync).
+            // Держать MQTT выключенным на время слива и каскада (полная синхронизация времени, как на старте).
             _mqtt->setReconnectEnabled(false);
             return;
         }
 
-        // Policy: MQTT reconnect is always enabled (even with active UI/SSE).
-        // WDT-safety is enforced at transport layer (pump + budgets) for SIM800.
+        // Политика: переподключение MQTT всегда включено (даже при активном UI/SSE).
+        // Защита от WDT обеспечивается на транспортном слое (прокачка и бюджеты) для SIM800.
         _mqtt->setReconnectEnabled(true);
 
-        // Serialize boot: time cascade before first MQTT CIPSTART.
+        // Упорядочить старт: каскад времени до первого MQTT CIPSTART.
         if (_timeSync && !_timeSync->isBootTimeSettled()) {
             if (!_loggedBootNtpWait) {
                 _loggedBootNtpWait = true;
@@ -172,11 +172,11 @@ void CellularCore::service() {
             if (_gsm->takeTcpRxOverflow()) {
                 _mqtt->onTransportRxOverflow();
             }
-            // Always tick MQTT so the RX ring drains during CIPSEND; writes no-op while bus locked.
+            // Всегда тикать MQTT, чтобы кольцо RX сливалось во время CIPSEND; запись — пустая операция, пока шина занята.
             _mqtt->loop();
         }
 
-        // After a live MQTT session, clear GSM reattach backoff (not on every READY entry).
+        // После живой сессии MQTT сбросить backoff повторного присоединения GSM (не при каждом входе в READY).
         if (_mqtt->isSessionConnected() && _mqtt->getConsecutiveConnectFails() == 0) {
             if (!_mqttStableNoted) {
                 _gsm->clearReattachBackoff();
@@ -208,7 +208,7 @@ void CellularCore::service() {
             _lastLoggedFailStreak = failStreak;
         }
     } else if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
-        // Leave READY (reattach/ERROR): drain offline+DISCONNECT like suspend (C1).
+        // Выход из READY (повторное присоединение/ERROR): слить offline+DISCONNECT, как suspend (C1).
         logger.log(LogModule::CellularCore, "GSM left READY — draining MQTT\n");
         (void)drainMqttDisconnect_();
     }
@@ -224,7 +224,7 @@ void CellularCore::suspend() {
         _gsm->stop();
         _gsmStarted = false;
     }
-    // Keep _bootSettlePending false — only cold first start waits full settle.
+    // Держать _bootSettlePending в false — полную паузу settle ждёт только холодный первый старт.
     _lastReattachRequestMs = 0;
     _lastLoggedFailStreak = 0;
     _loggedBootNtpWait = false;

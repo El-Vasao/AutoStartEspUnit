@@ -25,8 +25,9 @@ public:
         DataStart,  ///< ':' после длины: дальше length() байт нагрузки (режим данных UART)
         Payload,    ///< байт нагрузки, будут ещё
         PayloadEnd, ///< последний байт нагрузки
+        Discard,    ///< длинный +IPD: байт выбросить, не строка модема
     };
-    enum class State : uint8_t { Idle, MatchI, MatchP, MatchD, MatchComma, ReadLen, ReadData };
+    enum class State : uint8_t { Idle, MatchI, MatchP, MatchD, MatchComma, ReadLen, ReadData, Discard };
 
     static constexpr uint16_t kMaxIpdLen = 3072; // Sim800Tcp::TCP_BUF_SIZE / MQTT_FRAME_MAX
 
@@ -39,6 +40,7 @@ public:
     uint16_t length() const { return _len; }
     uint16_t received() const { return _read; }
     bool inPayload() const { return _state == State::ReadData; }
+    bool inDiscard() const { return _state == State::Discard; }
 
 private:
     static constexpr uint8_t kMaxDigits = 5;
@@ -46,6 +48,8 @@ private:
     State _state{State::Idle};
     uint16_t _len{0};
     uint16_t _read{0};
+    uint32_t _declared{0};
+    uint32_t _discardLeft{0};
     char _digits[kMaxDigits + 1]{};
     uint8_t _digitCount{0};
     char _replay[sizeof("+IPD,") + kMaxDigits]{};

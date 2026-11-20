@@ -23,22 +23,22 @@ public:
 
     void begin(uint32_t baud) { _serial.begin(baud, SERIAL_8N1, Pin::GSM_RX, Pin::GSM_TX); }
 
-    // When enabled, disables line framing while still forwarding raw bytes to byte handler.
-    // Needed for manual RX modes where binary payload follows AT headers.
+    // Когда включено, кадрирование строк выключено, а сырые байты всё ещё идут в обработчик байт.
+    // Нужно для ручных режимов RX, где за заголовками AT идёт двоичная нагрузка.
     void setDataMode(bool en) { _dataMode = en; }
     bool isDataMode() const { return _dataMode; }
 
-    // Poll RX and emit complete lines (without CR/LF).
+    // Опросить RX и отдать целые строки (без CR/LF).
     void pollRx();
 
-    // TX helpers. Text AT lines are mirrored via logger.log; writeBytes payload is not.
+    // Помощники TX. Текстовые строки AT зеркалируются через logger.log; нагрузка writeBytes — нет.
     void writeRaw(const char* s);
-    void writeLine(const char* line); // appends \r\n
+    void writeLine(const char* line); // дописывает \r\n
     void writeBytes(const uint8_t* data, size_t len);
     void writeByte(uint8_t b);
 
     void flushInput();
-    /// Drain UART TX (baud change / IPR NV); prefer this over raw Serial.flush().
+    /// Опустошить TX UART (смена скорости / IPR NV); это лучше сырого Serial.flush().
     void flushTx();
 
 private:
@@ -53,7 +53,7 @@ private:
     size_t _lineLen{0};
     bool _dataMode{false};
 
-    /// Last writeLine text (no CRLF) for echo de-dupe if modem echo is on.
+    /// Текст последнего writeLine (без CRLF), чтобы не дублировать эхо, если эхо модема включено.
     static constexpr size_t LAST_TX_SIZE = Gsm::CMD_BUFFER_SIZE;
     char _lastTx[LAST_TX_SIZE]{};
 

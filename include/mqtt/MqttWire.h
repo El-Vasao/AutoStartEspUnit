@@ -72,23 +72,27 @@ struct ConnectOptions {
 /// Билдеры возвращают длину пакета в `out` или 0, если он не помещается / параметры недопустимы.
 /// При 0 буфер не тронут: так можно безопасно писать поверх пакета, уже стоящего в очереди.
 uint16_t buildConnect(uint8_t* out, uint16_t cap, const ConnectOptions& o);
+/// SUBSCRIBE с запросом QoS1 (байт запрошенного QoS = 0x01).
 uint16_t buildSubscribe(uint8_t* out, uint16_t cap, uint16_t packetId, const char* topic);
+/// PUBLISH. `qos` 0 или 1; при qos=1 `packetId` ненулевой. `dup` имеет смысл только при qos1.
 uint16_t buildPublish(uint8_t* out, uint16_t cap, const char* topic, const uint8_t* payload, uint16_t len,
-                      bool retained);
+                      bool retained, uint8_t qos = 0, uint16_t packetId = 0, bool dup = false);
 uint16_t buildPuback(uint8_t* out, uint16_t cap, uint16_t packetId);
 uint16_t buildPingreq(uint8_t* out, uint16_t cap);
 uint16_t buildDisconnect(uint8_t* out, uint16_t cap);
 
-/// Длина заголовка PUBLISH QoS0 (фиксированный заголовок + тема) для нагрузки `payloadLen`.
-uint16_t publishHeadLength(uint16_t topicLen, uint32_t payloadLen);
-/// Пишет заголовок PUBLISH QoS0 и тему; возвращает число байтов или 0.
+/// Длина заголовка PUBLISH (фиксированный заголовок + тема [+ packet id при qos>0]).
+uint16_t publishHeadLength(uint16_t topicLen, uint32_t payloadLen, uint8_t qos = 0);
+/// Пишет заголовок PUBLISH и тему; возвращает число байтов или 0.
 uint16_t writePublishHead(uint8_t* out, uint16_t cap, const char* topic, uint16_t topicLen, uint32_t payloadLen,
-                          bool retained);
+                          bool retained, uint8_t qos = 0, uint16_t packetId = 0, bool dup = false);
 
 /// Тело CONNACK (после фиксированного заголовка).
 bool parseConnack(const uint8_t* body, uint32_t remLen, uint8_t& returnCode);
 /// Тело SUBACK с одним кодом.
 bool parseSuback(const uint8_t* body, uint32_t remLen, uint16_t& packetId, uint8_t& returnCode);
+/// Тело PUBACK.
+bool parsePuback(const uint8_t* body, uint32_t remLen, uint16_t& packetId);
 
 struct PublishView {
     uint16_t topicOffset{0};    ///< от начала тела

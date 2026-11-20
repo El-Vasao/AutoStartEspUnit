@@ -17,268 +17,139 @@ MQTT-публикация статуса и подписка на команды
 - `include/mqtt/MqttFsmClient.h`, `src/mqtt/MqttFsmClient.cpp`
 - парсинг команд: `include/mqtt/MqttCommandParser.h`, `src/mqtt/MqttCommandParser.cpp`
 - JSON статуса: `src/mqtt/MqttStatusBuilder.cpp`
+- каталог: `src/mqtt/HwMapJson.cpp`
 - лимиты cmd/reply: `MqttCmd::*` в `Constants.h`
 
 ## Контракт
 ### Идентификация устройства
 - Устройство **идентифицируется только по топикам**.
 - В payload **нет** `deviceId`/`unitId`.
-- Один device = один `topic_prefix`.
+- Один device = один `mqtt.topic_prefix`.
+- Устройство: `cleanSession=true` (команды офлайн не копятся и не заводят машину после появления связи).
 
 ### Топики (из `mqtt.topic_prefix`)
 
 | Суффикс | Топик | Назначение |
 |---------|-------|------------|
-| `/avail` | `{prefix}/avail` | Presence: retained `online` / `offline` (LWT) |
-| `/status` | `{prefix}/status` | JSON телеметрия (периодика) |
-| `/cmd` | `{prefix}/cmd` | Команды → device (QoS 0, не retained) |
-| `/reply` | `{prefix}/reply` | Ответы ← device (QoS 0, не retained) |
+| `/online` | `{prefix}/online` | Presence: retained `true` / `false` (LWT `false` QoS1) |
+| `/state` | `{prefix}/state` | JSON телеметрия: full retained (birth/период/`status`); delta без retain (край) |
+| `/programs` | `{prefix}/programs` | Retained слот = 8 hex FNV сырых файлов программ; тело по `list` с `retain=false` |
+| `/hwMap` | `{prefix}/hwMap` | Retained слот = 8 hex FNV объекта карты; тело по `hwmap` с `retain=false` |
+| `/trigMap` | `{prefix}/trigMap` | Retained слот = 8 hex FNV объекта триггеров; тело по `hwmap` с `retain=false` |
+| `/cmd` | `{prefix}/cmd` | Команды → device (subscribe QoS1, не retained) |
+| `/reply` | `{prefix}/reply` | Тонкие ответы ← device (publish QoS1) |
 
-**Offline = нет команд:** QoS 0, `cleanSession=true`, `/cmd` без retain. Клиент шлёт `/cmd` только при `avail=online`.
+После birth один раз публикуется пустой retained payload на legacy `{prefix}/avail` и `{prefix}/status`. При смене префикса — пустой retain на старых `online`/`state`/`programs`/`hwMap`/`trigMap`.
 
-### Единый `/reply` (все `cmd`)
+**Offline = нет команд:** клиент шлёт `/cmd` только при `online=true`.
 
-Слои:
-- **Ingress** (`tryAckIngress_`): только parse + место в FIFO → **ack** с `code` (`202` или reject). Handlers не вызываются.
-- **Dispatch**: только **финал** с итоговым `code` (+ fat body у `list`/`status`).
+Кадр MQTT ≤ `MQTT_CIPSEND_MAX` (1400) байт вместе с заголовком. Буфер слота `MQTT_FRAME_MAX` (3072).
 
-1. **Ack** — по факту приёма кадра с валидным `id`:
-   - принято → `{id, code:202}`, команда в FIFO;
-   - не принято → один `/reply` (`400` / `503` / …) и **без** финала.
-2. **Финал** — после исполнения, **ровно один** `/reply` с итоговым `code`:
-   - thin `{id, code}` — `set` / `stop` / ошибки / финал `run`;
-   - fat — `list` (`programs`), `status` (объект `status` = full snapshot). Команда `status` **не** публикует Tele `/status`.
+### Presence (`/online`)
 
-Нет третьих сообщений (`run` без промежуточного `201`).
+- Один retained `true` после birth (после ухода полного `state` из очереди).
+- Retained `false` на чистом `disconnect`.
+- LWT `false`, если TCP умер. Поздний LWT может на время затереть `true`; пока устройство живо и не переподключилось, само не лечит.
+- Keepalive **не** перепубликует `online=true`.
 
-**Ctrl serialize:** следующий Ctrl publish (ack или final) стейджится только когда в TX нет другого Ctrl — один CIPSEND-epoch на control reply за раз.
+### Рождение сессии
 
-### Очереди cmd (`MqttCmd::*`)
-- Inbound FIFO **`INBOUND_DEPTH=8`**: по порядку, по одной; dispatch не стартует, пока Ctrl ещё outbound.
-- Pending reply **`PENDING_REPLY_DEPTH=4`** (retry если Ctrl занят).
-- Периодический `/status` (Tele) — низший приоритет: только когда inbound/pending пусты, нет активного cmd и нет Ctrl в TX; Tele не занимает последний слот очереди FSM (FIFO send).
+После SUBACK, по одному кадру с ожиданием опустошения TX-очереди:
 
-**Нет silent drop (при живой сессии):** на кадр с валидным `id` на `{prefix}/cmd` устройство всегда пытается отдать ≥1 `/reply` с тем же `id`. Если Ctrl/pending заняты и 202 не удалось stage — команда **не** ставится в inbound (клиент может повторить). Pending replies **не** вытесняются silently.
+1. Три retained-хэша: `programs` → `hwMap` → `trigMap` (чистый хэш пропускается). Большие каталоги при подключении не шлём.
+2. Полный retained `state` (`full:true`).
+3. Только после ухода полного снимка из очереди — `online=true`.
+4. Steady: край и период; при смене хэша — только retained-хэш этого топика.
 
-**Исключения:**
-- oversized payload без извлекаемого `id`;
-- **разрыв сессии** (leave READY / `disconnect` / `tcp_drop`): inbound и pending void — клиент опирается на LWT/`avail` и таймаут.
+### Единый `/reply`
 
-### Транспорт (SIM800)
-- Один MQTT-кадр = один атомарный `AT+CIPSEND` (`write` только буферизует, `flush`/`flushSend` стартует send).
-- RX ring overflow → reconnect (не drop-oldest — иначе desync framing).
-- `+IPD` framing exclusive while matching/reading; last payload byte never falls through to raw sniffer; `CIPHEAD=1` required.
-- MQTT RX stall: валидный неполный кадр → fail-closed reconnect (`rx_incomplete`); junk head → byte-hunt. Лог: hex головы + transport forensic (см. [`modem.md`](modem.md)).
-- Tele не стартует CIPSEND, пока inbound assemble ждёт хвост кадра (снижает truncation mid-send).
-- `mqtt.loop()` always when READY; mid-CIPSEND TX no-op, RX drained.
-- Keepalive dead-man: no MQTT RX for `1.5 × keepAliveSec` → `keepalive_timeout` Error → reconnect.
-- TCP drop / SEND FAIL path → `tcp_drop` Error (counts toward GSM reattach streak ≥3).
-- Ctrl serialize: ack/final wait MQTT Ctrl queue and `gsm.tcpBusBusy()`.
-- PUBLISH not on `/cmd` — ignore (no reconnect).
+- **Ingress**: parse + место в FIFO → ack `202` или reject. Retained на `/cmd` игнорируется. Если входящий QoS>0 и PUBACK не встал в очередь — команда не исполняется.
+- **Финал**: тонкий `{id,code}`; у `status`/`seq` ещё `seq`. Жирных тел в reply нет.
+- **Кольцо id (16)** только для `run`/`stop`/`set`/`set_time`: резерв на ingress до enqueue. Повтор in-flight → `202`; после финала → сохранённый `code`. Чистится при обрыве сессии.
+- Исходящий reply QoS1: одна копия ≤128 B, таймаут 5 с, один DUP, затем слот свободен.
 
-### Доставка
-- LWT `/avail` `"offline"` retained Will QoS1; после connect — `"online"` **только после SUBACK** (пока `/cmd` не подтверждён — `avail` не online; SUBSCRIBE ретраится по timeout).
-- `/status` QoS0. Первый Tele после connect — full. Дальше дискретный край (программа, реле, входы, режим, runtime, `rev`, `last_err`) — delta не позже `MQTT_EDGE_STATUS_GAP_MS` (250 мс), если Tele свободен. Напряжение, температура, CSQ, heap и `timerRemaining` сами публикацию не ускоряют: их смотрит период `publish_interval_sec` (skip, если порог не пробит). Если порог уже пробит в момент края или периода, поле входит в эту дельту.
-- `/cmd` и `/reply` QoS0.
+### Очереди
+- Inbound FIFO `INBOUND_DEPTH=8`.
+- Pending reply `PENDING_REPLY_DEPTH=4`.
+- Tele: Full/Catalog липкие; Delta сливается только с Delta. Полный слот дельта не затирает.
+- Период не сдвигается краем.
 
-### 1) Command (`{prefix}/cmd`)
+### Доставка `/state`
+
+- **Период / birth / `cmd=status`**: полный снимок, `full:true`, `retain=true`, даже если байты те же.
+- **Край** (`MQTT_EDGE_STATUS_GAP_MS` ≈ 250 мс): частичный JSON `full:false`, `retain=false` — только `seq` и изменившиеся ключи. Пропуск ключа = «не менялось»; `false`/`0`/`null` — значения. На стопе в дельте `program.current:null`.
+- Повод края: реле, входы, двигатель; программа (старт/стоп/`current`/`last`); режим, термостат, защита АКБ, включение триггеров; напряжение ≥ 0.5 В; температура ≥ 1 °C; новая недоставленная ошибка (`err`).
+- CSQ, heap, тик `epoch` и один только `timerRemaining` край не вызывают.
+- `seq` с 1 на сессию; +1 при первой постановке кадра в очередь; замена неотправленного кадра сохраняет тот же `seq`. База для diff — снимок после dequeue (SEND path). Полный слот дельта не затирает.
+- `sid` и `rev` в `state` нет: хэши живут в своих топиках.
+
+### Каталог (хэш + тело)
+
+- Retained payload на `programs` / `hwMap` / `trigMap` — ровно 8 hex-символов (свой FNV на топик). Пустой payload не слать (стирает retain). Нуль байт ввода → `811c9dc5`.
+- `programs` — FNV сырых файлов программ.
+- `hwMap` — FNV байт объекта карты (реле, входы, датчики, расписания).
+- `trigMap` — FNV байт объекта триггеров (вход и температура).
+- Смена хэша в живой сессии обновляет только retained-хэш этого топика.
+- `list` → массив `[{id,name},…]` в `programs` с `retain=false`, reply `{id,code:200}` (или `422` если не влезло).
+- `hwmap` → объект карты в `hwMap` и объект триггеров в `trigMap` с `retain=false`, reply `{id,code:200}`. Если один кадр не влез в 1400 — `422`; хэш неудачного топика не менять; успешный топик помечается своим новым хэшем.
+
+### Команды (`/cmd`)
 
 ```json
-{"id":"7f3a","cmd":"run","program":2}
-{"id":"7f3a","cmd":"stop"}
-{"id":"7f3a","cmd":"list"}
-{"id":"7f3a","cmd":"status"}
-{"id":"7f3a","cmd":"set","name":"thermostat","enabled":true}
-{"id":"7f3a","cmd":"set","name":"input","ref":1001,"enabled":true}
-{"id":"7f3a","cmd":"set","name":"trigger","ref":10,"enabled":false}
-{"id":"7f3a","cmd":"set","name":"temp_trigger","ref":20,"enabled":true}
-{"id":"7f3a","cmd":"set","name":"battery_saver","enabled":false}
-{"id":"a1","cmd":"set","name":"wifi_ap","enabled":true}
+{"id":"7f3a0123456789ab","cmd":"run","program":2}
+{"id":"7f3a0123456789ab","cmd":"stop"}
+{"id":"7f3a0123456789ab","cmd":"list"}
+{"id":"7f3a0123456789ab","cmd":"status"}
+{"id":"7f3a0123456789ab","cmd":"seq"}
+{"id":"7f3a0123456789ab","cmd":"hwmap"}
+{"id":"7f3a0123456789ab","cmd":"set","name":"thermostat","enabled":true}
 {"id":"t1","cmd":"set_time","epoch":1710000000}
-{"id":"h1","cmd":"hwmap"}
 ```
 
 | Поле | Правило |
 |------|---------|
-| `id` | 1..`MqttCmd::ID_MAX_LEN` (16) |
-| `cmd` | `run` \| `stop` \| `list` \| `status` \| `set` \| `set_time` \| `hwmap` |
-| `program` / `name` / `ref` / `enabled` / `epoch` | по cmd (`set_time` требует `epoch` ≥ `TimeSync::MIN_SANE_EPOCH_UTC`) |
-
-### 2) Reply (`{prefix}/reply`)
-
-```json
-{"id":"b2","code":202}
-{"id":"b2","code":200}
-{"id":"b2","code":200,"programs":[…]}
-{"id":"b2","code":200,"status":{"full":true,…}}
-{"id":"h1","code":200,"hw":{"relays":[…],"inputs":[…],"sensors":[…]}}
-```
+| `id` | 1..16, `A-Za-z0-9_-` (телефон: 16 hex) |
+| `cmd` | `run` \| `stop` \| `list` \| `status` \| `seq` \| `set` \| `set_time` \| `hwmap` |
 
 | code | Смысл |
 |------|--------|
 | **202** | Ack: принято в FIFO |
 | **200** | Успешный финал |
-| **400** | Не распознана / parse / args (только ack-фаза reject) |
+| **400** | parse / args |
 | **404** | not found |
-| **422** | rejected / start failed / reply too large |
-| **500** | авария исполнения `run` |
-| **503** | inbound полна — не принята |
+| **422** | rejected / catalog too large |
+| **500** | авария `run` |
+| **503** | inbound полна / status не встал |
 
-`run`: `202` → финал `200`/`500` после lifecycle — в том числе при синхронном `finish()` внутри `start()` (одношаговые программы); `422` если старт не удался.  
-Клиент: ждать `202` (~10 с) как факт приёма; финал — своим таймаутом. Повтор с тем же `id` обрабатывается заново (idempotency LRU нет).
+- `status` — новый full retained `state`, reply `{id,code:200,seq}` (seq этого кадра).
+- `seq` — **ничего не публикует** в `state`; reply `{id,code:200,seq}` = номер последнего кадра, уже ушедшего в модем (не того, что ещё в очереди).
 
-`hwmap` — каталог для кэша приложения. Только строки с `id != 0`. У реле своего имени в конфиге нет (`name` пустой — клиент показывает id). У триггера своего имени нет: подпись собирается из `inputs` / `sensors` того же объекта.
+### Снимок `state`
 
-- `relays`: `id`, `name`
-- `inputs`: `id`, `name`
-- `sensors`: `id`, `name`
-- `inputTriggers`: `id`, `inputId`, `programId`, `level`
-- `tempTriggers`: `id`, `sensorId`, `programId`, `comparison`, `threshold`
-- `scheduleTriggers`: `id`, `programId`, `hour`, `minute`, `days`
+Корень full: `full:true`, `seq`, `uptime`, `mode`, `time` (`epoch`,`synced`,`stale`,`tz`), `io` (`voltage`,`engine`,`inputs`,`relays`,`temps` с `t`/`ok`), `csq` (число 0..31 / 99), `program`, `runtime`, `err` (omit если пуст).
 
-`rev.hw` в статусе — FNV-1a этих байт объекта `hw`. Тело больше `HWMAP_JSON_MAX` → финал `422`.
+Дельта: `full:false`, `seq` + изменившиеся ключи.
 
-### 3) Connection markers (`{prefix}/avail`)
-retained `"offline"` / `"online"`.
+Лимит тела 900 байт.
 
-### 4) StatusSnapshot (`{prefix}/status`)
+### Телефон (контракт приложения)
 
-`emitMqttStatusJson` / `emitMqttStatusDeltaJson`. QoS 0, не retained. Wire всегда **компактный** JSON (без pretty-print). Лимит тела `JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES` (900).
+Подписка: `online`, `state`, `programs`, `hwMap`, `trigMap`, `reply`. Пишет только в `cmd`. Свой постоянный `clientId` на установку, `cleanSession=false`.
 
-**Каналы:** Tele: первый кадр после connect — full; дискретный край — delta с паузой 250 мс; период `publish_interval_sec` — напряжение, температура, CSQ, heap, таймер шага. `cmd=status` → fat `/reply` с `"status":{…}` всегда **full** (Tele не форсируется).
+- Пока `online` не `true` — снимок не живой; команд нет.
+- При подписке сразу рисует retained-кадр и параллельно один раз шлёт `seq` (не дожидаясь ответа для первого кадра на экране). Ответ равен `seq` в этом кадре — дельт после него не было, полный `status` не нужен. Не равен — один `status`.
+- `full:true` подменяет базу. `full:false` вклеивает ключи только если номер ровно следующий; дыра у уже открытого телефона — тоже один `status`. Уже открытый телефон видит реле сразу и `seq` заново не спрашивает.
+- Хэш `programs` / `hwMap` / `trigMap` совпал с кэшем — тело не качает. Не совпал `programs` — один `list`. Не совпал `hwMap` или `trigMap` — один `hwmap`. Тело читает из пришедшего сообщения.
+- `run`/`stop`/`set` через `online=false` сами не повторять.
 
-**Full / delta / skip:** `forceFull` или нет baseline → full; иначе undelivered `diag.last_err` → TX; иначе significant → delta; иначе skip. Край не ждёт период. Тик `uptime` / `time.epoch` сами по себе skip не отменяют. Напряжение (ε 0.05 В), температура (ε 0.1 °C), CSQ, heap и один только `timerRemaining` не являются краем.
+### Транспорт (SIM800)
+- Один MQTT-кадр = один атомарный `AT+CIPSEND`.
+- RX overflow → reconnect.
+- Keepalive dead-man: нет MQTT RX `1.5 × keepAliveSec` → Error.
+- Ctrl serialize: ack/final ждут Ctrl-очередь и `gsm.tcpBusBusy()`.
 
-**Схема:** корень `full`, `uptime`, `mode`; объекты `time`, `hw`, `radio`, `program`, `runtime`, `diag`, `rev`.
-
-#### Full (`"full":true`)
-
-Все объекты присутствуют. `program.current` всегда есть (`null` если не running). `diag.last_err` опускается, если очередь пуста.
-
-```json
-{
-  "full": true,
-  "uptime": 3600,
-  "mode": "AUTO",
-  "time": {
-    "epoch": 1710000000,
-    "synced": true,
-    "stale": false,
-    "tzOffsetHours": 3,
-    "timeSource": "NTP"
-  },
-  "hw": {
-    "voltage": 12.4,
-    "engineRunning": false,
-    "inputsById": {"1": false, "2": true},
-    "relaysById": {"1": false, "2": false},
-    "tempSensorsById": {
-      "10": {"valid": true, "lastMs": 1234, "t": 21.5}
-    }
-  },
-  "radio": {"csq": {"rssi": 20, "ber": 0}},
-  "program": {
-    "running": false,
-    "current": null,
-    "last": 3,
-    "timerRemaining": 0
-  },
-  "runtime": {
-    "thermostat": false,
-    "batterySaver": true,
-    "inputTriggersById": {"1": false},
-    "tempTriggersById": {"2": true}
-  },
-  "diag": {
-    "freeHeap": 45000,
-    "last_err": [
-      {"code": 21, "msg": "Panic reset", "active": true}
-    ]
-  },
-  "rev": { "programs": "a1b2c3d4", "hw": "0e9f1a2b" }
-}
-```
-
-| Объект / поле | Смысл |
-|---------------|--------|
-| `time.stale` | время старше ~48 h (даже при `synced`) |
-| `hw.tempSensorsById` | только смапленные id≠0; `t` null если !valid |
-| `radio.csq.rssi` | 0..31; `99` unknown |
-| `radio.csq.ber` | 0..7; `-1` never seen |
-| `program.timerRemaining` | секунды |
-| `diag.freeHeap` | байты |
-| `diag.last_err` | one-shot undelivered (newest first); omit if empty |
-| `rev.programs` | FNV-1a 32 (8 hex) массива `list` (`id`+`name`). Смена шагов без id/имени лист не меняет |
-| `rev.hw` | FNV-1a 32 объекта `hw` из ответа `hwmap` |
-
-#### Delta (`"full":false`)
-
-Всегда: `full`, `uptime`. Остальное — partial deep-merge:
-
-- `mode` — если сменился
-- `time` — **весь** объект при смене `synced`/`stale`/`tzOffsetHours`/`timeSource` (не один тик `epoch`)
-- `hw` — partial: voltage (ε 0.05), engine, partial maps inputs/relays/temps (temp: id/valid/t ε 0.1; не lastMs alone; id→0 не шлём)
-- `radio` — если csq изменился
-- `program` — partial: `running`, `current` (id или `null` при стопе), `last`, `timerRemaining` (`|Δ|≥1` с или смена running)
-- `runtime` — partial thermostat/batterySaver + changed trigger ids (без tombstone удалённых config id)
-- `diag` — `freeHeap` при `|Δ|≥2048`; `last_err` полный массив если count>0
-- `rev` — весь объект, если сменился `programs` или `hw`
-
-#### Когда уходит delta
-
-Сразу (пауза 250 мс, Tele свободен): `mode`; мета `time` (не тик `epoch`); `engineRunning`; входы; реле; `program` `running`/`current`/`last`; runtime термостата, защиты АКБ и триггеров; `rev`; `diag.last_err`.
-
-Только по `publish_interval_sec`: напряжение (ε 0.05 В), температура (ε 0.1 °C, не один `lastMs`), CSQ, `freeHeap` (≥2 КиБ), `timerRemaining` (`|Δ|≥1` с). Нет пересечения порога — skip. Если порог уже пробит к отправке края или периода, поле входит в ту же дельту.
-
-**Не significant:** тик `uptime`, тик `time.epoch`, только `temp.lastMs`, подпороговые Δ voltage/temp/heap/timer.
-
-#### Merge для клиента
-
-1. `full:true` → заменить state.
-2. `full:false` → deep-merge; `program.current:null` = не running; maps merge по ключам.
-3. После reconnect / смены base config → full (`cmd=status` или first Tele).
-4. Отсутствие `diag.last_err` ≠ «ошибок нет навсегда» (one-shot undelivered).
-
-#### `diag.last_err` delivery
-
-```json
-"last_err":[
-  {"code":21,"msg":"Panic reset","active":true},
-  {"code":48,"msg":"MQTT connection failed","active":false}
-]
-```
-
-| Field | Meaning |
-|-------|---------|
-| `code` | `ErrorCode` as uint8 |
-| `msg` | Stable short string (`errorCodeToString`) |
-| `active` | Still current uncleared error |
-
-**GSM sticky codes:** `GSM_NO_RESPONSE` / `GSM_REG_FAIL` / `GSM_APN_FAIL` — `active` cleared on successful entry to READY (history kept for one-shot delivery). Bearer/SAPBR exhaustion sets `GSM_REG_FAIL` when deregistered or CSQ is 99/`<=1`, otherwise `GSM_APN_FAIL`.
-
-**Delivery:**
-
-1. Boot/RTC undelivered → first `full` after MQTT connect
-2. New runtime errors → once on next periodic status
-3. Mark delivered only after Tele left the MQTT TX queue **and** modem CIPSEND epoch ended (`!tcpBusBusy`); on `tcp_drop`/disconnect — abandon and retry next status
-
-SoftAP SSE `gsm` event mirrors `gsmState`, `csq`, and `mqttConnected` for local debug (`gsmState` не в MQTT Tele — канал жив только при рабочем контуре модема).
-
-**Time vs MQTT CIP:** full modem cascade (`CCLK` → `CIPSHUT` → `CIPGSMLOC` → optional `CNTP`) cannot share the IP stack with MQTT TCP. Boot still runs the full cascade before first CIPSTART. While unsynced with MQTT up, TimeSyncManager prefers **CCLK-lite** (`AT+CCLK?` only, no drain; soft-miss / busy use a short re-arm, not fail-backoff) so NITZ can succeed without flapping the broker; after several lite misses (or force) it drains MQTT (offline + DISCONNECT + CIPCLOSE), runs `CIPSHUT` then CIPGSMLOC/CNTP, then reconnects — same drain recipe as voice/SMS. Heavy cascade failures use stepped backoff (2→5→15→30 min). `+CIPGSMLOC` is waited after command `OK` (URC often arrives later). Manual `set_time` still applies without tearing CIP. `time.stale` (48 h) is reported in status; schedule triggers still use `isSynced()`. Log tags: `[MqttClient]`, `[TimeSync]`, `[Cellular]`, `[GsmController]`.
-
-**Abnormal reboot fact** (always undelivered on boot, except clean reasons):
-
-| `esp_reset_reason` | `code` / msg |
-|--------------------|--------------|
-| WDT / task WDT / int WDT | Watchdog reset |
-| PANIC | Panic reset |
-| BROWNOUT | Brownout reset |
-| EXT / UNKNOWN / SDIO / other | Unexpected reset |
-| POWERON / SW / DEEPSLEEP | not recorded (clean power / OTA / `/reboot`) |
-
-Clean soft reboot: LWT offline→online + `uptime` reset only. Power-cut may clear RTC → no `diag.last_err`.
-
-**Не в MQTT status:** `gsmState`, `mqttConnected`, имена программ, `flashCommit`, frequencies, sticky `lastError`.
+### Time vs MQTT CIP
+Полный modem cascade не делит IP с MQTT TCP. Drain: `online=false` + DISCONNECT + CIPCLOSE, затем sync, затем reconnect. См. прежние заметки в `gsm.md` / `TimeSync`.
 
 ### Вне scope
-QoS1, текстовые `err` на wire, persist LRU, ACL, сторонние MQTT-библиотеки.
+QoS2, TLS на SIM800, очередь сессий команд в прошивке, тело программы по MQTT.

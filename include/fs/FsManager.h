@@ -5,25 +5,16 @@
 #include <LittleFS.h>
 #include "common/Constants.h"
 
-/** ESP32 LittleFS space snapshot. */
+/** Снимок места ESP32 LittleFS. */
 struct FsSpaceInfo {
     size_t totalBytes = 0;
     size_t usedBytes = 0;
 };
 
-// Приоритеты файлов (задел на будущее: можно использовать для политики GC/кеширования)
-enum class FilePriority : uint8_t {
-    PRIO_CRITICAL = 0,   ///< критичные (config.json)
-    PRIO_HIGH = 1,       ///< веб-файлы
-    PRIO_NORMAL = 2,     ///< временные файлы
-    PRIO_LOW = 3         ///< логи, кэши
-};
-
 // Тип доступа к файлу
 enum class FileAccess : uint8_t {
     ACCESS_READ_ONLY,    ///< только чтение (веб-морда)
-    ACCESS_READ_WRITE,   ///< чтение и запись (конфиг)
-    ACCESS_BOOT_CRITICAL ///< необходим для старта
+    ACCESS_READ_WRITE    ///< чтение и запись (конфиг)
 };
 
 // Метаданные файла (хранятся в PROGMEM)
@@ -31,12 +22,8 @@ enum class FileAccess : uint8_t {
 // синхронизируйте путь здесь и в местах использования, иначе метаданные будут вводить в заблуждение.
 struct FileMetadata {
     const char* path;               ///< путь к файлу
-    FilePriority priority;           ///< приоритет
     FileAccess access;               ///< тип доступа
     uint32_t maxSize;                ///< максимальный размер (байт)
-    bool cacheInRam;                 ///< подсказка для Config, не используется в FsManager
-    bool gzipSupported;              ///< UI static: on FS only as path.gz (build.py axiom)
-    uint16_t crc;                    ///< контрольная сумма (опционально)
 } __attribute__((packed));
 
 /**
@@ -58,7 +45,7 @@ struct FileMetadata {
  * - запись должна быть атомарной (через temp + rename), т.к. питание могут “выдёрнуть” в любой момент;
  * - нельзя заполнять том “в ноль” — LittleFS деградирует при нехватке свободных блоков;
  * - операции ввода/вывода должны быть короткими или периодически “cooperate()/yield()” в вызывающем коде.
- * - `gc()` на ESP32 Arduino не компактирует том: только orphan reclaim + refresh free-space.
+ * - `gc()` на ESP32 Arduino не компактирует том: только возврат осиротевших файлов и обновление свободного места.
  *
  * Backup/restore/healthCheck копируют и считают CRC потоково; copyFileAtomic_ использует стековый scratch-буфер.
  */
@@ -86,15 +73,8 @@ public:
     // Прочитать весь файл в буфер
     bool readFile(const char* path, char* buffer, size_t& len, size_t maxLen);
 
-    // Записать данные в файл атомарно (через .tmp рядом с целевым файлом).
-    // При успехе — старый файл заменяется новым целиком (`writeFile` — тонкая обёртка над `atomicWrite`).
-    bool writeFile(const char* path, const char* data, size_t len);
-
-    /// Полный буфер в файл атомарно (tmp + rename). Общий путь для `writeFile`, флагов и т.п.
+    /// Полный буфер в файл атомарно (tmp + rename).
     bool atomicWrite(const char* path, const char* data, size_t len);
-
-    // Дописать данные в конец файла
-    bool appendFile(const char* path, const char* data, size_t len);
 
     // Удалить файл
     bool deleteFile(const char* path);
@@ -120,23 +100,13 @@ public:
     // Открыть директорию для перечисления (ESP32 LittleFS: File + openNextFile).
     File openDir(const char* path) { return initialized ? LittleFS.open(path) : File(); }
 
-    /// Перечислить файлы в каталоге (не рекурсивно). `name` — путь/имя записи.
-    using DirVisitFn = void (*)(const char* name, File& entry, void* ctx);
-    void forEachInDir(const char* path, DirVisitFn fn, void* ctx);
-
-    // Создать резервную копию файла (path.bak)
-    bool backup(const char* path);
-
-    // Восстановить файл из резервной копии
-    bool restore(const char* path);
-
     /// Обновить снимок total/used (ESP32 LittleFS не даёт настоящий GC).
     bool refreshFsInfo();
 
-    /// Удалить известные orphan temp (HTTP ingest / OTA staging leftovers).
+    /// Удалить известные осиротевшие временные файлы (остатки приёма HTTP и промежуточной OTA).
     size_t reclaimOrphans();
 
-    /// Orphan reclaim + refreshFsInfo. Не компактирует том — после вызова всегда проверяйте free space.
+    /// Возврат осиротевших файлов и refreshFsInfo. Не компактирует том — после вызова всегда проверяйте свободное место.
     bool gc();
 
     // Проверка целостности (восстановление из бэкапа при необходимости).
@@ -146,14 +116,7 @@ public:
     // Получить свободное место (байт)
     size_t getFreeSpace();
 
-    // Получить занятое место (байт)
-    size_t getUsedSpace();
-
     // Статистика
-    uint32_t getReadCount() const { return readCount; }
-    uint32_t getWriteCount() const { return writeCount; }
-    uint32_t getErrorCount() const { return errorCount; }
-    uint32_t getRecoveryCount() const { return recoveryCount; }
     void printStats();
     const FsSpaceInfo& getInfo() const { return fsInfo; }
 
@@ -170,7 +133,7 @@ public:
 
 private:
     static constexpr size_t TEMP_BUFFER_SIZE = PoolLimits::FS_SCRATCH_BYTES; ///< размер чанка copyFileAtomic_
-    /// Must fit longest FS path + ".tmp" (e.g. /validation/settings.schema.json.tmp).
+    /// Должен вмещать самый длинный путь ФС плюс ".tmp" (например /validation/settings.schema.json.tmp).
     static constexpr size_t MAX_PATH_LEN = BufferBytes::Fs::TEMP_PATH;
 
     bool initialized;               ///< флаг успешной инициализации
@@ -184,13 +147,10 @@ private:
     uint32_t recoveryCount;          ///< количество восстановлений из бэкапа
     uint32_t lastHealthCheck;        ///< время последней проверки здоровья
 
-    char pathBuffer[MAX_PATH_LEN];   ///< буфер для путей (incl. .tmp suffix)
+    char pathBuffer[MAX_PATH_LEN];   ///< буфер для путей (включая суффикс .tmp)
 
     /// Потоковая копия src → dest (через dest.tmp + rename), чанки по scratch-буферу.
     bool copyFileAtomic_(const char* srcPath, const char* destPath);
-
-    // Создать бэкап
-    bool createBackup(const char* path);
 
     // Получить метаданные файла из реестра
     const FileMetadata* getMetadata(const char* path);

@@ -4,14 +4,17 @@
 #include "common/Constants.h"
 
 /**
- * POD snapshot of runtime state for transports (Web/MQTT/etc).
+ * POD-снимок состояния runtime для транспортов (Web/MQTT и т.п.).
  *
- * Goals:
- * - fixed-size, no heap, safe to copy
- * - avoid pulling large module headers into transport code
+ * Цели:
+ * - фиксированный размер, без кучи, можно копировать
+ * - не тянуть крупные заголовки модулей в код транспорта
  */
 
 struct StatusSnapshot {
+    /// Последовательность состояния MQTT (1..; с переполнением). SSE её не использует.
+    uint32_t seq{0};
+
     uint32_t uptimeSec{0};
     char modeName[16]{0};
 
@@ -20,7 +23,7 @@ struct StatusSnapshot {
     bool engineRunning{false};
 
     struct TempSensor {
-        uint16_t id{0};        // 0 when unknown/unmapped
+        uint16_t id{0};        // 0, если неизвестен или не сопоставлен
         bool valid{false};
         uint32_t lastMs{0};
         float t{0.0f};
@@ -48,7 +51,7 @@ struct StatusSnapshot {
 
     uint32_t freeHeap{0};
 
-    /// Undelivered MQTT error one-shot queue (newest first). Empty → omit `diag.last_err` on wire.
+    /// Очередь недоставленных одноразовых ошибок MQTT (сначала новые). Пусто → на проводе нет `diag.last_err`.
     struct ErrEntry {
         uint8_t code{0};
         bool active{false};
@@ -58,11 +61,7 @@ struct StatusSnapshot {
     ErrEntry lastErr[ErrorHistory::CAPACITY]{};
     uint8_t lastErrCount{0};
 
-    /// Last AT+CSQ: rssi 0..31 (99 unknown), ber 0..7 (-1 if never seen).
+    /// Последний AT+CSQ: rssi 0..31 (99 — неизвестно), ber 0..7 (-1, если ещё не было).
     int16_t csqRssi{0};
     int16_t csqBer{-1};
-
-    /// FNV-1a 32 of the `list` programs array and of the `hwmap` object.
-    uint32_t programsRev{0};
-    uint32_t hwRev{0};
 };

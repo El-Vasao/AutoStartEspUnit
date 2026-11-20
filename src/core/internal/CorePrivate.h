@@ -56,7 +56,7 @@ struct CorePrivate {
     bool bootConfigLoaded{false};
     bool bootHwMapBad{false};
 
-    // Subsystems (construct first).
+    // Подсистемы (создаются первыми).
     SensorsController sensors;
     RelayController relay;
     DigitalInputs inputs;
@@ -65,7 +65,7 @@ struct CorePrivate {
     MqttClient mqtt{gsm.getClient()};
     CellularCore cellular;
 
-    // Managers
+    // Менеджеры
     ModeManager modeManager;
     OtaHandler otaHandler;
     ErrorManager errorManager;
@@ -76,7 +76,7 @@ struct CorePrivate {
     ThermostatManager thermostatManager{config, sensors, programExecutor};
     ScheduleTriggerManager scheduleTriggerManager{config, timeSyncManager, programExecutor};
 
-    // State/counters
+    // Состояние и счётчики
     uint32_t lastUptimeSecond{0};
     uint32_t lastWdtFeed{0};
     uint32_t lastCooperateMs{0};
@@ -86,7 +86,7 @@ struct CorePrivate {
 
     bool engineRunning{false};
 
-    // Ports for transports/control glue.
+    // Порты склейки транспортов и управления.
     AppPorts ports{};
 };
 

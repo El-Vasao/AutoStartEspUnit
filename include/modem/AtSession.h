@@ -5,27 +5,27 @@
 #include "modem/ModemUart.h"
 
 /**
- * @brief Non-blocking AT command queues on ModemUart.
+ * @brief Неблокирующие очереди AT-команд на ModemUart.
  *
- * Two queues (normal + high-priority). Each slot copies the command into
- * `cmdBuf` so callers do not keep a live pointer. See docs/modules/modem.md.
+ * Две очереди (обычная и с высоким приоритетом). Слот копирует команду в
+ * `cmdBuf`, чтобы вызывающий не держал живой указатель. См. docs/modules/modem.md.
  */
 class AtSession {
 public:
     enum class Expect : uint8_t {
         None = 0,
         Ok = 1 << 0,
-        Prompt = 1 << 1, // '>' prompt (CIPSEND)
-        LinePrefix = 1 << 2, // any line starting with prefix
+        Prompt = 1 << 1, // приглашение '>' (CIPSEND)
+        LinePrefix = 1 << 2, // любая строка, начинающаяся с префикса
         AnyLine = 1 << 3,
     };
 
     struct Request {
-        const char* cmd;           // command without CRLF (after enqueue, points at cmdBuf)
+        const char* cmd;           // команда без CRLF (после постановки в очередь указывает на cmdBuf)
         uint32_t timeoutMs;
-        uint8_t expectMask;        // Expect bitmask
-        const char* prefix;        // for LinePrefix
-        const char* tag;           // optional (for higher-level logs)
+        uint8_t expectMask;        // битовая маска Expect
+        const char* prefix;        // для LinePrefix
+        const char* tag;           // необязательно (для логов уровнем выше)
         char cmdBuf[Gsm::CMD_BUFFER_SIZE]{};
     };
 
@@ -37,7 +37,7 @@ public:
         bool gotPrefix{false};
         bool hasCapturedLine{false};
         char capturedLine[64]{};
-        const char* tag{nullptr}; // tag of the completed request (non-owning)
+        const char* tag{nullptr}; // тег завершённого запроса (не владеет)
     };
 
     explicit AtSession(ModemUart& uart) : _uart(uart) {}
@@ -46,21 +46,21 @@ public:
 
     void reset();
 
-    // Queue an AT request (non-blocking). Returns false if queue full.
+    // Поставить AT-запрос в очередь (неблокирующе). false, если очередь полна.
     bool enqueue(const Request& r);
     bool enqueueHigh(const Request& r);
     uint8_t normalQueueFree() const { return (uint8_t)(QSIZE - _qCount); }
 
-    // Drive progress: send next queued command if idle, check timeout.
+    // Двигать работу: в простое послать следующую команду из очереди и проверить таймаут.
     void tick(uint32_t nowMs);
 
-    // RX hooks from ModemUart
+    // Точки входа RX от ModemUart
     void onLine(const char* line);
     void onByte(char c);
 
     bool isBusy() const { return _state != State::Idle; }
     bool hasResult() const { return _state == State::Done; }
-    Result takeResult(); // moves back to Idle
+    Result takeResult(); // возврат в Idle
 
     const Request* activeRequest() const { return _state == State::Waiting ? &_active : nullptr; }
 

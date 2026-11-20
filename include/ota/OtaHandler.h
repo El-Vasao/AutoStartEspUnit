@@ -5,14 +5,14 @@
 #include <FS.h>
 
 /**
- * @brief OTA: HTTP stream → Update (firmware) + LittleFS file tail.
+ * @brief OTA: поток HTTP → Update (прошивка) + хвост файлов LittleFS.
  *
- * Package format (unchanged):
+ * Формат пакета (без изменений):
  * 1) fwSize (uint32 LE)
- * 2) firmware bytes (fwSize)
- * 3) optional FS records: nameLen(u16 LE), name, fileSize(u32 LE), data; nameLen==0 ends.
+ * 2) байты прошивки (fwSize)
+ * 3) необязательные записи FS: nameLen(u16 LE), name, fileSize(u32 LE), data; nameLen==0 завершает.
  *
- * No full `/update.bin` on disk — chunks from POST /upload feed the FSM directly.
+ * Целого `/update.bin` на диске нет — куски из POST /upload кормят FSM напрямую.
  */
 class OtaHandler {
 public:
@@ -22,19 +22,19 @@ public:
     void update();
     void onModeExit();
 
-    /// Start waiting for multipart upload; resets stream FSM.
+    /// Начать ожидание multipart-загрузки; сбрасывает FSM потока.
     void prepareHttpUploadSession();
 
-    /// Feed package bytes from HTTP upload callback.
+    /// Подать байты пакета из callback загрузки HTTP.
     bool streamFeed(const uint8_t* data, size_t len);
 
-    /// Multipart final: finish Update + open FS file; returns false on error.
+    /// Конец multipart: завершить Update и открытый файл FS; false при ошибке.
     bool streamFinish();
 
-    /// Abort Update / open FS write; leave stream Failed.
+    /// Прервать Update / открытую запись FS; поток остаётся в Failed.
     void streamAbort();
 
-    /// HTTP upload finished (ok/fail) — drives mode exit / reboot in update().
+    /// Загрузка HTTP закончилась (ok/fail) — update() выходит из режима или перезагружает.
     void notifyHttpUploadComplete(bool ok);
 
     bool isOngoing() const { return _ongoing; }
@@ -63,6 +63,8 @@ private:
 
     Phase _phase{Phase::Idle};
     bool _updateBegun{false};
+    // Update.end уже переключил boot; abort после этого слот не возвращает.
+    bool _fwCommitted{false};
     bool _streamDoneOk{false};
     size_t _totalAccepted{0};
 

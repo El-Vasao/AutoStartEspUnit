@@ -175,7 +175,7 @@ bool parseProgramIndexDispatch(File& f, IndexRow* rows, size_t rowCap, size_t* o
     return true;
 }
 
-// ---- program object + optional steps subtree skip -----------------------
+// ---- объект программы и необязательный пропуск поддерева steps -----------
 
 enum class P : uint8_t { Root, StepsArr, StepObj, StepsSkip, Junk };
 
@@ -223,11 +223,11 @@ protected:
     bool failed_{false};
     P stk_[12]{};
     int sp_{-1};
-    // Program keys fit in <= 16 chars ("input_trigger_id"), keep small headroom.
+    // Ключи программы умещаются в <= 16 символов ("input_trigger_id"), небольшой запас.
     char pending_[24]{};
 };
 
-/** Reads id+name only; skips `steps` via StepsSkip+delta nesting. */
+/** Читает только id+name; пропускает `steps` через вложенность StepsSkip+delta. */
 class HeaderListener final : public SkipStepsRootListener {
 public:
     HeaderListener(uint8_t pathId, uint8_t* oid, char* name, size_t nameCap)
@@ -587,7 +587,7 @@ void emitIndexArrayBody(const IndexRow* rows, size_t n, Print& p) {
 
 } // namespace
 
-// Program files are parsed strictly: a partially read program could lose e.g. its ignition-off step.
+// Файлы программ разбираются строго: частично прочитанная программа может потерять, например, шаг выключения зажигания.
 bool parseProgramObjectFile(File& f, Program& out) {
     FullProgramListener listener(&out);
     const bool parsed = jsonStreamingParseWholeFile(f, listener);
@@ -621,14 +621,6 @@ size_t emitProgramToPrint(const Program& p, Print& out) {
 size_t emitProgramIndexArrayPrint(const IndexRow* rows, size_t n, Print& out) {
     ForwardCountPrint fc(out);
     emitIndexArrayBody(rows, n, fc);
-    return fc.n;
-}
-
-size_t emitProgramListWrappedPrint(const IndexRow* rows, size_t n, Print& out) {
-    ForwardCountPrint fc(out);
-    fc.print("{\"programs\":");
-    emitIndexArrayBody(rows, n, fc);
-    fc.print('}');
     return fc.n;
 }
 

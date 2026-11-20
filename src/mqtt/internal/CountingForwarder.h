@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/// Print adapter that forwards every write and counts bytes (single-pass measure+encode).
+/// Адаптер Print: пересылает каждую запись и считает байты (замер и кодирование за один проход).
 struct CountingForwarder final : public Print {
     Print& d;
     size_t n = 0;

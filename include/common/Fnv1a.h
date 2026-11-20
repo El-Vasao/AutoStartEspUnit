@@ -5,7 +5,7 @@
 
 #include <Arduino.h>
 
-/// FNV-1a 32 (offset 2166136261, prime 16777619). Opaque catalog token, not a checksum of files.
+/// FNV-1a 32 (смещение 2166136261, простое 16777619). Непрозрачный токен каталога, не контрольная сумма файлов.
 constexpr uint32_t kFnv1a32Offset = 2166136261u;
 
 uint32_t fnv1a32Feed(uint32_t hash, uint8_t b);
@@ -15,13 +15,21 @@ inline uint32_t fnv1a32(const char* data, size_t len) {
     return fnv1a32(reinterpret_cast<const uint8_t*>(data), len);
 }
 
-/// Print that only folds written bytes into FNV-1a 32.
+/// Print, который только сворачивает записанные байты в FNV-1a 32.
 class Fnv1aPrint : public Print {
 public:
     size_t write(uint8_t c) override {
         hash_ = fnv1a32Feed(hash_, c);
         bytes_++;
         return 1;
+    }
+    size_t write(const uint8_t* buffer, size_t size) override {
+        if (!buffer && size) return 0;
+        for (size_t i = 0; i < size; i++) {
+            hash_ = fnv1a32Feed(hash_, buffer[i]);
+        }
+        bytes_ += size;
+        return size;
     }
     uint32_t hash() const { return hash_; }
     size_t bytes() const { return bytes_; }

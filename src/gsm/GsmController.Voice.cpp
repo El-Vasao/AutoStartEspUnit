@@ -1,8 +1,8 @@
 /**
  * @file GsmController.Voice.cpp
- * @brief Exclusive voice/SMS modem epoch: CALL_OWNER, SMS_OWNER, inbound DTMF program start.
+ * @brief Эксклюзивная эпоха голоса/SMS модема: CALL_OWNER, SMS_OWNER, старт программы по входящему DTMF.
  *
- * MQTT CIP is suspended for the whole epoch (CellularCore drain → StopTcp → AT → idle).
+ * MQTT CIP снят на всю эпоху (слив CellularCore → StopTcp → AT → простой).
  */
 #include "gsm/GsmController.h"
 
@@ -224,7 +224,7 @@ void GsmController::voiceOnDtmfTone_(char tone) {
         _voicePendingProgramValid = true;
         logger.log(LogModule::GsmController, "voice: inbound start program %u\n", (unsigned)id);
         _voicePhase = VoicePhase::HangupSend;
-        _voiceResultOk = true; // hangup still runs; FinishOk after ATH
+        _voiceResultOk = true; // сброс ещё выполнится; FinishOk после ATH
         return;
     }
     if (tone < '0' || tone > '9') return;
@@ -282,7 +282,7 @@ void GsmController::voiceHandleUrc_(const char* line) {
     if (strcmp(line, "NO CARRIER") == 0 || strcmp(line, "BUSY") == 0 ||
         strcmp(line, "NO ANSWER") == 0) {
         _voiceNoCarrier = true;
-        // DialRing hangs up on the next tick so an in-flight AT+CLCC can finish first.
+        // DialRing кладёт трубку на следующем тике, чтобы текущий AT+CLCC успел завершиться.
         if (_voicePhase == VoicePhase::CollectPassword || _voicePhase == VoicePhase::CollectProgId ||
             _voicePhase == VoicePhase::AnswerWait) {
             _voicePhase = VoicePhase::FinishFail;
@@ -310,7 +310,7 @@ void GsmController::serviceVoice_(uint32_t now) {
 
     switch (_voicePhase) {
     case VoicePhase::NeedMqttDrain:
-        // CellularCore drains MQTT and calls notifyMqttDrainedForServiceEpoch().
+        // CellularCore сливает MQTT и вызывает notifyMqttDrainedForServiceEpoch().
         return;
 
     case VoicePhase::StopTcp: {
@@ -329,7 +329,7 @@ void GsmController::serviceVoice_(uint32_t now) {
     }
 
     case VoicePhase::DialSend: {
-        // Voice call: trailing ';' required on SIM800.
+        // Голосовой вызов: на SIM800 в конце обязательна ';'.
         char cmd[48];
         snprintf(cmd, sizeof(cmd), "ATD%s;", _voicePhone);
         if (!sendAt(cmd, "ATD", AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS)) return;
@@ -377,9 +377,12 @@ void GsmController::serviceVoice_(uint32_t now) {
             _voiceHangupDeadlineMs = now + Gsm::VOICE_HANGUP_TIMEOUT_MS;
         }
         if ((int32_t)(now - _voiceHangupDeadlineMs) >= 0) {
+            // Таймаут ATH нельзя выдавать за OK: иначе DTMF-программа стартует при ещё живом вызове.
+            resetAwait();
             _voiceHangupDeadlineMs = 0;
-            _voicePhase = VoicePhase::HangupWait;
-            _awaitOk = true;
+            _voicePendingProgramValid = false;
+            _voicePendingProgramId = 0;
+            _voicePhase = VoicePhase::FinishFail;
             return;
         }
         if (_stack.at.isBusy() || _stack.at.hasResult()) return;

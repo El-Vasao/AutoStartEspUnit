@@ -12,59 +12,35 @@ static const FileMetadata fileRegistry[] PROGMEM = {
     // Критические файлы
     {
         "/config.json",
-        FilePriority::PRIO_CRITICAL,
         FileAccess::ACCESS_READ_WRITE,
         Limits::CONFIG_JSON_SIZE,
-        true,
-        false,
-        0
     },
     {
         "/config.bak",
-        FilePriority::PRIO_LOW,
         FileAccess::ACCESS_READ_WRITE,
         Limits::CONFIG_JSON_SIZE,
-        false,
-        false,
-        0
     },
 
     // Веб-интерфейс
     {
         "/index.html",
-        FilePriority::PRIO_HIGH,
         FileAccess::ACCESS_READ_ONLY,
         FileMax::INDEX_HTML,
-        false,
-        true,
-        0
     },
     {
         "/style.css",
-        FilePriority::PRIO_HIGH,
         FileAccess::ACCESS_READ_ONLY,
         FileMax::STYLE_CSS,
-        false,
-        true,
-        0
     },
     {
         "/app.js",
-        FilePriority::PRIO_HIGH,
         FileAccess::ACCESS_READ_ONLY,
         FileMax::APP_JS,
-        false,
-        true,
-        0
     },
     {
         "/favicon.ico",
-        FilePriority::PRIO_NORMAL,
         FileAccess::ACCESS_READ_ONLY,
         FileMax::FAVICON_ICO,
-        false,
-        true,
-        0
     },
 
 };
@@ -167,8 +143,8 @@ bool FsManager::format() {
 
 bool FsManager::exists(const char* path) const {
     if (!initialized || !path || path[0] != '/') return false;
-    // ESP32 Arduino exists() opens for read and logs E when missing
-    // (vfs_api: "does not exist, no permits for creation"). Use POSIX stat instead.
+    // ESP32 Arduino exists() открывает файл на чтение и пишет E, если его нет
+    // (vfs_api: "does not exist, no permits for creation"). Вместо этого POSIX stat.
     char full[BufferBytes::Fs::GZIP_PATH];
     const int n = snprintf(full, sizeof(full), "/littlefs%s", path);
     if (n <= 0 || (size_t)n >= sizeof(full)) return false;
@@ -229,7 +205,7 @@ bool FsManager::ensurePath(const char* path) {
 bool FsManager::hasRequiredWebAssets() const {
     if (!initialized) return false;
 
-    // Axiom: UI shell assets on FS are only *.gz (logical names in WebAssets::REQUIRED).
+    // Аксиома: файлы оболочки UI на ФС только *.gz (логические имена в WebAssets::REQUIRED).
     char path[BufferBytes::Fs::WEB_ASSET_PATH];
     char gzPath[BufferBytes::Fs::WEB_ASSET_GZIP_PATH];
 
@@ -246,23 +222,5 @@ bool FsManager::hasRequiredWebAssets() const {
     }
 
     return true;
-}
-
-void FsManager::forEachInDir(const char* path, DirVisitFn fn, void* ctx) {
-    if (!initialized || !path || !fn) return;
-    File root = LittleFS.open(path);
-    if (!root || !root.isDirectory()) {
-        if (root) root.close();
-        return;
-    }
-    File entry = root.openNextFile();
-    while (entry) {
-        const char* name = entry.name();
-        if (name && name[0]) {
-            fn(name, entry, ctx);
-        }
-        entry = root.openNextFile();
-    }
-    root.close();
 }
 

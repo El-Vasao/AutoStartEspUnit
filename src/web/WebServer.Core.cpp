@@ -17,7 +17,6 @@
 #include "core/FlashCommitCoordinator.h"
 #include "core/Core.h"
 #include <DNSServer.h>
-#include <WiFi.h>
 #include "common/Logger.h"
 #include "common/Constants.h"
 
@@ -56,7 +55,7 @@ WebServer::WebServer()
 bool WebServer::isFlashBusy() const {
     // Важно: здесь учитываем и “глобальные” deferred FS операции, и локальные POST-потоки web.
     // Это общий предохранитель от пересечения операций с flash/LittleFS.
-    // Also block config/program flash queues during OTA stream (Update + FS extract).
+    // Также блокировать очереди flash конфига и программ на время потока OTA (Update и извлечение ФС).
     if (core.getMode() == CoreMode::OTA_UPDATE) return true;
     return flashCommit.isPending() || postedConfigJsonPending || postedProgramJsonPending;
 }
@@ -89,22 +88,18 @@ bool WebServer::isActive() const {
     return apActive && serverActive;
 }
 
-IPAddress WebServer::getAPIP() const {
-    return WiFi.softAPIP();
-}
-
 void WebServer::startWithParams(const char* ssid, const char* pass) {
     WebServerRuntime::startWithParams(*this, ssid, pass);
 }
 
-// Routes are implemented in `src/web/*` after split.
+// Маршруты после разбиения реализованы в `src/web/*`.
 void WebServer::setupRoutes() {
     setupSseEndpointRoutes_();
     setupRootRoutes_();
     setupApiRoutes_();
 
     // ---------- СТАТИЧЕСКИЕ ФАЙЛЫ (после API, до onNotFound) ----------
-    // Axiom: UI assets on LittleFS are only *.gz; onNotFound maps URL → URL.gz.
+    // Аксиома: ассеты UI на LittleFS только *.gz; onNotFound отображает URL → URL.gz.
     setupCaptivePortalRoutes_();
 }
 

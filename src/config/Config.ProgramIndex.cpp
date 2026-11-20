@@ -36,23 +36,24 @@ bool loadRowsFromIndexFile(program_json::IndexRow* rows, size_t cap, size_t* out
 } // namespace
 
 void Config::refreshProgramsRevFromRows_(const void* rows, size_t n) {
+    // Хеш сырых байт файлов программ в порядке возрастания id (строки уже отсортированы rebuild/ensure).
     Fnv1aPrint fp;
-    program_json::emitProgramIndexArrayPrint(static_cast<const program_json::IndexRow*>(rows), n, fp);
-    programsRev_ = fp.hash();
-}
-
-bool Config::emitProgramListWrapped(Print& p) const {
-    program_json::IndexRow rows[Limits::MAX_PROGRAMS];
-    size_t n = 0;
-    File f = fileSystem.openRead("/programs/index.json");
-    if (f) {
-        const bool parsed = program_json::parseProgramIndexFile(f, rows, Limits::MAX_PROGRAMS, &n);
+    const auto* items = static_cast<const program_json::IndexRow*>(rows);
+    uint8_t chunk[PoolLimits::FS_SCRATCH_BYTES];
+    for (size_t i = 0; i < n; i++) {
+        char path[BufferBytes::Fs::PROGRAM_PATH];
+        program_json::formatProgramPath(path, sizeof(path), items[i].id);
+        File f = fileSystem.openRead(path);
+        if (!f) continue;
+        while (f.available()) {
+            const size_t got = f.readBytes(reinterpret_cast<char*>(chunk), sizeof(chunk));
+            if (!got) break;
+            (void)fp.write(chunk, got);
+            wdtPort_.feedNow();
+        }
         f.close();
-        if (!parsed) n = 0;
     }
-    // Missing/corrupt index → empty list (still a valid MQTT reply).
-    program_json::emitProgramListWrappedPrint(rows, n, p);
-    return true;
+    programsRev_ = fp.hash();
 }
 
 bool Config::emitProgramIndexArray(Print& p) const {

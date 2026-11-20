@@ -6,7 +6,7 @@
 
 void ModemUart::emitFramedLine_(char* line) {
     if (!line || !line[0]) return;
-    // Whitespace-only modem noise (often before SEND OK) — skip log and handler.
+    // Шум модема из одних пробелов (часто перед SEND OK) — не писать в лог и не звать обработчик.
     bool onlyWs = true;
     for (const char* p = line; *p; ++p) {
         if (*p != ' ' && *p != '\t') {
@@ -15,7 +15,7 @@ void ModemUart::emitFramedLine_(char* line) {
         }
     }
     if (onlyWs) return;
-    // Skip modem echo of the last TX command (ATE1); ATE0 is preferred, this is safety.
+    // Пропустить эхо модема последней команды TX (ATE1); предпочтителен ATE0, это страховка.
     if (_lastTx[0] && strcmp(line, _lastTx) == 0) {
         return;
     }
@@ -27,7 +27,7 @@ void ModemUart::flushInput() {
     uint16_t n = 0;
     while (_serial.available()) {
         (void)_serial.read();
-        // Keep WDT fed even if modem dumps a lot of bytes.
+        // Кормить WDT, даже если модем вываливает много байт.
         if ((++n & 0x3F) == 0) {
             yield();
         }
@@ -41,7 +41,7 @@ void ModemUart::flushTx() {
 void ModemUart::writeRaw(const char* s) {
     if (!s) return;
     _serial.print(s);
-    // No Serial.flush(): blocks long enough to trip WDT under AT load.
+    // Без Serial.flush(): под нагрузкой AT блокировка достаточно длинная, чтобы сработал WDT.
 }
 
 void ModemUart::writeLine(const char* line) {
@@ -49,17 +49,17 @@ void ModemUart::writeLine(const char* line) {
     _serial.print(line);
     _serial.print("\r\n");
     strlcpy(_lastTx, line, sizeof(_lastTx));
-    // Text control-plane only; CIPSEND body uses writeBytes (not logged).
+    // Только текстовая плоскость управления; тело CIPSEND идёт через writeBytes (в лог не пишется).
     logger.log(LogModule::AT, ">> %s\n", line);
-    // No Serial.flush(): blocks long enough to trip WDT under AT load.
+    // Без Serial.flush(): под нагрузкой AT блокировка достаточно длинная, чтобы сработал WDT.
 }
 
 void ModemUart::writeBytes(const uint8_t* data, size_t len) {
     if (!data || len == 0) return;
-    // Chunk CIPSEND payload and poll RX between chunks. A single large write
-    // (status full ~400B) blocks UART long enough for the HW RX FIFO to overflow
-    // mid-+IPD → MQTT PUBLISH truncated (rx_incomplete have≪need).
-    // Payload bytes are intentionally not logged.
+    // Резать нагрузку CIPSEND на куски и между ними опрашивать RX. Одна большая запись
+    // (полный status ~400 Б) держит UART так долго, что аппаратный FIFO RX переполняется
+    // посреди +IPD → PUBLISH MQTT обрезан (rx_incomplete have≪need).
+    // Байты нагрузки в лог намеренно не пишутся.
     constexpr size_t kChunk = 32;
     size_t off = 0;
     while (off < len) {
@@ -81,7 +81,7 @@ void ModemUart::pollRx() {
         const char c = (char)_serial.read();
         if (_byteHandler) _byteHandler(_byteHandlerCtx, c);
         if (_dataMode) {
-            // Binary +IPD / payload path: no line framing, no AT log.
+            // Двоичный путь +IPD / нагрузки: без кадрирования строк и без лога AT.
             if ((++n & 0x3F) == 0) {
                 yield();
             }
@@ -96,8 +96,8 @@ void ModemUart::pollRx() {
             continue;
         }
 
-        // CIPSEND prompt arrives without CRLF — log clearly and do not buffer (avoids
-        // attaching TX-echo / binary to '>' and emitting garbage "lines").
+        // Приглашение CIPSEND приходит без CRLF — ясно писать в лог и не копить (иначе
+        // к '>' прилипнут эхо TX / двоичное и наружу выйдут мусорные «строки»).
         if (c == '>' && _lineLen == 0) {
             logger.log(LogModule::AT, "<< CIPSEND prompt\n");
             if ((++n & 0x3F) == 0) {
@@ -107,14 +107,14 @@ void ModemUart::pollRx() {
         }
 
         if (_lineLen + 1 >= LINE_BUF_SIZE) {
-            // Truncate the line to keep framing intact.
+            // Обрезать строку, чтобы кадрирование не разъехалось.
             _lineBuf[_lineLen] = '\0';
             emitFramedLine_(_lineBuf);
             _lineLen = 0;
         }
         _lineBuf[_lineLen++] = c;
 
-        // Avoid WDT resets when modem dumps bursts (e.g. RX payload, URCs).
+        // Не давать WDT сбросить плату, когда модем вываливает пачки (например, нагрузка RX, URC).
         if ((++n & 0x3F) == 0) {
             yield();
         }

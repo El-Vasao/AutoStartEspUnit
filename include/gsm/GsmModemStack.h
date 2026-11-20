@@ -5,8 +5,8 @@
 #include "modem/AtSession.h"
 #include "modem/Sim800TcpTransport.h"
 
-// Thin aggregator for modem IO + AT session + TCP transport.
-// Keeps ownership/lifetimes explicit and reduces GsmController member clutter.
+// Тонкий агрегатор IO модема, сессии AT и TCP-транспорта.
+// Владение и время жизни явные, меньше полей в GsmController.
 class GsmModemStack {
 public:
     using PumpFn = Sim800ClientAdapter::PumpFn;

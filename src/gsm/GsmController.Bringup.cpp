@@ -1,6 +1,6 @@
 /**
  * @file GsmController.Bringup.cpp
- * @brief Bring-up: `UART_BAUD` + post-boot quiet; без синхронного autobaud в `begin()`; NV UART через `AT+IPR?` в INIT.
+ * @brief Подъём: `UART_BAUD` и тишина после загрузки; без синхронного автоподбора скорости в `begin()`; NV UART через `AT+IPR?` в INIT.
  */
 #include "gsm/GsmController.h"
 

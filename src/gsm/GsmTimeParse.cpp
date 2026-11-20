@@ -18,7 +18,7 @@ int daysInMonth(int y, int m) {
 } // namespace
 
 int64_t daysFromCivil(int year, int month, int day) {
-    // H. Hinnant, "chrono-compatible low-level date algorithms".
+    // H. Hinnant, «низкоуровневые алгоритмы дат, совместимые с chrono».
     const int y = year - (month <= 2 ? 1 : 0);
     const int64_t era = (y >= 0 ? y : y - 399) / 400;
     const int64_t yoe = y - era * 400;

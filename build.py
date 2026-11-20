@@ -601,7 +601,7 @@ class VersionGen:
         if build_type == "debug":
             serial_macro = "#define SERIAL_DEBUG 1\n"
 
-        content = f'''// Auto-generated
+        content = f'''// Сгенерировано автоматически
 #pragma once
 {serial_macro}#define FIRMWARE_VERSION_NUM {self.timestamp}ULL
 #define FIRMWARE_VERSION_STR "{self.version}"

@@ -12,7 +12,7 @@ void GsmController::handleGprsSetup() {
     const uint32_t now = millis();
     if (_lastCommandTime == 0) {
         _gprsCfgStep = 0;
-        // Use SAPBR bearer profile 1 (CIP single-socket stack).
+        // Профиль bearer SAPBR 1 (стек CIP с одним сокетом).
         sendAt("AT+SAPBR=3,1,\"Contype\",\"GPRS\"", nullptr, AwaitKind::OK, Gsm::APN_TIMEOUT_MS);
         return;
     }
@@ -26,7 +26,7 @@ void GsmController::handleGprsSetup() {
             logger.log(LogModule::GsmController, "APN setup failed\n");
             return;
         }
-        // Retry current step.
+        // Повтор текущего шага.
         _lastCommandTime = 0;
         return;
     }
@@ -48,7 +48,7 @@ void GsmController::handleGprsSetup() {
                     if (!sendAt(cmd, nullptr, AwaitKind::OK, Gsm::APN_TIMEOUT_MS)) return;
                     return;
                 }
-                // fallthrough
+                // проход дальше
             case 2:
                 _gprsCfgStep = 3;
                 if (gsmCfg.apn_pass[0]) {
@@ -56,7 +56,7 @@ void GsmController::handleGprsSetup() {
                     if (!sendAt(cmd, nullptr, AwaitKind::OK, Gsm::APN_TIMEOUT_MS)) return;
                     return;
                 }
-                // fallthrough
+                // проход дальше
             default:
                 clearResponse();
                 _retryCount = 0;
@@ -74,7 +74,7 @@ void GsmController::handleGprsSetup() {
             logger.log(LogModule::GsmController, "APN setup failed\n");
             return;
         }
-        // Retry current step.
+        // Повтор текущего шага.
         _lastCommandTime = 0;
     }
 }
@@ -82,8 +82,8 @@ void GsmController::handleGprsSetup() {
 void GsmController::handleGprsAttach() {
     const uint32_t now = millis();
 
-    // Status-first: warm modem / reattach may already have an open bearer with IP.
-    // 0=probe SAPBR=2,1 → 1=open SAPBR=1,1 → 2=re-probe after open fail.
+    // Сначала статус: тёплый модем / reattach уже может иметь открытый bearer с IP.
+    // 0=опрос SAPBR=2,1 → 1=открытие SAPBR=1,1 → 2=повторный опрос после неудачи открытия.
     if (_lastCommandTime == 0) {
         if (_attachProbeStep == 0 || _attachProbeStep == 2) {
             sendAt("AT+SAPBR=2,1", nullptr, AwaitKind::IP, Gsm::GET_IP_TIMEOUT_MS);
@@ -122,7 +122,7 @@ void GsmController::handleGprsAttach() {
             return;
         }
         if (_awaitError || awaitTimedOut(now)) {
-            // Open failed — often "already open"; re-check IP before ERROR.
+            // Открытие не удалось — часто «уже открыт»; проверить IP до ERROR.
             resetAwait();
             clearResponse();
             _attachProbeStep = 2;
@@ -132,7 +132,7 @@ void GsmController::handleGprsAttach() {
         return;
     }
 
-    // _attachProbeStep == 2: re-probe after open fail
+    // _attachProbeStep == 2: повторный опрос после неудачи открытия
     if (_awaitGotIp) {
         resetAwait();
         clearResponse();
@@ -205,7 +205,7 @@ void GsmController::handleGprsGetIp() {
         _retryCount = 0;
         core.getErrorManager().clear(ErrorCode::GSM_APN_FAIL);
         changeState(GsmState::READY);
-        // One-shot diagnostics at READY entry (non-blocking): request CSQ now.
+        // Разовая диагностика при входе в READY (неблокирующая): сразу запросить CSQ.
         updateSignalQuality();
         return;
     }

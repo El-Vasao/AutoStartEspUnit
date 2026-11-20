@@ -166,7 +166,7 @@ static void test_subscribe_and_suback_confirm() {
     g_net->tx.clear();
     TEST_ASSERT_TRUE(g_fsm->subscribe("car/cmd"));
     tick();
-    TEST_ASSERT_TRUE(txContains({0x82, 0x0C, 0x00, 0x01, 0x00, 0x07, 'c', 'a', 'r', '/', 'c', 'm', 'd', 0x00}));
+    TEST_ASSERT_TRUE(txContains({0x82, 0x0C, 0x00, 0x01, 0x00, 0x07, 'c', 'a', 'r', '/', 'c', 'm', 'd', 0x01}));
     TEST_ASSERT_TRUE(g_fsm->isSubscribePending());
     g_net->inject({0x90, 0x03, 0x00, 0x01, 0x00});
     tick();

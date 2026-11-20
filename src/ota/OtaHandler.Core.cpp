@@ -7,6 +7,7 @@
 #include "fs/FsManager.h"
 
 #include <Update.h>
+#include <esp_ota_ops.h>
 
 OtaHandler::OtaHandler() = default;
 
@@ -14,6 +15,7 @@ void OtaHandler::resetStreamState() {
     closeOutFile(false);
     _phase = Phase::Idle;
     _updateBegun = false;
+    _fwCommitted = false;
     _streamDoneOk = false;
     _totalAccepted = 0;
     _hdrHave = 0;
@@ -46,6 +48,17 @@ void OtaHandler::failStream(const char* why) {
     if (_updateBegun) {
         Update.abort();
         _updateBegun = false;
+    }
+    // rollBack() этого ядра берёт следующий слот после boot, а не выполняемый образ.
+    if (_fwCommitted) {
+        const esp_partition_t* running = esp_ota_get_running_partition();
+        const bool restored = running && esp_ota_set_boot_partition(running) == ESP_OK;
+        if (restored) {
+            logger.log(LogModule::OtaHandler, "boot restored to running image\n");
+            _fwCommitted = false;
+        } else {
+            logger.log(LogModule::OtaHandler, "boot restore failed\n");
+        }
     }
     _phase = Phase::Failed;
     _streamDoneOk = false;

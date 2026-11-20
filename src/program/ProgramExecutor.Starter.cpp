@@ -23,7 +23,7 @@ bool ProgramExecutor::isStartBlocked() const {
     const uint16_t blockId = config.getBase().vehicle.start_block_input_id;
     if (blockId == 0) return false;
     const int8_t idx = HwMap::inputIndexById(blockId);
-    // Missing, non-digital or disabled interlock input fails safe: start is blocked.
+    // Нет входа блокировки, он не цифровой или выключен — безопасный отказ: старт запрещён.
     if (idx < 0) return true;
     if (config.getBase().inputs[idx].type != InputType::DIGITAL) return true;
     DigitalInputs& inputs = core.getInputs();

@@ -50,7 +50,7 @@ void AtSession::startNext_(uint32_t nowMs) {
     _deadlineMs = nowMs + (_active.timeoutMs ? _active.timeoutMs : 1);
     _state = State::Waiting;
 
-    // TX text logged in ModemUart::writeLine.
+    // Текст TX пишется в лог в ModemUart::writeLine.
     _uart.writeLine(_active.cmd ? _active.cmd : "");
 }
 
@@ -61,7 +61,7 @@ void AtSession::finish_(bool ok, bool err, bool timeout) {
     _res.tag = _active.tag;
     _state = State::Done;
 
-    // Wire RX is logged in ModemUart; only TIMEOUT has no on-wire response.
+    // RX с линии пишется в лог в ModemUart; только у TIMEOUT нет ответа на линии.
     if (!timeout) return;
     const char* tag = (_active.tag && _active.tag[0]) ? _active.tag : nullptr;
     const char* cmd = (_active.cmd && _active.cmd[0]) ? _active.cmd : "";
@@ -89,7 +89,7 @@ void AtSession::onByte(char c) {
     if ((_active.expectMask & (uint8_t)Expect::Prompt) != 0) {
         if (c == '>') {
             _res.gotPrompt = true;
-            // Prompt is an immediate completion for CIPSEND prelude.
+            // Приглашение сразу завершает прелюдию CIPSEND.
             finish_(true, false, false);
         }
     }
@@ -106,12 +106,12 @@ void AtSession::onLine(const char* line) {
                 strlcpy(_res.capturedLine, line, sizeof(_res.capturedLine));
                 _res.hasCapturedLine = true;
             }
-            // NOTE: do not finish here; many AT commands require final OK/ERROR after the prefix line.
+            // Не завершать здесь: многим командам AT после строки с префиксом нужен итоговый OK/ERROR.
         }
     }
 
     if ((_active.expectMask & (uint8_t)Expect::Ok) != 0) {
-        // SIM800 CIP* final replies are often "CLOSE OK" / "SHUT OK", not bare "OK".
+        // Итоговые ответы SIM800 CIP* часто "CLOSE OK" / "SHUT OK", а не голое "OK".
         if (strcmp(line, "OK") == 0 || strcmp(line, "CLOSE OK") == 0 ||
             strcmp(line, "SHUT OK") == 0) {
             finish_(true, false, false);

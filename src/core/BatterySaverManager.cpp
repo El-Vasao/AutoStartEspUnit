@@ -72,7 +72,7 @@ void BatterySaverManager::update() {
 
     if (voltage < abortThreshold) {
         _lowStartTime = 0;
-        // Cranking itself sags the battery below the abort threshold — never abort the start step.
+        // Сама прокрутка сажает батарею ниже порога отмены — шаг запуска никогда не отменять.
         if (bs.program_id != 0 && _executor.isRunning() &&
             _executor.getCurrentProgramId() == bs.program_id && !_executor.isInStarterStep()) {
             logger.log(LogModule::BatterySaverManager, "Abort program %u: voltage %.2f < abort %.2f\n",
@@ -82,7 +82,7 @@ void BatterySaverManager::update() {
         return;
     }
 
-    // Low-voltage countdown only while idle: a running program (cranking, loads) skews the reading.
+    // Отсчёт низкого напряжения только в простое: работающая программа (прокрутка, нагрузки) искажает измерение.
     if (_executor.isRunning()) {
         _lowStartTime = 0;
         return;

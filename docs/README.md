@@ -30,3 +30,9 @@ One file per `src/<mod>/` directory:
 - [modules/web.md](modules/web.md)
 
 Field worksheet: [modules/gsm_mqtt_field_log.md](modules/gsm_mqtt_field_log.md).
+
+## Отложено
+
+1. LittleFS из колбэков async HTTP. Обработчики ESPAsyncWebServer трогают LittleFS из задачи async TCP. Нужно только копировать байты в RAM и фиксировать через `FlashCommitCoordinator::tick()` в задаче цикла. Файлы: `src/web/WebServer.JsonIngest.cpp`, `src/web/WebServer.RoutesApi.cpp`.
+
+2. `Update.end` после записи хвоста ФС. Не переносить `Update.end` на `streamFinish()`: сессия Update и LittleFS делят flash. Текущая схема: `end` после байтов прошивки, затем запись хвоста UI; при ошибке хвоста восстанавливать загрузочный раздел. Не откладывать задачу «просто перенести `Update.end`».

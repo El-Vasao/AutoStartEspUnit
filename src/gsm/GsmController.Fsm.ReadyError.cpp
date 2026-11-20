@@ -15,12 +15,12 @@ void GsmController::handleReady() {
     }
 
     if (_userRebootRequested) {
-        // Controlled reboot from UI: close bearer (best-effort), then CFUN=1,1 and quiet wait.
+        // Управляемая перезагрузка из UI: закрыть bearer (по возможности), затем CFUN=1,1 и тихая пауза.
         if (_rebootStep == 0) {
             _rebootStep = 1;
             logger.log(LogModule::GsmController, "User requested modem reboot\n");
             if (!sendAt("AT+SAPBR=0,1", "SAPBR", AwaitKind::OK, Gsm::SAPBR_DEACT_TIMEOUT_MS)) {
-                _rebootStep = 0; // retry next tick
+                _rebootStep = 0; // повтор на следующем тике
             }
             return;
         }
@@ -32,7 +32,7 @@ void GsmController::handleReady() {
                 _postLockQuietUntilMs = millis() + Gsm::POST_CFUN_QUIET_MS;
                 _userRebootRequested = false;
                 _rebootStep = 0;
-                // Restart bring-up after reboot.
+                // После перезагрузки снова начать подъём.
                 changeState(GsmState::INIT);
                 return;
             }
@@ -40,20 +40,20 @@ void GsmController::handleReady() {
         }
     }
 
-    // TCP stack recover exhausted — probe/reattach bearer (status-first in GPRS_ATTACH).
+    // Восстановление стека TCP исчерпано — опрос/reattach bearer (сначала статус в GPRS_ATTACH).
     if (_stack.tcp.consumeNeedsBearerReattach()) {
         logger.log(LogModule::GsmController, "TCP stack recover exhausted, requesting reattach\n");
         _reattachRequested = true;
     }
 
-    // Config APN* changed while bearer still open — force Contype/APN rewrite via reattach.
+    // APN* в конфиге сменился при ещё открытом bearer — переписать Contype/APN через reattach.
     if (!_reattachRequested && _apnAppliedValid && !apnMatchesApplied_()) {
         logger.log(LogModule::GsmController, "APN config changed, requesting reattach\n");
         _reattachRequested = true;
     }
 
-    // Resilience: treat PDP DEACT as bearer drop, but treat CLOSED as TCP-level drop.
-    // Both go through the same backoff path as requestReattach (no immediate GPRS_ATTACH).
+    // Устойчивость: PDP DEACT — обрыв bearer, CLOSED — обрыв на уровне TCP.
+    // Оба идут тем же путём паузы, что и requestReattach (без немедленного GPRS_ATTACH).
     if (_pdpDeactSeen) {
         _pdpDeactSeen = false;
         logger.log(LogModule::GsmController, "PDP DEACT seen (URC), requesting reattach\n");
@@ -73,12 +73,12 @@ void GsmController::handleReady() {
             logger.log(LogModule::GsmController, "TCP CLOSED threshold reached, requesting reattach\n");
             _reattachRequested = true;
         }
-        // Otherwise: MQTT/TCP reconnects without SAPBR thrash.
+        // Иначе: MQTT/TCP переподключаются без дёрганья SAPBR.
     }
 
-    // Diagnostics: never poke CSQ/COPS while a TCP socket is up/connecting (shared UART framing).
-    // Time cascade: CCLK is AT-only (ok with MQTT CIP); yield to CIPSEND by soft-missing lite.
-    // Heavy CIPGSMLOC/CNTP: defer reattach until Idle (do not tear READY mid-cascade).
+    // Диагностика: не трогать CSQ/COPS, пока сокет TCP поднят или подключается (общая нарезка UART).
+    // Каскад времени: CCLK — только AT (допустим с MQTT CIP); уступить CIPSEND мягким промахом лёгкого пути.
+    // Тяжёлые CIPGSMLOC/CNTP: отложить reattach до Idle (не рвать READY посреди каскада).
     const uint32_t now = millis();
     if (_timeStep != TimeStep::Idle) {
         if (_timeCclkOnly && _stack.tcp.isTcpEpochBusy()) {
@@ -91,7 +91,7 @@ void GsmController::handleReady() {
 
     if (_reattachRequested) {
         if (timeHeavySyncBusy()) {
-            // Finish CIPSHUT/CIPGSMLOC/CNTP before leaving READY.
+            // Закончить CIPSHUT/CIPGSMLOC/CNTP до ухода из READY.
             return;
         }
         if (_timeCclkOnly) {
@@ -101,7 +101,7 @@ void GsmController::handleReady() {
             leaveReadyForReattach_("ready");
             return;
         }
-        // Cooldown: stay READY, keep request pending, continue sparse diag below.
+        // Пауза: оставаться в READY, запрос висит, ниже — редкая диагностика.
     }
 
     if (!_stack.tcp.isTcpEpochBusy() && !tcpSocketActive()) {
@@ -119,12 +119,12 @@ void GsmController::handleReady() {
 void GsmController::handleError() {
     const uint32_t now = millis();
 
-    // Cooldown/backoff: do nothing until allowed time.
+    // Пауза: ничего не делать до разрешённого времени.
     if (_cooldownUntilMs != 0 && (int32_t)(now - _cooldownUntilMs) < 0) {
         return;
     }
 
-    // If we scheduled a restart and cooldown is over, do it now.
+    // Если перезапуск запланирован и пауза прошла — выполнить сейчас.
     if (_restartPending) {
         _restartPending = false;
         _errorRecoveryCmdPending = false;
@@ -132,7 +132,7 @@ void GsmController::handleError() {
         return;
     }
 
-    // Exhausted full L1–L4 cycles: sticky fail, rare retries until UI modem reboot / READY.
+    // Полные циклы L1–L4 исчерпаны: липкий сбой, редкие повторы до перезагрузки модема из UI / READY.
     if (_errorRecoveryCycles >= Gsm::ERROR_RECOVERY_MAX_CYCLES) {
         if (core.getErrorManager().get() != ErrorCode::GSM_NO_RESPONSE) {
             core.getErrorManager().set(ErrorCode::GSM_NO_RESPONSE);
@@ -141,13 +141,13 @@ void GsmController::handleError() {
                    (unsigned)_errorRecoveryCycles,
                    (unsigned)(Gsm::ERROR_RECOVERY_EXHAUSTED_MS / 1000UL));
         _cooldownUntilMs = now + Gsm::ERROR_RECOVERY_EXHAUSTED_MS;
-        _errorRecoveryCycles = 0; // allow another slow round after the long wait
+        _errorRecoveryCycles = 0; // ещё один медленный круг после долгого ожидания
         _recoveryLevel = 1;
         _restartPending = true;
         return;
     }
 
-    // Bring-up timebox: escalate recovery if we are stuck too long.
+    // Окно времени подъёма: усилить восстановление, если застряли слишком долго.
     const uint32_t bringupAge = (now - _bringupStartMs);
     if (bringupAge > Gsm::BRINGUP_ESCALATE_MS && _recoveryLevel < 2) {
         _recoveryLevel = 2;
@@ -159,7 +159,7 @@ void GsmController::handleError() {
         ev(21, _recoveryLevel);
     }
 
-    // L1: cheap FSM restart.
+    // L1: дешёвый перезапуск FSM.
     if (_recoveryLevel == 1) {
         logger.log(LogModule::GsmController, "Recovering (level 1): restart FSM\n");
         _cooldownUntilMs = now + Gsm::ERROR_RECOVERY_DELAY_MS;
@@ -168,14 +168,14 @@ void GsmController::handleError() {
         return;
     }
 
-    // L2: reset TCP/IP stack (CIPSHUT), wait for bus idle, then arm restart.
+    // L2: сброс стека TCP/IP (CIPSHUT), ждать свободную шину, затем запланировать перезапуск.
     if (_recoveryLevel == 2) {
         if (!_errorRecoveryCmdPending) {
             logger.log(LogModule::GsmController, "Recovering (level 2): CIPSHUT\n");
             _stack.tcp.stop("recover");
             if (!_stack.at.enqueueHigh(
                     { "AT+CIPSHUT", Sim800Tcp::CIPSHUT_TIMEOUT_MS, atExpectMask(AtSession::Expect::Ok), nullptr, "CIPSHUT" })) {
-                return; // retry enqueue next tick
+                return; // повтор постановки в очередь на следующем тике
             }
             _errorRecoveryCmdPending = true;
             ev(22);
@@ -191,7 +191,7 @@ void GsmController::handleError() {
         return;
     }
 
-    // L3: bearer reset (SAPBR close), wait for result, then arm restart.
+    // L3: сброс bearer (закрытие SAPBR), ждать результат, затем запланировать перезапуск.
     if (_recoveryLevel == 3) {
         if (!_errorRecoveryCmdPending) {
             logger.log(LogModule::GsmController, "Recovering (level 3): SAPBR reset\n");
@@ -215,7 +215,7 @@ void GsmController::handleError() {
         return;
     }
 
-    // L4: CFUN reset, then restart — counts as one full recovery cycle.
+    // L4: сброс CFUN, затем перезапуск — считается одним полным циклом восстановления.
     logger.log(LogModule::GsmController, "Recovering (level 4): CFUN reset (cycle %u/%u)\n",
                (unsigned)(_errorRecoveryCycles + 1), (unsigned)Gsm::ERROR_RECOVERY_MAX_CYCLES);
     if (!_stack.at.enqueueHigh(

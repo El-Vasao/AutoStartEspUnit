@@ -34,7 +34,7 @@ public:
     void suspend();
 
 private:
-    /// Drain MQTT disconnect + CIP idle. Returns false if still busy (retry next service).
+    /// Слить отключение MQTT и простой CIP. false, если ещё занято (повтор на следующем service).
     bool drainMqttDisconnect_();
 
     GsmController* _gsm{nullptr};
@@ -43,13 +43,13 @@ private:
     TimeSyncManager* _timeSync{nullptr};
     bool _gsmStarted{false};
     bool _mqttStarted{false};
-    /// One-shot settle after power-on / first service before gsm.begin().
+    /// Одноразовая пауза settle после включения питания / первого service до gsm.begin().
     bool _bootSettlePending{true};
     uint32_t _bootSettleUntilMs{0};
     uint32_t _lastSettleLogMs{0};
     uint32_t _lastReattachRequestMs{0};
     uint8_t _lastLoggedFailStreak{0};
     bool _loggedBootNtpWait{false};
-    /// Latched after MQTT Connected with failStreak==0 → gsm.clearReattachBackoff().
+    /// Защёлка после MQTT Connected при failStreak==0 → gsm.clearReattachBackoff().
     bool _mqttStableNoted{false};
 };

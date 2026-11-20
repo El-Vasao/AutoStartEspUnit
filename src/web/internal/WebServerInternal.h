@@ -31,7 +31,7 @@ static constexpr size_t kJsonBufferedMaxBytes = JsonBytes::Web::BOOTSTRAP_JSON_M
 
 using JsonEmitFn = void (*)(Print&);
 
-/** Print that writes into a fixed heap/stack buffer; overflow sets a flag. */
+/** Print, который пишет в фиксированный буфер кучи или стека; переполнение поднимает флаг. */
 class BufferingPrint final : public Print {
 public:
     BufferingPrint(uint8_t* out, size_t cap) : out_(out), cap_(cap), len_(0), overflow_(false) {}
@@ -116,7 +116,7 @@ static inline bool parseUint32Param(AsyncWebServerRequest* request, const char* 
     return true;
 }
 
-// JSON by contract is always served without gzip.
+// JSON по контракту всегда отдаётся без gzip.
 static inline bool sendJsonFromFs(AsyncWebServerRequest* request, const char* path,
                                   const char* cacheControl) {
     if (!path || path[0] != '/') {
@@ -136,8 +136,8 @@ static inline bool sendJsonFromFs(AsyncWebServerRequest* request, const char* pa
 }
 
 /**
- * Emit JSON once into a heap buffer, then send (AsyncWebServer copies into response).
- * Cap keeps SoftAP responses bounded; raise if a new endpoint needs a larger body.
+ * Один раз собрать JSON в буфер кучи и отправить (AsyncWebServer копирует его в ответ).
+ * Потолок держит ответы SoftAP ограниченными; поднять, если новому эндпоинту нужно большее тело.
  */
 static inline bool sendJsonBuffered(AsyncWebServerRequest* request, JsonEmitFn emit,
                                     size_t maxBytes = kJsonBufferedMaxBytes) {
@@ -167,11 +167,6 @@ static inline bool sendJsonBuffered(AsyncWebServerRequest* request, JsonEmitFn e
     addNoCacheHeaders(resp);
     request->send(resp);
     return true;
-}
-
-/** Alias kept for older call sites. */
-static inline bool sendJsonResponse(AsyncWebServerRequest* request, JsonEmitFn emit) {
-    return sendJsonBuffered(request, emit);
 }
 
 static inline void sendBusy(AsyncWebServerRequest* request) {

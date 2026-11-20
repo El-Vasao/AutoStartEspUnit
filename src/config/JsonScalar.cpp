@@ -9,7 +9,7 @@
 namespace json_scalar {
 
 namespace {
-/// Whole-string decimal without sign or whitespace that fits uint32.
+/// Десятичное на всю строку, без знака и пробелов, умещающееся в uint32.
 bool readUnsigned(const char* v, uint32_t& out) {
     if (!v || v[0] < '0' || v[0] > '9') return false;
     errno = 0;

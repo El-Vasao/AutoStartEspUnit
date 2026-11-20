@@ -1,7 +1,5 @@
 #include "mqtt/MqttStatusBuilder.h"
 
-#include "common/Fnv1a.h"
-
 #include "common/Constants.h"
 #include "common/JsonEscape.h"
 #include "common/Pins.h"
@@ -31,7 +29,7 @@ inline bool lastErrChanged(const StatusSnapshot& cur, const StatusSnapshot& prev
 }
 
 
-/// Emit `last_err` array value only (key printed by caller). No-op if empty.
+/// Пишет только значение массива `last_err` (ключ печатает вызывающий). Если пусто — ничего не делает.
 inline void printLastErrArrayValue(Print& p, const StatusSnapshot& s) {
     p.print('[');
     for (uint8_t i = 0; i < s.lastErrCount && i < ErrorHistory::CAPACITY; i++) {
@@ -51,25 +49,14 @@ inline void printTempSensorObject(Print& p, const StatusSnapshot::TempSensor& ts
     p.print('{');
     bool sc = false;
     comma(p, &sc);
-    p.print("\"valid\":");
+    p.print("\"ok\":");
     p.print(ts.valid ? "true" : "false");
-    comma(p, &sc);
-    p.print("\"lastMs\":");
-    p.print(static_cast<unsigned long>(ts.lastMs));
     comma(p, &sc);
     p.print("\"t\":");
     if (ts.valid)
         p.print(ts.t);
     else
         p.print("null");
-    p.print('}');
-}
-
-inline void printCsqObject(Print& p, const StatusSnapshot& s) {
-    p.print("\"csq\":{\"rssi\":");
-    p.print(static_cast<long>(s.csqRssi));
-    p.print(",\"ber\":");
-    p.print(static_cast<long>(s.csqBer));
     p.print('}');
 }
 
@@ -86,44 +73,40 @@ inline void printTimeObject(Print& p, const StatusSnapshot& s) {
     p.print("\"stale\":");
     p.print(s.timeStale ? "true" : "false");
     comma(p, &c);
-    p.print("\"tzOffsetHours\":");
+    p.print("\"tz\":");
     p.print(static_cast<long>(s.tzOffsetHours));
-    comma(p, &c);
-    p.print("\"timeSource\":\"");
-    p.print(s.timeSource);
-    p.print('"');
     p.print('}');
 }
 
 inline bool csqChanged(const StatusSnapshot& cur, const StatusSnapshot& prev) {
-    return cur.csqRssi != prev.csqRssi || cur.csqBer != prev.csqBer;
+    return cur.csqRssi != prev.csqRssi;
 }
 
 inline bool timeMetaChanged(const StatusSnapshot& cur, const StatusSnapshot& prev) {
     if (cur.timeSynced != prev.timeSynced) return true;
     if (cur.timeStale != prev.timeStale) return true;
     if (cur.tzOffsetHours != prev.tzOffsetHours) return true;
-    if (strcmp(cur.timeSource, prev.timeSource) != 0) return true;
     return false;
 }
 
-bool voltageChanged(const StatusSnapshot& cur, const StatusSnapshot& prev) {
+bool voltageChanged(const StatusSnapshot& cur, const StatusSnapshot& prev, float eps) {
     if (cur.voltageValid != prev.voltageValid) return true;
     if (!cur.voltageValid) return false;
-    return floatChanged(cur.voltage, prev.voltage, JsonBytes::Mqtt::STATUS_VOLTAGE_EPS);
+    return floatChanged(cur.voltage, prev.voltage, eps);
 }
 
-bool tempSensorChanged(const StatusSnapshot::TempSensor& cur, const StatusSnapshot::TempSensor& prev) {
+bool tempSensorChanged(const StatusSnapshot::TempSensor& cur, const StatusSnapshot::TempSensor& prev,
+                       float eps) {
     if (cur.id != prev.id) return true;
     if (!cur.id) return false;
     if (cur.valid != prev.valid) return true;
     if (!cur.valid) return false;
-    return floatChanged(cur.t, prev.t, JsonBytes::Mqtt::STATUS_TEMP_EPS);
+    return floatChanged(cur.t, prev.t, eps);
 }
 
-bool anyTempChanged(const StatusSnapshot& cur, const StatusSnapshot& prev) {
+bool anyTempChanged(const StatusSnapshot& cur, const StatusSnapshot& prev, float eps) {
     for (int i = 0; i < HardwareLimits::SENSORS; i++) {
-        if (tempSensorChanged(cur.tempSensors[i], prev.tempSensors[i])) return true;
+        if (tempSensorChanged(cur.tempSensors[i], prev.tempSensors[i], eps)) return true;
     }
     return false;
 }
@@ -252,29 +235,26 @@ bool mqttStatusHasSignificantChanges(const StatusSnapshot& cur, const StatusSnap
                                      const BaseConfig& cfg) {
     if (strcmp(cur.modeName, prev.modeName) != 0) return true;
     if (timeMetaChanged(cur, prev)) return true;
-    if (voltageChanged(cur, prev)) return true;
+    if (voltageChanged(cur, prev, JsonBytes::Mqtt::STATUS_VOLTAGE_EPS)) return true;
     if (cur.engineRunning != prev.engineRunning) return true;
     if (anyInputChanged(cur, prev)) return true;
     if (anyRelayChanged(cur, prev)) return true;
-    if (anyTempChanged(cur, prev)) return true;
+    if (anyTempChanged(cur, prev, JsonBytes::Mqtt::STATUS_TEMP_EPS)) return true;
     if (csqChanged(cur, prev)) return true;
     if (programIdsChanged(cur, prev)) return true;
     if (timerRemainingChanged(cur, prev)) return true;
     if (cur.thermostatRuntime != prev.thermostatRuntime) return true;
     if (cur.batterySaverRuntime != prev.batterySaverRuntime) return true;
     if (anyTriggerChanged(cur, prev, cfg)) return true;
-    if (freeHeapChanged(cur, prev)) return true;
     if (lastErrChanged(cur, prev)) return true;
     if (cur.lastErrCount > 0) return true;
-    if (cur.programsRev != prev.programsRev || cur.hwRev != prev.hwRev) return true;
-    // Epoch / uptime ticks alone are not significant.
+    (void)freeHeapChanged;
     return false;
 }
 
 bool mqttStatusHasEdgeChanges(const StatusSnapshot& cur, const StatusSnapshot& prev,
                               const BaseConfig& cfg) {
     if (strcmp(cur.modeName, prev.modeName) != 0) return true;
-    if (timeMetaChanged(cur, prev)) return true;
     if (cur.engineRunning != prev.engineRunning) return true;
     if (anyInputChanged(cur, prev)) return true;
     if (anyRelayChanged(cur, prev)) return true;
@@ -282,18 +262,11 @@ bool mqttStatusHasEdgeChanges(const StatusSnapshot& cur, const StatusSnapshot& p
     if (cur.thermostatRuntime != prev.thermostatRuntime) return true;
     if (cur.batterySaverRuntime != prev.batterySaverRuntime) return true;
     if (anyTriggerChanged(cur, prev, cfg)) return true;
+    if (voltageChanged(cur, prev, JsonBytes::Mqtt::EDGE_VOLTAGE_EPS)) return true;
+    if (anyTempChanged(cur, prev, JsonBytes::Mqtt::EDGE_TEMP_EPS)) return true;
     if (lastErrChanged(cur, prev)) return true;
     if (cur.lastErrCount > 0) return true;
-    if (cur.programsRev != prev.programsRev || cur.hwRev != prev.hwRev) return true;
     return false;
-}
-
-static void printRevObject(Print& p, const StatusSnapshot& s) {
-    p.print("{\"programs\":\"");
-    writeFnv1a32Hex(p, s.programsRev);
-    p.print("\",\"hw\":\"");
-    writeFnv1a32Hex(p, s.hwRev);
-    p.print("\"}");
 }
 
 void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p) {
@@ -302,6 +275,10 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
 
     comma(p, &c);
     p.print("\"full\":true");
+
+    comma(p, &c);
+    p.print("\"seq\":");
+    p.print(static_cast<unsigned long>(s.seq));
 
     comma(p, &c);
     p.print("\"uptime\":");
@@ -317,7 +294,7 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
     printTimeObject(p, s);
 
     comma(p, &c);
-    p.print("\"hw\":{");
+    p.print("\"io\":{");
     {
         bool h = false;
         comma(p, &h);
@@ -328,24 +305,23 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
             p.print("null");
         }
         comma(p, &h);
-        p.print("\"engineRunning\":");
+        p.print("\"engine\":");
         p.print(s.engineRunning ? "true" : "false");
         comma(p, &h);
-        p.print("\"inputsById\":");
+        p.print("\"inputs\":");
         printInputsByIdFull(p, s);
         comma(p, &h);
-        p.print("\"relaysById\":");
+        p.print("\"relays\":");
         printRelaysByIdFull(p, s);
         comma(p, &h);
-        p.print("\"tempSensorsById\":");
+        p.print("\"temps\":");
         printTempSensorsByIdFull(p, s);
     }
     p.print('}');
 
     comma(p, &c);
-    p.print("\"radio\":{");
-    printCsqObject(p, s);
-    p.print('}');
+    p.print("\"csq\":");
+    p.print(static_cast<long>(s.csqRssi));
 
     comma(p, &c);
     p.print("\"program\":{");
@@ -389,24 +365,11 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
     }
     p.print('}');
 
-    comma(p, &c);
-    p.print("\"diag\":{");
-    {
-        bool d = false;
-        comma(p, &d);
-        p.print("\"freeHeap\":");
-        p.print(static_cast<unsigned long>(s.freeHeap));
-        if (s.lastErrCount > 0) {
-            comma(p, &d);
-            p.print("\"last_err\":");
-            printLastErrArrayValue(p, s);
-        }
+    if (s.lastErrCount > 0) {
+        comma(p, &c);
+        p.print("\"err\":");
+        printLastErrArrayValue(p, s);
     }
-    p.print('}');
-
-    comma(p, &c);
-    p.print("\"rev\":");
-    printRevObject(p, s);
 
     p.print('}');
 }
@@ -420,8 +383,14 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
     p.print("\"full\":false");
 
     comma(p, &c);
-    p.print("\"uptime\":");
-    p.print(static_cast<unsigned long>(cur.uptimeSec));
+    p.print("\"seq\":");
+    p.print(static_cast<unsigned long>(cur.seq));
+
+    if (cur.uptimeSec != prev.uptimeSec) {
+        comma(p, &c);
+        p.print("\"uptime\":");
+        p.print(static_cast<unsigned long>(cur.uptimeSec));
+    }
 
     if (strcmp(cur.modeName, prev.modeName) != 0) {
         comma(p, &c);
@@ -436,14 +405,14 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
         printTimeObject(p, cur);
     }
 
-    const bool hwVolt = voltageChanged(cur, prev);
+    const bool hwVolt = voltageChanged(cur, prev, JsonBytes::Mqtt::STATUS_VOLTAGE_EPS);
     const bool hwEng = cur.engineRunning != prev.engineRunning;
     const bool hwIn = anyInputChanged(cur, prev);
     const bool hwRel = anyRelayChanged(cur, prev);
-    const bool hwTemp = anyTempChanged(cur, prev);
+    const bool hwTemp = anyTempChanged(cur, prev, JsonBytes::Mqtt::STATUS_TEMP_EPS);
     if (hwVolt || hwEng || hwIn || hwRel || hwTemp) {
         comma(p, &c);
-        p.print("\"hw\":{");
+        p.print("\"io\":{");
         bool h = false;
         if (hwVolt) {
             comma(p, &h);
@@ -456,12 +425,12 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
         }
         if (hwEng) {
             comma(p, &h);
-            p.print("\"engineRunning\":");
+            p.print("\"engine\":");
             p.print(cur.engineRunning ? "true" : "false");
         }
         if (hwIn) {
             comma(p, &h);
-            p.print("\"inputsById\":{");
+            p.print("\"inputs\":{");
             bool ik = false;
             for (int i = 0; i < HardwareLimits::INPUTS; i++) {
                 if (cur.inputState[i] == prev.inputState[i]) continue;
@@ -475,7 +444,7 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
         }
         if (hwRel) {
             comma(p, &h);
-            p.print("\"relaysById\":{");
+            p.print("\"relays\":{");
             bool rk = false;
             for (int i = 0; i < HardwareLimits::RELAYS; i++) {
                 if (cur.relayState[i] == prev.relayState[i]) continue;
@@ -489,11 +458,12 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
         }
         if (hwTemp) {
             comma(p, &h);
-            p.print("\"tempSensorsById\":{");
+            p.print("\"temps\":{");
             bool sk = false;
             for (int i = 0; i < HardwareLimits::SENSORS; i++) {
-                if (!tempSensorChanged(cur.tempSensors[i], prev.tempSensors[i])) continue;
-                // Id became 0: omit from delta (consumer keeps last known; rare remapping).
+                if (!tempSensorChanged(cur.tempSensors[i], prev.tempSensors[i],
+                                       JsonBytes::Mqtt::STATUS_TEMP_EPS))
+                    continue;
                 if (!cur.tempSensors[i].id) continue;
                 comma(p, &sk);
                 char keybuf[16];
@@ -508,9 +478,8 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
 
     if (csqChanged(cur, prev)) {
         comma(p, &c);
-        p.print("\"radio\":{");
-        printCsqObject(p, cur);
-        p.print('}');
+        p.print("\"csq\":");
+        p.print(static_cast<long>(cur.csqRssi));
     }
 
     const bool progIds = programIdsChanged(cur, prev);
@@ -618,29 +587,10 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
         p.print('}');
     }
 
-    const bool diagHeap = freeHeapChanged(cur, prev);
-    const bool diagErr = cur.lastErrCount > 0;
-    if (diagHeap || diagErr) {
+    if (cur.lastErrCount > 0) {
         comma(p, &c);
-        p.print("\"diag\":{");
-        bool d = false;
-        if (diagHeap) {
-            comma(p, &d);
-            p.print("\"freeHeap\":");
-            p.print(static_cast<unsigned long>(cur.freeHeap));
-        }
-        if (diagErr) {
-            comma(p, &d);
-            p.print("\"last_err\":");
-            printLastErrArrayValue(p, cur);
-        }
-        p.print('}');
-    }
-
-    if (cur.programsRev != prev.programsRev || cur.hwRev != prev.hwRev) {
-        comma(p, &c);
-        p.print("\"rev\":");
-        printRevObject(p, cur);
+        p.print("\"err\":");
+        printLastErrArrayValue(p, cur);
     }
 
     p.print('}');

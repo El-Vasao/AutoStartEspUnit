@@ -13,7 +13,7 @@ void WebServer::setupSseEndpointRoutes_() {
     events.onConnect([](AsyncEventSourceClient* client) {
         (void)client;
         webServer.refreshSseClientCount();
-        // Cap reached: reset all so the newest browser can attach (avoids stuck zombies).
+        // Потолок достигнут: сбросить всех, чтобы самый новый браузер мог подключиться (чтобы не залипали зомби).
         if (webServer.sseClientCount > WebSseLimits::MAX_SSE_CLIENTS) {
             logger.logSerialOnly(LogModule::WebServer, "SSE over cap (have=%u lim=%u) — keep existing clients\n",
                                  (unsigned)webServer.sseClientCount,
@@ -33,7 +33,7 @@ void WebServer::setupSseEndpointRoutes_() {
                              (unsigned)WiFi.softAPgetStationNum(),
                              (unsigned)espHalFreeHeap(),
                              (unsigned)espHalMaxBlock(),
-                             (unsigned)0 /* heap frag N/A on ESP32 */,
+                             (unsigned)0 /* фрагментация кучи неприменима на ESP32 */,
                              core.getGSM().getStateString());
     });
     server.addHandler(&events);

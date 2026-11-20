@@ -4,7 +4,7 @@
  *
  * Память/устойчивость:
  * - Горячий цикл `update()` не должен аллоцировать heap.
- * - OneWire/Dallas живут в этом TU (публичный заголовок их не тянет).
+ * - OneWire/Dallas живут в этом файле (публичный заголовок их не тянет).
  * - Чтение DS18B20 асинхронное (конверсия занимает время) — не блокируем loop.
  *
  * Запрещено:
@@ -13,6 +13,7 @@
  */
 #include "io/SensorsController.h"
 #include "config/Config.h"
+#include "config/SensorRomResolve.h"
 #include "core/Core.h"
 #include "core/ErrorManager.h"
 #include "common/Logger.h"
@@ -30,7 +31,7 @@ struct SensorsOwBackend {
     SensorsOwBackend() : bus(Pin::ONEWIRE), dallas(&bus) {}
 };
 
-// Single-controller product: Ow stack is TU-local (keeps include/io/SensorsController.h thin).
+// Изделие с одним контроллером: стек Ow локален для этого файла (заголовок include/io/SensorsController.h остаётся тонким).
 SensorsOwBackend& owBackend() {
     static SensorsOwBackend ow;
     return ow;
@@ -74,7 +75,7 @@ void SensorsController::begin() {
     logger.log(LogModule::SensorsController, "begin\n");
     pinMode(Pin::ONEWIRE, INPUT);
 
-    // Battery divider outputs ~0–1 V into ADC; 0 dB atten ≈ 0–1.1 V full-scale on ESP32-C3.
+    // Делитель АКБ даёт на АЦП ~0–1 В; ослабление 0 дБ ≈ полная шкала 0–1.1 В на ESP32-C3.
     analogSetAttenuation(ADC_0db);
     analogReadResolution(Adc::RESOLUTION_BITS);
 
@@ -134,12 +135,10 @@ void SensorsController::updateTemperatures() {
         for (uint8_t i = 0; i < _sensorCount; i++) {
             float temp = dallas.getTempC(_foundAddresses[i]);
             if (temp != DS18B20::DISCONNECTED) {
-                // Apply per-sensor calibration by ROM match (not by slot index).
+                // Калибровка датчика по совпадению ROM (не по индексу слота).
                 float coeff = 0.0f;
                 char romStr[TextBytes::Sensors::ADDR_STRING];
-                snprintf(romStr, sizeof(romStr), "%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
-                         _foundAddresses[i][0], _foundAddresses[i][1], _foundAddresses[i][2], _foundAddresses[i][3],
-                         _foundAddresses[i][4], _foundAddresses[i][5], _foundAddresses[i][6], _foundAddresses[i][7]);
+                formatSensorRomString(_foundAddresses[i], romStr, sizeof(romStr));
                 for (uint8_t j = 0; j < HardwareLimits::SENSORS; j++) {
                     const char* cfgRom = config.getBase().sensors[j].rom;
                     if (cfgRom[0] == '\0') continue;
@@ -154,7 +153,7 @@ void SensorsController::updateTemperatures() {
                 _sensorData[i].valid = false;
             }
             _sensorData[i].lastReadTime = now;
-            // Short yield between sensors so SoftAP/lwIP stay responsive.
+            // Короткая уступка между датчиками, чтобы SoftAP/lwIP оставались отзывчивыми.
             yield();
         }
         _conversionInProgress = false;
@@ -208,9 +207,7 @@ int8_t SensorsController::findSensorIndexByRom(const char* rom) const {
     if (!rom || !rom[0]) return -1;
     for (uint8_t i = 0; i < _sensorCount; i++) {
         char romStr[TextBytes::Sensors::ADDR_STRING];
-        snprintf(romStr, sizeof(romStr), "%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
-                 _foundAddresses[i][0], _foundAddresses[i][1], _foundAddresses[i][2], _foundAddresses[i][3],
-                 _foundAddresses[i][4], _foundAddresses[i][5], _foundAddresses[i][6], _foundAddresses[i][7]);
+        formatSensorRomString(_foundAddresses[i], romStr, sizeof(romStr));
         if (strcmp(rom, romStr) == 0) {
             return (int8_t)i;
         }
@@ -232,9 +229,7 @@ uint32_t SensorsController::getLastTemperatureTime(uint8_t index) const {
 void SensorsController::printAllAddresses() const {
     for (uint8_t i = 0; i < _sensorCount; i++) {
         char addrStr[TextBytes::Sensors::ADDR_STRING];
-        snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X",
-                 _foundAddresses[i][0], _foundAddresses[i][1], _foundAddresses[i][2], _foundAddresses[i][3],
-                 _foundAddresses[i][4], _foundAddresses[i][5], _foundAddresses[i][6], _foundAddresses[i][7]);
+        formatSensorRomString(_foundAddresses[i], addrStr, sizeof(addrStr));
         logger.log(LogModule::SensorsController, "  Sensor %u: %s\n", i, addrStr);
     }
 }
@@ -252,8 +247,8 @@ void SensorsController::updateVoltage() {
     _voltageIndex = (_voltageIndex + 1) % Adc::SAMPLES;
     if (_adcFillCount < Adc::SAMPLES) _adcFillCount++;
 
-    // Average only filled samples — dividing a sparse buffer by SAMPLES
-    // understates raw and blows up calibrate (coeff = V / raw).
+    // Усреднять только заполненные выборки — деление редкого буфера на SAMPLES
+    // занижает сырое и раздувает калибровку (coeff = V / raw).
     uint32_t sum = 0;
     const uint8_t n = _adcFillCount;
     if (n >= Adc::SAMPLES) {
@@ -269,7 +264,7 @@ void SensorsController::updateVoltage() {
     _voltageData.valid = (n > 0) && !rail;
     _voltageData.lastReadTime = now;
 
-    // Sustained rail/open ADC after the filter window is full — sticky diagnostic only.
+    // Устойчивый упор/обрыв АЦП после полного окна фильтра — только липкая диагностика.
     if (_adcFillCount >= Adc::SAMPLES) {
         const bool saturated = (raw == 0) || (raw >= (uint16_t)Adc::MAX_RAW);
         if (saturated) {
@@ -284,7 +279,7 @@ void SensorsController::updateVoltage() {
 void SensorsController::resetVoltageWindow() {
     _voltageIndex = 0;
     _adcFillCount = 0;
-    // Force a sample on the next update() so the fresh window starts filling immediately.
+    // Принудить выборку на следующем update(), чтобы новое окно начало заполняться сразу.
     _lastVoltageRead = millis() - Timing::VOLTAGE_READ_INTERVAL_IDLE_MS;
 }
 
@@ -293,7 +288,7 @@ float SensorsController::calculateVoltage(uint16_t raw) const {
 }
 
 bool SensorsController::computeAdcVoltageCoeff(float measuredVolts, float& outCoeff) const {
-    // Near-zero raw (sparse window / open pin) would yield a huge coeff.
+    // Почти нулевое сырое (редкое окно / обрыв пина) дало бы огромный коэффициент.
     constexpr uint16_t kMinAdcRawForCalibrate = 50;
     if (!(measuredVolts > 0.0f) || !isVoltageWindowFull() || _lastAdcAvg < kMinAdcRawForCalibrate) {
         return false;

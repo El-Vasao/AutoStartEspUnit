@@ -10,10 +10,10 @@
  * - Подсистема web чувствительна к heap/очередям lwIP. Любые изменения должны учитывать
  *   ограничения `WebSseLimits::*` и избегать `String`-чёрна в горячих путях.
  *
- * Compile fanout:
+ * Разрастание компиляции:
  * - Публичный заголовок пока включает `ESPAsyncWebServer.h` / `WiFi.h`, потому что
- *   `AsyncWebServer` и `AsyncEventSource` — члены класса. Thin-header (pimpl runtime-only)
- *   — отдельный follow-up; не блокирует остальные P1-работы.
+ *   `AsyncWebServer` и `AsyncEventSource` — члены класса. Тонкий заголовок (pimpl только для runtime)
+ *   — отдельная отложенная работа; не блокирует остальные работы P1.
  *
  * Продукт (режим NORMAL):
  * - В `CoreMode::NORMAL` веб-сервер и доступный пользователю UI (HTTP + SSE) считаются **всегда включёнными**;
@@ -40,7 +40,7 @@ struct AppPorts;
  * Запускает точку доступа, обрабатывает HTTP-запросы и управляет SSE-соединениями.
  *
  * Важно:
- * - Сервер предполагается “локальным” (AP/captive portal). Сейчас нет авторизации.
+ * - Сервер предполагается “локальным” (AP, перехватывающий портал). Сейчас нет авторизации.
  * - SSE используется как транспорт для UI (лог + статус).
  * - Тяжёлые ответы (JSON) компактные: фиксированные буферы, без `String` на горячем пути.
  * - В NORMAL веб не считается опциональным модулем — см. блок «Продукт» выше.
@@ -49,7 +49,7 @@ class WebServer {
 public:
     WebServer();
 
-    /// Wired by Core::begin (composition root). Mutating API uses AppPorts, not global core getters.
+    /// Подключается в Core::begin (корень композиции). Изменяющий API идёт через AppPorts, без глобальных геттеров core.
     void setAppPorts(const AppPorts* ports) { ports_ = ports; }
     const AppPorts* appPorts() const { return ports_; }
 
@@ -74,9 +74,6 @@ public:
     // Активен ли сервер (AP + HTTP)
     bool isActive() const;
 
-    // IP-адрес точки доступа
-    IPAddress getAPIP() const;
-
     // Отправка лога всем SSE-клиентам
     void broadcastLog(const char* message);
 
@@ -93,12 +90,12 @@ public:
 
     uint16_t activeUiSessionCount() const { return activeUiSessionCount_; }
 
-    /// Timestamp (millis) of last observed UI activity (heartbeat/touch).
-    /// Used for AP timeout logic in NORMAL mode.
+    /// Метка времени (millis) последней замеченной активности UI (heartbeat/касание).
+    /// Нужна логике таймаута AP в режиме NORMAL.
     uint32_t lastUiActivityMs() const { return lastUiActivityMs_; }
 
     /**
-     * @brief True when any flash operation is pending.
+     * @brief true, если любая операция flash ещё не завершена.
      *
      * Контракт (LittleFS):
      * - когда возвращает true, любые новые операции записи/удаления должны быть отвергнуты/отложены;
@@ -107,7 +104,7 @@ public:
      *
      * Архитектура:
      * - метод намеренно реализован в `.cpp`, чтобы публичный заголовок web-подсистемы
-     *   не тянул `FsManager.h` (снижаем связанность и compile fanout).
+     *   не тянул `FsManager.h` (снижаем связанность и разрастание компиляции).
      */
     bool isFlashBusy() const;
 
@@ -159,7 +156,7 @@ private:
     char lastApPass[TextBytes::Wifi::PASSWORD];
     bool apConfigKnown;
 
-    // ---------- Deferred flash ops + commit status (for UI) ----------
+    // ---------- Отложенные операции flash и статус фиксации (для UI) ----------
     /// Идёт приём POST JSON конфигурации (поток в tmp) — не пересекать с другими операциями Flash
     bool postedConfigJsonPending;
     /// Идёт приём POST JSON программы (поток в tmp)

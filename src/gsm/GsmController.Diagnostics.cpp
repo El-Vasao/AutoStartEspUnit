@@ -1,9 +1,9 @@
 /**
  * @file GsmController.Diagnostics.cpp
- * @brief Диагностические функции GsmController: polling сигнала/оператора и журнал событий.
+ * @brief Диагностические функции GsmController: опрос сигнала/оператора и журнал событий.
  *
  * Назначение:
- * - Содержать “побочные” диагностические операции, которые не влияют на основной FSM bring-up,
+ * - Содержать «побочные» диагностические операции, которые не влияют на основной подъём FSM,
  *   и вызываются редко (READY интервалами) или по месту для трассировки событий.
  *
  * Память:
@@ -23,8 +23,8 @@ void GsmController::ev(uint8_t type, uint16_t aux) {
 }
 
 void GsmController::updateSignalQuality() {
-    // Asynchronous poll: parse +CSQ: <rssi>,<ber> from incoming lines.
-    // Avoid blocking modem polls in the READY hot-path; +CSQ is parsed from URC lines.
+    // Асинхронный опрос: разбор +CSQ: <rssi>,<ber> из входящих строк.
+    // Не блокировать опросами модема горячий путь READY; +CSQ разбирается из строк URC.
     sendAt("AT+CSQ", "CSQ", AwaitKind::NONE, Gsm::AT_OK_TIMEOUT_MS);
 }
 

@@ -10,6 +10,37 @@
 #include <Update.h>
 #include <cstring>
 
+namespace {
+
+// Хвост OTA = UI shell (.gz) + схемы SoftAP. /config.json и /programs/* не пишем.
+bool isAllowedOtaTailPath(const char* path) {
+    if (!path || path[0] != '/') return false;
+    char logical[BufferBytes::Fs::WEB_ASSET_PATH];
+    char gz[BufferBytes::Fs::WEB_ASSET_GZIP_PATH];
+    for (size_t i = 0; i < WebAssets::REQUIRED_COUNT; i++) {
+        const char* ptr = WebAssets::REQUIRED[i];
+        if (!ptr) continue;
+        strlcpy(logical, ptr, sizeof(logical));
+        if (logical[0] == '\0') continue;
+        strlcpy(gz, logical, sizeof(gz));
+        strlcat(gz, ".gz", sizeof(gz));
+        if (strcmp(path, gz) == 0) return true;
+    }
+    static const char* const kSchemaPaths[] = {
+        "/ui/settings.ui.json",
+        "/ui/program-steps.ui.json",
+        "/validation/settings.schema.json",
+        "/validation/program.schema.json",
+        "/validation/programs.index.schema.json",
+    };
+    for (const char* allowed : kSchemaPaths) {
+        if (strcmp(path, allowed) == 0) return true;
+    }
+    return false;
+}
+
+} // namespace
+
 bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
     consumed = 0;
     if (!data || len == 0) return true;
@@ -65,13 +96,15 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                 consumed += take;
                 core.feedWatchdog();
                 if (_fwRemaining == 0) {
-                    // ESP32: LittleFS open/write fails while Update session is still open (same SPI flash).
+                    // ESP32: LittleFS open/write падает, пока сеанс Update ещё открыт (та же SPI flash).
                     if (!Update.end(true)) {
                         core.logHeapSnapshot("ota_update_end_failed");
                         failStream("Update.end after firmware failed");
                         return false;
                     }
                     _updateBegun = false;
+                    // end уже сменил boot; если хвост упадёт, abort слот не вернёт.
+                    _fwCommitted = true;
                     core.logHeapSnapshot("ota_update_end_ok");
                     _phase = Phase::NameLen;
                     _metaHave = 0;
@@ -110,7 +143,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                 consumed += take;
                 if (_nameHave < _nameLen) return true;
                 _nameBuf[_nameLen] = '\0';
-                // LittleFS expects absolute paths (/…).
+                // LittleFS ждёт абсолютные пути (/…).
                 if (_nameBuf[0] != '/') {
                     if (_nameLen + 1 >= sizeof(_nameBuf)) {
                         failStream("filename too long for slash");
@@ -119,6 +152,12 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                     memmove(_nameBuf + 1, _nameBuf, _nameLen + 1);
                     _nameBuf[0] = '/';
                     _nameLen++;
+                }
+                // Иначе хвост может перезаписать config или программы.
+                if (!isAllowedOtaTailPath(_nameBuf)) {
+                    logger.log(LogModule::OtaHandler, "rejected tail path: %s\n", _nameBuf);
+                    failStream("tail path not a UI asset");
+                    return false;
                 }
                 _metaHave = 0;
                 _metaNeed = 4;
@@ -141,7 +180,7 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                 logger.log(LogModule::OtaHandler, "Extracting %s (%u bytes)\n", _nameBuf, (unsigned)_fileSize);
 
                 if (_fileSize == 0) {
-                    // Empty file: still create via open/close.
+                    // Пустой файл: всё равно создать через open/close.
                     File f = fileSystem.openWriteStream(_nameBuf, 0);
                     if (f) {
                         fileSystem.closeWriteStream(f, _nameBuf, true);
@@ -221,7 +260,7 @@ bool OtaHandler::streamFeed(const uint8_t* data, size_t len) {
 bool OtaHandler::streamFinish() {
     if (_phase == Phase::Failed) return false;
 
-    // Firmware must be complete.
+    // Прошивка должна быть целиком.
     if (_phase == Phase::Header || _phase == Phase::Firmware) {
         failStream("incomplete firmware");
         return false;
@@ -231,7 +270,7 @@ bool OtaHandler::streamFinish() {
         return false;
     }
 
-    // NameLen with no more bytes: treat as end of package (no trailing 0 nameLen required).
+    // NameLen, и байт больше нет: считать концом пакета (хвостовой nameLen 0 не обязателен).
     if (_phase == Phase::NameLen) {
         if (_metaHave == 0) {
             _phase = Phase::Done;
@@ -255,6 +294,8 @@ bool OtaHandler::streamFinish() {
             return false;
         }
         _updateBegun = false;
+        // Тот же контракт, что после байтов прошивки: boot уже на новом слоте.
+        _fwCommitted = true;
         core.logHeapSnapshot("ota_update_end_ok");
     }
 
