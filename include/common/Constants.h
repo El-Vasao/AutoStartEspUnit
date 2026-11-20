@@ -144,9 +144,6 @@ namespace MqttTopics {
     constexpr const char* TRIG_MAP = "trigMap";
     constexpr const char* CMD = "cmd";
     constexpr const char* REPLY = "reply";
-    /// Устаревшие суффиксы: один раз очищаются после рождения, чтобы брокеры сбросили старый retain.
-    constexpr const char* LEGACY_AVAIL = "avail";
-    constexpr const char* LEGACY_STATUS = "status";
 }
 
 namespace BufferBytes {

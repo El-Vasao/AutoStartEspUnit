@@ -93,7 +93,6 @@ private:
     uint32_t _subWaitStartMs{0};
 
     BirthPhase _birth{BirthPhase::WaitSuback};
-    bool _legacyTombstoneDue{false};
     bool _prefixTombstoneDue{false};
     char _bornPrefix[TextBytes::Mqtt::TOPIC_PREFIX]{};
 
@@ -150,8 +149,6 @@ private:
     char _topicTrigMap[TextBytes::Mqtt::TOPIC]{};
     char _topicCmd[TextBytes::Mqtt::TOPIC]{};
     char _topicReply[TextBytes::Mqtt::TOPIC]{};
-    char _topicLegacyAvail[TextBytes::Mqtt::TOPIC]{};
-    char _topicLegacyStatus[TextBytes::Mqtt::TOPIC]{};
 
     void connect();
     void noteSessionErrorIfNeeded_();

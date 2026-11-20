@@ -188,8 +188,6 @@ void MqttClient::rebuildTopics_(const char* prefix) {
     joinTopic_(_topicTrigMap, sizeof(_topicTrigMap), prefix, MqttTopics::TRIG_MAP);
     joinTopic_(_topicCmd, sizeof(_topicCmd), prefix, MqttTopics::CMD);
     joinTopic_(_topicReply, sizeof(_topicReply), prefix, MqttTopics::REPLY);
-    joinTopic_(_topicLegacyAvail, sizeof(_topicLegacyAvail), prefix, MqttTopics::LEGACY_AVAIL);
-    joinTopic_(_topicLegacyStatus, sizeof(_topicLegacyStatus), prefix, MqttTopics::LEGACY_STATUS);
 }
 
 void MqttClient::begin() {
@@ -261,7 +259,6 @@ void MqttClient::resetSessionLocal_() {
     _subWaitStartMs = 0;
     _subackTimeoutLogged = false;
     _birth = BirthPhase::WaitSuback;
-    _legacyTombstoneDue = false;
     _havePublishedBaseline = false;
     _lastEdgeProbe = 0;
     _haveSeq = false;
@@ -368,7 +365,6 @@ void MqttClient::loop() {
             _haveQueuedStateSeq = false;
             _haveQueuedEncoded = false;
             _birth = BirthPhase::WaitSuback;
-            _legacyTombstoneDue = true;
             _programsCatalogDirty = true;
             _hwCatalogDirty = true;
             _trigCatalogDirty = true;
@@ -488,11 +484,6 @@ void MqttClient::tickBirth_(bool txOk, bool subReady, bool teleIdle) {
         if (publishOnline_(true)) {
             _birth = BirthPhase::Steady;
             strlcpy(_bornPrefix, config.getBase().mqtt.topic_prefix, sizeof(_bornPrefix));
-            if (_legacyTombstoneDue) {
-                (void)publishEmptyRetain_(_topicLegacyAvail);
-                (void)publishEmptyRetain_(_topicLegacyStatus);
-                _legacyTombstoneDue = false;
-            }
             core.cooperate();
         }
     }

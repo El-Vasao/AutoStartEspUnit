@@ -39,7 +39,7 @@ MQTT-публикация статуса и подписка на команды
 | `/cmd` | `{prefix}/cmd` | Команды → device (subscribe QoS1, не retained) |
 | `/reply` | `{prefix}/reply` | Тонкие ответы ← device (publish QoS1) |
 
-После birth один раз публикуется пустой retained payload на legacy `{prefix}/avail` и `{prefix}/status`. При смене префикса — пустой retain на старых `online`/`state`/`programs`/`hwMap`/`trigMap`.
+При смене префикса — пустой retain на старых `online`/`state`/`programs`/`hwMap`/`trigMap`.
 
 **Offline = нет команд:** клиент шлёт `/cmd` только при `online=true`.
 
