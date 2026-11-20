@@ -26,8 +26,27 @@
   function takeFile(event) {
     const input = event?.target;
     const file = input?.files?.[0] || null;
-    if (input) input.value = '';
+    if (input) {
+      try { input.blur(); } catch (e) {}
+      // Очистка в том же тике change снова вызывает change на части браузеров.
+      setTimeout(() => { try { input.value = ''; } catch (e) {} }, 0);
+    }
     return file;
+  }
+
+  function afterDialogClosed() {
+    // uiDialog.confirm() ещё не снял x-trap, пока onConfirm выполняется синхронно.
+    // Следующий тик: диалог закрыт и вернул overflow, затем можно открывать «Ждите…».
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  function releaseStuckScroll() {
+    const busyOpen = !!Alpine.store('uiBusy')?.open;
+    const dialogOpen = !!Alpine.store('uiDialog')?.open;
+    if (busyOpen || dialogOpen) return;
+    const root = document.documentElement;
+    if (root.style.overflow === 'hidden') root.style.overflow = '';
+    if (root.style.paddingRight) root.style.paddingRight = '';
   }
 
   function firstSchemaError(errorsByPath) {
@@ -118,6 +137,7 @@
           return;
         }
 
+        try { document.activeElement?.blur?.(); } catch (e) {}
         const self = this;
         Alpine.store('uiDialog').show({
           title: 'Импорт настроек',
@@ -125,29 +145,33 @@
           onConfirm: async () => {
             self.busy = true;
             try {
+              await afterDialogClosed();
               const result = await postJson(endpoint('configSave', '/config/save'), parsed.body, {
                 busyMessage: 'Запись настроек…',
                 expectedLastOp: 'save_config',
                 timeoutMsCommit: 12000,
-                onCommitOk: async () => {
-                  try { await Alpine.store('settings')?.load?.(true); } catch (e) {}
-                  Alpine.store('uiBusy').showOk({
-                    title: 'Импорт выполнен',
-                    message: 'Настройки записаны. Нужна перезагрузка.',
-                    okLabel: 'OK'
-                  });
-                },
               });
               if (result.busy409) return;
               if (result.timeout) {
                 Alpine.store('uiToast').setHardwareError('Нет подтверждения записи. Проверьте связь.');
                 return;
               }
-              if (!result.ok) toast('error', 'Не удалось импортировать настройки');
+              if (!result.ok) {
+                toast('error', 'Не удалось импортировать настройки');
+                return;
+              }
+              try { await Alpine.store('settings')?.load?.(true); } catch (e) {}
+              releaseStuckScroll();
+              Alpine.store('uiBusy').showOk({
+                title: 'Импорт выполнен',
+                message: 'Настройки записаны. Нужна перезагрузка.',
+                okLabel: 'OK'
+              });
             } catch (e) {
               toast('error', 'Ошибка сети');
             } finally {
               self.busy = false;
+              releaseStuckScroll();
             }
           },
         });
@@ -219,6 +243,7 @@
           return;
         }
 
+        try { document.activeElement?.blur?.(); } catch (e) {}
         const self = this;
         Alpine.store('uiDialog').show({
           title: 'Импорт программ',
@@ -228,6 +253,7 @@
             let wrote = 0;
             let failedId = 0;
             try {
+              await afterDialogClosed();
               for (const item of parsed.programs) {
                 const result = await postJson(endpoint('program', '/program'), item.body, {
                   busyMessage: `Запись программы ${item.id}…`,
@@ -252,6 +278,7 @@
               toast('error', 'Ошибка сети');
             } finally {
               self.busy = false;
+              releaseStuckScroll();
             }
           },
         });
