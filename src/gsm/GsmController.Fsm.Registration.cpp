@@ -53,6 +53,7 @@ void GsmController::handleRegistering() {
     const bool searching =
         (_awaitOk && _awaitGotCreg) || awaitTimedOut(now);
     if (searching) {
+        if (_stack.at.isBusy() || _stack.at.hasResult()) return;
         resetAwait();
         clearResponse();
         if (getStateAgeMs() > Gsm::REG_TIMEOUT_MS) {

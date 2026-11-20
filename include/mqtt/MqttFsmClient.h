@@ -60,6 +60,9 @@ public:
         /// Необязательно: блокировать Idle→CIPSTART (например, NTP / CNTP модема держит IP-стек).
         bool (*shouldBlockConnect)(void* ctx){nullptr};
         void* shouldBlockConnectCtx{nullptr};
+        /// Необязательно: CIPSEND ещё в полёте (не рвать stop() посреди SEND OK).
+        bool (*isTransportSendBusy)(void* ctx){nullptr};
+        void* isTransportSendBusyCtx{nullptr};
         /// Необязательно: вызов сразу перед жёстким отказом на неполном кадре MQTT (место hex-дампа).
         void (*onRxIncomplete)(void* ctx, const uint8_t* head, uint16_t have, uint32_t need){nullptr};
         void* onRxIncompleteCtx{nullptr};
@@ -145,6 +148,7 @@ private:
     // Ожидающие управляющие действия
     bool _connectRequested{false};
     bool _disconnectRequested{false};
+    bool _disconnectFrameQueued{false}; ///< DISCONNECT уже в TX; ждём SEND OK перед stop()
     bool _subRequested{false};
     bool _awaitingSuback{false};
     bool _subscribeConfirmed{false};

@@ -39,12 +39,19 @@ bool Config::applyPostedConfigJsonFile(const char* tmpPath, SensorsController& s
     BaseConfig tmp{};
     bool hasAdcCalibrate = false;
     float adcCalibrateVoltage = 0.0f;
+    uint16_t seenSections = 0;
     const bool parsed = config_internal::parseBaseConfigStreamingFromFile(
-        f, tmp, config_internal::ParseMode::Strict, &hasAdcCalibrate, &adcCalibrateVoltage);
+        f, tmp, config_internal::ParseMode::Strict, &hasAdcCalibrate, &adcCalibrateVoltage, &seenSections);
     f.close();
     fileSystem.deleteFile(tmpPath);
     if (!parsed) {
         logger.log(LogModule::Config, "received config rejected: not a complete JSON object\n");
+        return false;
+    }
+    if ((seenSections & config_internal::ConfigSection::RequiredPost) !=
+        config_internal::ConfigSection::RequiredPost) {
+        logger.log(LogModule::Config, "received config rejected: missing required sections (seen=0x%04X)\n",
+                   (unsigned)seenSections);
         return false;
     }
 
@@ -124,7 +131,8 @@ bool Config::commitPostedProgramFile(const char* tmpPath, uint8_t* outId, ErrorC
     };
     for (uint8_t i = 0; i < prog.step_count; i++) {
         const Step& s = prog.steps[i];
-        const program_validate::ChannelRef ch{s.relay_id, s.input_id, s.input_trigger_id, s.temp_trigger_id};
+        const program_validate::ChannelRef ch{s.relay_id, s.input_id, s.input_trigger_id, s.temp_trigger_id,
+                                              s.message};
         const program_validate::Issue issue =
             program_validate::checkStep(actionIdFromString(s.action), ch, starterRelayId, tables);
         if (issue != program_validate::Issue::None) {

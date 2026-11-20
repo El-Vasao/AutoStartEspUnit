@@ -78,11 +78,21 @@ static void test_non_relay_actions_ignore_relay_id() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Issue::None, (uint8_t)ck(ActionId::WAIT, ChannelRef{kStarter, 0, 0, 0}));
 }
 
+static void test_sms_owner_requires_message() {
+    ChannelRef emptyMsg{0, 0, 0, 0, ""};
+    ChannelRef noMsg{0, 0, 0, 0, nullptr};
+    ChannelRef okMsg{0, 0, 0, 0, "hi"};
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Issue::EmptyMessage, (uint8_t)ck(ActionId::SMS_OWNER, emptyMsg));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Issue::EmptyMessage, (uint8_t)ck(ActionId::SMS_OWNER, noMsg));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Issue::None, (uint8_t)ck(ActionId::SMS_OWNER, okMsg));
+}
+
 static void test_issue_names() {
     TEST_ASSERT_EQUAL_STRING("", program_validate::issueToString(Issue::None));
     TEST_ASSERT_EQUAL_STRING("unknown action", program_validate::issueToString(Issue::UnknownAction));
     TEST_ASSERT_EQUAL_STRING("drives the starter relay", program_validate::issueToString(Issue::DrivesStarterRelay));
     TEST_ASSERT_EQUAL_STRING("invalid channel reference", program_validate::issueToString(Issue::InvalidRef));
+    TEST_ASSERT_EQUAL_STRING("empty SMS message", program_validate::issueToString(Issue::EmptyMessage));
 }
 
 int main(int, char**) {
@@ -93,6 +103,7 @@ int main(int, char**) {
     RUN_TEST(test_relay_unknown_id_is_invalid_ref);
     RUN_TEST(test_input_and_trigger_refs);
     RUN_TEST(test_non_relay_actions_ignore_relay_id);
+    RUN_TEST(test_sms_owner_requires_message);
     RUN_TEST(test_issue_names);
     return UNITY_END();
 }

@@ -223,7 +223,7 @@
           for (const p of Object.keys(errs)) {
             if (p === 'id') this.errors.id = first(errs[p]);
             else if (p === 'name') this.errors.name = first(errs[p]);
-            else if (p === 'steps') this.errors.steps = first(errs[p]);
+            else if (p === 'steps' || p === '__schema__') this.errors.steps = first(errs[p]);
             else if (p.startsWith('steps.')) {
               const m = /^steps\.(\d+)\.(.+)$/.exec(p);
               if (!m) continue;

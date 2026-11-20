@@ -44,15 +44,42 @@ void RelayController::begin() {
         }
     }
     
+    applyStarterConfig();
+    logger.log(LogModule::RelayController, "ok\n");
+}
+
+void RelayController::applyStarterConfig() {
     const uint16_t starterRelayId = config.getBase().vehicle.starter_relay_id;
-    _starterIdx = HwMap::relayIndexById(starterRelayId);
+    const int8_t newIdx = HwMap::relayIndexById(starterRelayId);
     uint16_t starterTime = config.getBase().vehicle.starter_max_time_sec;
     if (starterTime == 0) starterTime = StarterLimits::MAX_TIME_DEFAULT_SEC;
-    if (_starterIdx >= 0) {
-        _maxOnTime[(uint8_t)_starterIdx] = secToMs(starterTime);
-        logger.log(LogModule::RelayController, "starter relay relay_id: %u (idx=%d), max time: %u ms\n",
-                   (unsigned)starterRelayId, (int)_starterIdx, (unsigned)_maxOnTime[(uint8_t)_starterIdx]);
+    const uint32_t maxMs = secToMs(starterTime);
 
+    // Пока стартерный пин ещё под током — не менять индекс: иначе страховка режет старый пин,
+    // а катушка на новом остаётся без лимита.
+    const bool starterEnergized = (_starterIdx >= 0 && getState((uint8_t)_starterIdx));
+    if (starterEnergized && newIdx != _starterIdx) {
+        _starterRebindPending = true;
+        logger.log(LogModule::RelayController,
+                   "starter rebind deferred: relay still on (old idx=%d, new id=%u)\n",
+                   (int)_starterIdx, (unsigned)starterRelayId);
+        if (_starterIdx >= 0) {
+            _maxOnTime[(uint8_t)_starterIdx] = maxMs;
+            if (getState((uint8_t)_starterIdx)) armBackstop();
+        }
+        return;
+    }
+
+    if (_starterIdx >= 0 && _starterIdx != newIdx) {
+        _maxOnTime[(uint8_t)_starterIdx] = 0;
+        disarmBackstop();
+    }
+    _starterIdx = newIdx;
+    _starterRebindPending = false;
+    if (_starterIdx >= 0) {
+        _maxOnTime[(uint8_t)_starterIdx] = maxMs;
+        logger.log(LogModule::RelayController, "starter relay relay_id: %u (idx=%d), max time: %u ms\n",
+                   (unsigned)starterRelayId, (int)_starterIdx, (unsigned)maxMs);
         if (!_backstop) {
             esp_timer_create_args_t args{};
             args.callback = &RelayController::backstopCallback;
@@ -64,9 +91,8 @@ void RelayController::begin() {
                 logger.log(LogModule::RelayController, "⚠️ failed to create starter watchdog timer\n");
             }
         }
+        if (getState((uint8_t)_starterIdx)) armBackstop();
     }
-    
-    logger.log(LogModule::RelayController, "ok\n");
 }
 
 uint8_t RelayController::pinForRelay(uint8_t relay) const {
@@ -179,6 +205,9 @@ void RelayController::update() {
         core.getErrorManager().set(ErrorCode::RELAY_TIMEOUT);
         startLockout();
         _backstopTripped = false;
+    }
+    if (_starterRebindPending && (_starterIdx < 0 || !getState((uint8_t)_starterIdx))) {
+        applyStarterConfig();
     }
     checkSafety();
 }

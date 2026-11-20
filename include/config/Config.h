@@ -37,6 +37,7 @@ public:
 
     ConfigLoadOutcome loadWithOutcome();
     bool load() { return loadWithOutcome() != ConfigLoadOutcome::Failed; }
+    /// Заводской `/config.json`. Файлы программ не меняет.
     bool reset();
     bool save();
 

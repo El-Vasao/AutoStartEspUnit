@@ -391,17 +391,34 @@ void GsmController::serviceVoice_(uint32_t now) {
         return;
 
     case VoicePhase::HangupWait:
-        if (_awaitOk || _awaitError || awaitTimedOut(now)) {
+        if (_voiceHangupDeadlineMs != 0 && (int32_t)(now - _voiceHangupDeadlineMs) >= 0) {
             resetAwait();
-            if (_voiceKind == VoiceKind::Inbound && _voicePendingProgramValid) {
-                _voicePhase = VoicePhase::FinishOk;
-            } else if (_voiceKind == VoiceKind::OutCall) {
-                _voicePhase = VoicePhase::FinishOk;
-            } else if (_voiceKind == VoiceKind::OutSms) {
-                _voicePhase = _voiceResultOk ? VoicePhase::FinishOk : VoicePhase::FinishFail;
-            } else {
-                _voicePhase = VoicePhase::FinishFail;
-            }
+            _voiceHangupDeadlineMs = 0;
+            _voicePendingProgramValid = false;
+            _voicePendingProgramId = 0;
+            _voicePhase = VoicePhase::FinishFail;
+            return;
+        }
+        if (_awaitError || awaitTimedOut(now)) {
+            // ATH ERROR/таймаут ≠ трубка положена: иначе DTMF стартует при живом вызове.
+            resetAwait();
+            _voiceHangupDeadlineMs = 0;
+            _voicePendingProgramValid = false;
+            _voicePendingProgramId = 0;
+            _voicePhase = VoicePhase::FinishFail;
+            return;
+        }
+        if (!_awaitOk) return;
+        resetAwait();
+        _voiceHangupDeadlineMs = 0;
+        if (_voiceKind == VoiceKind::Inbound && _voicePendingProgramValid) {
+            _voicePhase = VoicePhase::FinishOk;
+        } else if (_voiceKind == VoiceKind::OutCall) {
+            _voicePhase = VoicePhase::FinishOk;
+        } else if (_voiceKind == VoiceKind::OutSms) {
+            _voicePhase = _voiceResultOk ? VoicePhase::FinishOk : VoicePhase::FinishFail;
+        } else {
+            _voicePhase = VoicePhase::FinishFail;
         }
         return;
 
@@ -427,8 +444,11 @@ void GsmController::serviceVoice_(uint32_t now) {
             return;
         }
         if (_awaitError || (int32_t)(now - _voicePhaseDeadlineMs) >= 0) {
+            // Модем мог уже войти в текст (`>`), а флаг ещё не выставлен — ESC обязателен.
             resetAwait();
-            _voicePhase = VoicePhase::FinishFail;
+            _stack.uart.writeByte(0x1B);
+            beginAwait(AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
+            _voicePhase = VoicePhase::CmgsAbortEsc;
         }
         return;
 
@@ -443,12 +463,21 @@ void GsmController::serviceVoice_(uint32_t now) {
     case VoicePhase::CmgsWaitOk:
         if (_awaitError || awaitTimedOut(now)) {
             resetAwait();
-            _voicePhase = VoicePhase::FinishFail;
+            _stack.uart.writeByte(0x1B);
+            beginAwait(AwaitKind::OK, Gsm::AT_OK_TIMEOUT_MS);
+            _voicePhase = VoicePhase::CmgsAbortEsc;
             return;
         }
         if (!_awaitOk) return;
         resetAwait();
         _voicePhase = VoicePhase::FinishOk;
+        return;
+
+    case VoicePhase::CmgsAbortEsc:
+        if (_awaitOk || _awaitError || awaitTimedOut(now)) {
+            resetAwait();
+            _voicePhase = VoicePhase::FinishFail;
+        }
         return;
 
     case VoicePhase::AnswerSend:

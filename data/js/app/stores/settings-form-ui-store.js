@@ -42,13 +42,15 @@
       } else if (method === 'input' && Number(inp.type) !== 0) out.push({ field: f, message: 'Нужен дискретный вход' });
     }
 
-    const blockId = Number(v.start_block_input_id) || 0;
-    if (blockId) {
+    const blockSid = String(v.start_block_input_id || '').trim();
+    if (blockSid) {
       const f = 'vehicle.start_block_input_id';
-      const inp = findInput(blockId);
+      const inp = findInput(blockSid);
       if (!inp) out.push({ field: f, message: 'Вход не найден' });
+      else if (inp.enabled === false) out.push({ field: f, message: 'Вход выключен' });
       else if (Number(inp.type) !== 0) out.push({ field: f, message: 'Нужен дискретный вход' });
-      else if ((method === 'rpm' || method === 'input') && blockId === (Number(v.start_input_id) || 0)) {
+      else if ((method === 'rpm' || method === 'input') &&
+               blockSid === String(v.start_input_id || '').trim()) {
         out.push({ field: f, message: 'Совпадает со входом запуска' });
       }
     }
@@ -265,14 +267,21 @@
             const v = uiForm.coerceValue(this.field, e?.target?.value);
             this.setValue(v);
 
-            // When selecting a sensor by ROM, also persist the current sensor name (hidden field).
             try {
+              const p = String(this.path || '');
+              // Дискретный вход: active_state по умолчанию true (как DefaultConfig), не оставлять undefined.
+              if (/\.type$/.test(p) && Number(v) === 0) {
+                const activePath = p.replace(/\.type$/, '.active_state');
+                const cur = uiForm.getByPath(Alpine.store('settings'), activePath);
+                if (cur === undefined || cur === null || cur === '') {
+                  uiForm.setByPath(Alpine.store('settings'), activePath, true);
+                }
+              }
+              // When selecting a sensor by ROM, also persist the current sensor name (hidden field).
               const from = String(this.field?.optionsFrom || '');
               if (from === 'sensorIds') {
-                const p = String(this.path || '');
                 if (p.endsWith('.sensor_id')) {
                   const namePath = p.slice(0, -('.sensor_id'.length)) + '.sensor_name';
-                  // Resolve current name from settings.sensors by id.
                   const list = Alpine.store('settings')?.sensors;
                   let name = '';
                   if (Array.isArray(list)) {

@@ -1,5 +1,6 @@
 // src/core/BatterySaverManager.cpp
 #include "core/BatterySaverManager.h"
+#include "core/Core.h"
 #include "core/TimeSyncManager.h"
 #include "config/Config.h"
 #include "common/Utils.h"
@@ -70,17 +71,37 @@ void BatterySaverManager::update() {
     float abortThreshold = bs.voltage_abort_threshold;
     float hysteresis = bs.hysteresis;
 
+    // Прокрутка сажает батарею — после ENGINE_START не рвать программу по этому замеру.
+    if (_executor.isInStarterStep()) {
+        _holdAbortAfterCrank = true;
+        _abortLowSince = 0;
+    }
+
     if (voltage < abortThreshold) {
         _lowStartTime = 0;
-        // Сама прокрутка сажает батарею ниже порога отмены — шаг запуска никогда не отменять.
         if (bs.program_id != 0 && _executor.isRunning() &&
             _executor.getCurrentProgramId() == bs.program_id && !_executor.isInStarterStep()) {
+            // Мотор уже схватился — просадку прокрутки не считать отменой.
+            if (core.isEngineRunning()) {
+                _holdAbortAfterCrank = false;
+                _abortLowSince = 0;
+                return;
+            }
+            if (_holdAbortAfterCrank) {
+                if (_abortLowSince == 0) _abortLowSince = now;
+                if (now - _abortLowSince < secToMs(bs.min_low_voltage_duration_sec)) return;
+            }
             logger.log(LogModule::BatterySaverManager, "program %u abort: voltage %.2f < threshold %.2f\n",
                        bs.program_id, voltage, abortThreshold);
+            _holdAbortAfterCrank = false;
+            _abortLowSince = 0;
             _executor.stop();
         }
         return;
     }
+
+    _holdAbortAfterCrank = false;
+    _abortLowSince = 0;
 
     // Отсчёт низкого напряжения только в простое: работающая программа (прокрутка, нагрузки) искажает измерение.
     if (_executor.isRunning()) {

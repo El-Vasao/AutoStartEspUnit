@@ -183,6 +183,7 @@ void Core::suspendDomainManagersForOta() {
 void Core::restoreDomainManagersAfterOta() {
     CorePrivate& impl = *_impl;
     impl.triggerManager.syncEnabledFromConfig();
+    impl.triggerManager.seedLatchesFromCurrent();
     impl.batterySaverManager.begin();
     impl.thermostatManager.begin();
     logger.log(LogModule::Core, "domain managers restored after OTA\n");

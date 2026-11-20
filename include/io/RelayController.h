@@ -31,6 +31,10 @@ public:
     // Инициализация пинов, установка максимального времени из конфига
     void begin();
 
+    /// Перечитать индекс стартера и лимит из конфига (после сохранения без reboot).
+    /// Смену `_starterIdx` откладывает, пока текущий пин стартера ещё включён.
+    void applyStarterConfig();
+
     // Проверка таймаутов (вызывается в loop)
     void update();
 
@@ -64,6 +68,7 @@ private:
     uint32_t _turnOnTime[HardwareLimits::RELAYS];   ///< момент включения (0 = выключено)
 
     int8_t _starterIdx{-1};
+    bool _starterRebindPending{false};
     bool _lockout{false};
     uint32_t _lockoutUntilMs{0};
     esp_timer* _backstop{nullptr};

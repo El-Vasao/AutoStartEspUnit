@@ -88,6 +88,7 @@ void MqttFsmClient::resetSession_() {
     _subscribeConfirmed = false;
     _subPacketId = 0;
     _subTopic[0] = '\0';
+    _disconnectFrameQueued = false;
 }
 
 void MqttFsmClient::clearQos1Reply_() {
@@ -257,17 +258,30 @@ void MqttFsmClient::tick(const Budgets& b) {
     };
 
     if (_disconnectRequested) {
-        // Опустошить исходящую очередь (например, удержанное сообщение offline) до DISCONNECT и остановки TCP.
+        // Опустошить исходящую очередь (например, удержанное online=false) до DISCONNECT;
+        // stop() только после SEND OK, иначе CIPSEND рвётся и брокер держит online=true до LWT.
+        auto sendBusy = [&]() -> bool {
+            return _budgets.isTransportSendBusy &&
+                   _budgets.isTransportSendBusy(_budgets.isTransportSendBusyCtx);
+        };
         doWrite();
         if (_txQCount != 0) return;
-        if (_state == State::Connected) {
-            (void)buildDisconnect_();
+        if (sendBusy()) return;
+        if (_state == State::Connected && !_disconnectFrameQueued) {
+            if (!buildDisconnect_()) {
+                // Нет места в очереди — ждать слот; не stop() поверх живого CIPSEND.
+                return;
+            }
+            _disconnectFrameQueued = true;
             doWrite();
+            if (_txQCount != 0) return;
+            if (sendBusy()) return;
         }
         _net.stop();
         resetSession_();
         _state = State::Idle;
         _disconnectRequested = false;
+        _disconnectFrameQueued = false;
         return;
     }
 
@@ -835,7 +849,8 @@ bool MqttFsmClient::publishPrintedMeasured(const char* topic, JsonPrintEncodeFn 
 
     auto failDeltaSlot = [&]() -> bool {
         if (coalesce && teleKind == TeleKind::Delta) {
-            commitReplaceTeleSlot_(replaceIdx, mqtt_wire::buildPingreq(slot, cap), TeleKind::Delta);
+            // PINGREQ без TeleKind::Delta: иначе onTeleDequeued сдвигает базу диффа без edge.
+            commitReplaceTeleSlot_(replaceIdx, mqtt_wire::buildPingreq(slot, cap), TeleKind::None);
         }
         return false;
     };

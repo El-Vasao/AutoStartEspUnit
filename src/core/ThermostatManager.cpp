@@ -26,6 +26,24 @@ ThermostatManager::ThermostatManager(Config& config, SensorsController& sensors,
 void ThermostatManager::begin() {
     logger.log(LogModule::ThermostatManager, "start\n");
     _runtimeEnabled = _config.getBase().thermostat.enabled;
+    _lowerLatch.reset();
+    _upperLatch.reset();
+    const auto& ts = _config.getBase().thermostat;
+    if (_runtimeEnabled && ts.enabled) {
+        const char* rom = "";
+        for (uint8_t j = 0; j < HardwareLimits::SENSORS; j++) {
+            if (_config.getBase().sensors[j].id == ts.sensor_id) {
+                rom = _config.getBase().sensors[j].rom;
+                break;
+            }
+        }
+        const int8_t idx = _sensors.findSensorIndexByRom(rom);
+        if (idx >= 0 && _sensors.isTemperatureValid((uint8_t)idx)) {
+            const float temp = _sensors.getTemperature((uint8_t)idx);
+            _lowerLatch.seed(temp, ts.lower_threshold, trigger_rules::Compare::Below);
+            _upperLatch.seed(temp, ts.upper_threshold, trigger_rules::Compare::Above);
+        }
+    }
     logger.log(LogModule::ThermostatManager, "runtime on: %d\n", _runtimeEnabled);
 }
 
@@ -46,20 +64,25 @@ void ThermostatManager::update() {
     }
     const int8_t idx = _sensors.findSensorIndexByRom(rom);
     if (idx < 0 || !_sensors.isTemperatureValid((uint8_t)idx)) {
-        _lowerLatch.reset();
-        _upperLatch.reset();
+        // Битый замер не сбрасывает гистерезис — иначе следующий хороший снова фронт.
         return;
     }
+    if (_executor.isInStarterStep()) return;
+
     const float temp = _sensors.getTemperature((uint8_t)idx);
     const float hyst = DS18B20::RELEASE_HYSTERESIS_C;
     // comparison в JSON не задаёт направление: нижний порог всегда «ниже», верхний всегда «выше».
 
     if (_lowerLatch.update(temp, ts.lower_threshold, trigger_rules::Compare::Below, hyst) && ts.program_id_lower != 0) {
         logger.log(LogModule::ThermostatManager, "lower threshold, program %u start\n", ts.program_id_lower);
-        _executor.start(ts.program_id_lower);
+        if (!_executor.start(ts.program_id_lower)) {
+            _lowerLatch.reset();
+        }
     }
     if (_upperLatch.update(temp, ts.upper_threshold, trigger_rules::Compare::Above, hyst) && ts.program_id_upper != 0) {
         logger.log(LogModule::ThermostatManager, "upper threshold, program %u start\n", ts.program_id_upper);
-        _executor.start(ts.program_id_upper);
+        if (!_executor.start(ts.program_id_upper)) {
+            _upperLatch.reset();
+        }
     }
 }

@@ -101,7 +101,8 @@ bool ProgramExecutor::start(uint8_t programId) {
     for (uint8_t i = 0; i < _localStepCount; i++) {
         _localActions[i] = _localSteps[i].action;
         const program_validate::ChannelRef ch{_localSteps[i].relay_id, _localSteps[i].input_id,
-                                              _localSteps[i].input_trigger_id, _localSteps[i].temp_trigger_id};
+                                              _localSteps[i].input_trigger_id, _localSteps[i].temp_trigger_id,
+                                              _localSteps[i].message};
         const program_validate::Issue issue =
             program_validate::checkStep(_localActions[i], ch, starterRelayId, tables);
         if (issue != program_validate::Issue::None) {

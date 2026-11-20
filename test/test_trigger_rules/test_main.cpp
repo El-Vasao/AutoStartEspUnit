@@ -59,6 +59,22 @@ static void test_threshold_invalid_compare_never_fires() {
     TEST_ASSERT_FALSE(t.latched);
 }
 
+static void test_edge_seed_suppresses_boot_fire() {
+    EdgeLatch e;
+    e.seed(true);
+    TEST_ASSERT_TRUE(e.latched);
+    TEST_ASSERT_FALSE(e.update(true));
+    TEST_ASSERT_FALSE(e.update(false));
+    TEST_ASSERT_TRUE(e.update(true));
+}
+
+static void test_threshold_seed_suppresses_boot_fire() {
+    ThresholdLatch t;
+    t.seed(-12.0f, -10.0f, Compare::Below);
+    TEST_ASSERT_TRUE(t.latched);
+    TEST_ASSERT_FALSE(t.update(-12.0f, -10.0f, Compare::Below, 0.5f));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_compare_from_string);
@@ -67,5 +83,7 @@ int main(int, char**) {
     RUN_TEST(test_threshold_above_with_hysteresis);
     RUN_TEST(test_threshold_zero_hysteresis_is_plain_edge);
     RUN_TEST(test_threshold_invalid_compare_never_fires);
+    RUN_TEST(test_edge_seed_suppresses_boot_fire);
+    RUN_TEST(test_threshold_seed_suppresses_boot_fire);
     return UNITY_END();
 }

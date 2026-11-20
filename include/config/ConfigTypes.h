@@ -129,7 +129,7 @@ struct SensorConfig {
     char name[TextBytes::Sensors::NAME];
     char rom[TextBytes::Sensors::ROM];
 
-    SensorConfig() : id(0), coeff(0.1f) {
+    SensorConfig() : id(0), coeff(0.0f) {
         name[0] = '\0';
         rom[0] = '\0';
     }
@@ -155,7 +155,7 @@ struct InputConfig {
     char name[TextBytes::Inputs::NAME];
     PulseCounterConfig pulse;
 
-    InputConfig() : id(0), enabled(true), type(InputType::DIGITAL), active_state(LOW) {
+    InputConfig() : id(0), enabled(true), type(InputType::DIGITAL), active_state(true) {
         name[0] = '\0';
     }
 };
@@ -216,8 +216,8 @@ struct ThermostatConfig {
           sensor_id(1), ///< T1
           lower_threshold(5.0f),
           upper_threshold(10.0f),
-          program_id_lower(1),
-          program_id_upper(2) {
+          program_id_lower(0),
+          program_id_upper(0) {
         strcpy(comparison, "above");
     }
 };
@@ -243,7 +243,7 @@ struct BatterySaverConfig {
           min_low_voltage_duration_sec(180),
           min_time_between_attempts_sec(1800),
           max_attempts_per_day(3),
-          program_id(1) {}
+          program_id(0) {}
 };
 
 // ------------------------------------------------------------------

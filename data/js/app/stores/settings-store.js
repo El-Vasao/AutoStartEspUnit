@@ -330,8 +330,7 @@
             const v = getByPath(this, path);
             // Do not fabricate missing values into the outgoing payload (prevents false diffs/highlights).
             if (v === undefined) continue;
-            // Empty number inputs stay out of the payload (Ajv + no accidental defaults).
-            if (String(f?.type || '') === 'number' && (v === '' || v == null)) continue;
+            // Пустое число остаётся в payload — Ajv/форма отвергают; иначе прошивка подставит заводское.
             // Ephemeral calibrate: only send when a positive measured voltage is present.
             if (path === 'vehicle.adc_calibrate_voltage') {
               const n = Number(v);

@@ -6,7 +6,7 @@
 // Дефолтный конфиг в формате JSON (сохранён в PROGMEM).
 // Должен проходить `data/validation/settings.schema.json` (проверяет test/js/contract.test.mjs),
 // иначе устройство уйдёт в EMERGENCY_AP.
-// Публичные id каналов — шёлк K/IN/T с единицы; имена подписей пустые.
+// Публичные id каналов — шёлк K/IN/T с единицы; подписи входов и реле заданы.
 static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
   "setup_required": true,
   "wifi": {
@@ -23,12 +23,12 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "dtmf_password": ""
   },
   "mqtt": {
-    "broker": "m5.wqtt.ru",
-    "port": 10162,
+    "broker": "",
+    "port": 1883,
     "client_id": "",
-    "user": "u_vejNCO",
-    "pass": "u_vejNCO",
-    "topic_prefix": "car/Subaru",
+    "user": "",
+    "pass": "",
+    "topic_prefix": "",
     "publish_interval_sec": 600
   },
   "vehicle": {
@@ -43,14 +43,14 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "starter_crank_time_sec": 2,
     "starter_retry_pause_sec": 5,
     "starter_attempts": 3,
-    "start_block_input_id": "",
+    "start_block_input_id": "IN2",
     "engine_detection_source": "voltage",
     "engine_input_id": "IN2"
   },
   "sensors": [
-    { "id": "T1", "rom": "", "coeff": 0.1, "name": "" },
-    { "id": "T2", "rom": "", "coeff": 0.1, "name": "" },
-    { "id": "T3", "rom": "", "coeff": 0.1, "name": "" }
+    { "id": "T1", "rom": "", "coeff": 0, "name": "" },
+    { "id": "T2", "rom": "", "coeff": 0, "name": "" },
+    { "id": "T3", "rom": "", "coeff": 0, "name": "" }
   ],
   "inputs": [
     {
@@ -58,7 +58,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "",
+      "name": "Ручной тормоз",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -66,7 +66,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "",
+      "name": "Датчик нейтрали",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -74,16 +74,16 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "",
+      "name": "Кнопка",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     }
   ],
   "relays": [
-    { "id": "K1", "name": "" },
-    { "id": "K2", "name": "" },
-    { "id": "K3", "name": "" },
+    { "id": "K1", "name": "ACC" },
+    { "id": "K2", "name": "зажигание" },
+    { "id": "K3", "name": "стартер" },
     { "id": "K4", "name": "" },
-    { "id": "K5", "name": "" }
+    { "id": "K5", "name": "обход" }
   ],
   "thermostat": {
     "enabled": false,
@@ -91,8 +91,8 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "comparison": "above",
     "lower_threshold": 5.0,
     "upper_threshold": 10.0,
-    "program_id_lower": 1,
-    "program_id_upper": 2
+    "program_id_lower": 0,
+    "program_id_upper": 0
   },
   "battery_saver": {
     "enabled": false,
@@ -102,7 +102,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "min_low_voltage_duration_sec": 180,
     "min_time_between_attempts_sec": 1800,
     "max_attempts_per_day": 3,
-    "program_id": 1
+    "program_id": 0
   },
   "time": {
     "enabled": true,

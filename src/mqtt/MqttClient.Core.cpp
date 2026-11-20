@@ -327,6 +327,8 @@ void MqttClient::loop() {
     b.maxMsPerTick = NetTiming::MQTT_TICK_MAX_MS;
     b.shouldBlockConnect = _ctrlPlaneBusy;
     b.shouldBlockConnectCtx = _ctrlPlaneBusyCtx;
+    b.isTransportSendBusy = _transportSendBusy;
+    b.isTransportSendBusyCtx = _transportSendBusyCtx;
     b.onRxIncomplete = _onRxIncomplete;
     b.onRxIncompleteCtx = _onRxIncompleteCtx;
     _fsm.tick(b);
@@ -603,8 +605,7 @@ bool MqttClient::publishProgramsBody_() {
                                      MqttFsmClient::TeleKind::Catalog, 0)) {
         return false;
     }
-    _programsCatalogDirty = false;
-    _publishedProgramsRev = config.programsRev();
+    // Тело без retain: слот хеша у брокера не обновлять; dirty снимает только publish*Hash_.
     logger.log(LogModule::MqttClient, "pub programs body bytes=%u\n", (unsigned)measured);
     return true;
 }
@@ -617,8 +618,6 @@ bool MqttClient::publishHwMapBody_() {
                                      MqttFsmClient::TeleKind::Catalog, 0)) {
         return false;
     }
-    _hwCatalogDirty = false;
-    _publishedHwMapRev = hwMapObjectFnv(config.getBase());
     logger.log(LogModule::MqttClient, "pub hwMap body bytes=%u\n", (unsigned)measured);
     return true;
 }
@@ -631,15 +630,32 @@ bool MqttClient::publishTrigMapBody_() {
                                      MqttFsmClient::TeleKind::Catalog, 0)) {
         return false;
     }
-    _trigCatalogDirty = false;
-    _publishedTrigMapRev = trigMapObjectFnv(config.getBase());
     logger.log(LogModule::MqttClient, "pub trigMap body bytes=%u\n", (unsigned)measured);
     return true;
+}
+
+void MqttClient::failQueuedInboundOnDisconnect_() {
+    while (_inboundCount > 0) {
+        MqttCommand cmd = _inbound[_inboundHead];
+        _inbound[_inboundHead] = MqttCommand{};
+        _inboundHead = (uint8_t)((_inboundHead + 1u) % MqttCmd::INBOUND_DEPTH);
+        _inboundCount--;
+        if (!cmd.id[0]) continue;
+        PendingReply pr{};
+        pr.kind = PendingKind::Thin;
+        strlcpy(pr.id, cmd.id, sizeof(pr.id));
+        pr.code = MqttCmd::CODE_INTERNAL;
+        (void)stageReply_(pr);
+        finalizeIdRing_(cmd.id, MqttCmd::CODE_INTERNAL);
+        logger.log(LogModule::MqttClient, "disconnect: fail queued id=%s\n", cmd.id);
+    }
 }
 
 void MqttClient::disconnect() {
     logger.log(LogModule::MqttClient, "calling disconnect()\n");
     abandonLastErrDelivery_();
+    // Пока сессия ещё Connected — ответить 500 на каждую команду с 202 в FIFO.
+    failQueuedInboundOnDisconnect_();
     if (_fsm.isConnected() && _topicOnline[0]) {
         (void)publishOnline_(false);
     }

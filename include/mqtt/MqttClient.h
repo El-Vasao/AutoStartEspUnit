@@ -30,6 +30,10 @@ public:
         _ctrlPlaneBusy = fn;
         _ctrlPlaneBusyCtx = ctx;
     }
+    void setTransportSendBusy(bool (*fn)(void*), void* ctx) {
+        _transportSendBusy = fn;
+        _transportSendBusyCtx = ctx;
+    }
     void setOnRxIncomplete(void (*fn)(void*, const uint8_t*, uint16_t, uint32_t), void* ctx) {
         _onRxIncomplete = fn;
         _onRxIncompleteCtx = ctx;
@@ -85,6 +89,8 @@ private:
     const AppPorts* _ports{nullptr};
     bool (*_ctrlPlaneBusy)(void*){nullptr};
     void* _ctrlPlaneBusyCtx{nullptr};
+    bool (*_transportSendBusy)(void*){nullptr};
+    void* _transportSendBusyCtx{nullptr};
     void (*_onRxIncomplete)(void*, const uint8_t*, uint16_t, uint32_t){nullptr};
     void* _onRxIncompleteCtx{nullptr};
 
@@ -168,6 +174,7 @@ private:
     void clearInbound_();
     void clearIdRing_();
     void resetSessionLocal_();
+    void failQueuedInboundOnDisconnect_();
 
     bool enqueueInbound_(const MqttCommand& cmd);
     void drainInbound_();

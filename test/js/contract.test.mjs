@@ -119,12 +119,12 @@ test('unknown program action fails program.schema.json', () => {
   }
 });
 
-test('SMS message accepts printable ASCII and rejects other letters', () => {
+test('SMS message accepts printable ASCII and rejects empty or other letters', () => {
   const ajv = createAjv();
   const validate = ajv.compile(readDataJson('validation/program.schema.json'));
   const step = (message) => ({ id: 1, name: 'x', steps: [{ step: 1, action: 'SMS_OWNER', message }] });
   assert.equal(validate(step('Engine started')), true);
-  assert.equal(validate(step('')), true);
+  assert.equal(validate(step('')), false);
   assert.equal(validate(step('Двигатель')), false);
 });
 

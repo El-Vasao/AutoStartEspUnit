@@ -50,6 +50,7 @@ public:
         CmgsWaitPrompt,
         CmgsSendBody,
         CmgsWaitOk,
+        CmgsAbortEsc, ///< ESC из текстового режима SMS перед FinishFail
         AnswerSend,
         AnswerWait,
         CollectPassword,
@@ -99,6 +100,9 @@ public:
 
     /// Пока активна эпоха CIP TCP: отправка/закрытие/восстановление (не обычный AT CSQ/COPS).
     bool tcpEpochBusy() const { return _stack.tcp.isTcpEpochBusy(); }
+
+    /// Байт в подготовке CIPSEND или эпоха отправки до SEND OK (без CIPCLOSE/CIPSTART).
+    bool tcpSendBusy() const { return _stack.tcp.hasBufferedTx(); }
     /// Эпоха или любая занятость AtSession — для reattach/слива.
     bool tcpBusBusy() const { return _stack.tcp.isBusBusy(); }
 

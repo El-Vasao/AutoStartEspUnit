@@ -41,4 +41,7 @@ private:
     uint32_t _dayStart;
     uint32_t _calendarDayKey;
     uint32_t _lowStartTime;
+    /// После ENGINE_START не рвать программу по просадке прокрутки, пока не накопится новое окно.
+    bool _holdAbortAfterCrank{false};
+    uint32_t _abortLowSince{0};
 };

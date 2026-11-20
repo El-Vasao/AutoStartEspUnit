@@ -3,6 +3,9 @@
 #include "core/Core.h"
 #include "program/ProgramExecutor.h"
 #include "config/Config.h"
+#include "config/internal/ProgramJsonIo.h"
+#include "io/DigitalInputs.h"
+#include "io/RelayController.h"
 #include "fs/FsManager.h"
 #include "web/WebServer.h"
 #include "common/Constants.h"
@@ -156,6 +159,9 @@ void FlashCommitCoordinator::tick(Core& core) {
             const bool changed = (beforeCrc != afterCrc);
             recordFlashCommitSnapshot(FlashCommitOp::SAVE_CONFIG, true, changed, afterCrc);
             core.setRebootRequired(true);
+            // rebootRequired только меняет имя режима — сторож стартера и ISR импульсов живут дальше.
+            core.getRelay().applyStarterConfig();
+            core.getInputs().applyConfig();
             logger.log(LogModule::FlashCommitCoordinator, "config: /config.json written (changed=%d crc:%u->%u heap=%u)\n",
                        (int)changed,
                        (unsigned)beforeCrc,
@@ -172,47 +178,68 @@ void FlashCommitCoordinator::tick(Core& core) {
         core.feedWatchdog();
         espHalFeedWdt();
 
-        if (!deferredPostedProgramIndexPhase_) {
-            logger.log(LogModule::FlashCommitCoordinator, "program: starting deferred apply %s (heap=%u)\n",
-                       HttpPostJson::TMP_PROGRAM, espHalFreeHeap());
-            if (!flushPostedBody(HttpPostJson::TMP_PROGRAM)) {
-                recordFlashCommitSnapshot(FlashCommitOp::SAVE_PROGRAM, false, false, config.getCRC());
-                logger.log(LogModule::FlashCommitCoordinator, "program: failed to write tmp from RAM\n");
-                webServer.broadcastStatusForce();
-                deferredPostedProgramApply_ = false;
-                fileSystem.refreshFsInfo();
-                return;
-            }
-            uint8_t postedId = 0;
-            ErrorCode commitErr = ErrorCode::NONE;
-            const bool parsedOk = config.commitPostedProgramFile(HttpPostJson::TMP_PROGRAM, &postedId, &commitErr);
-            if (!parsedOk) {
-                if (commitErr != ErrorCode::NONE) core.getErrorManager().set(commitErr);
-                logger.log(LogModule::FlashCommitCoordinator, "program: tmp apply failed (%s)\n",
-                           errorCodeToString(commitErr));
-                recordFlashCommitSnapshot(FlashCommitOp::SAVE_PROGRAM, false, false, config.getCRC());
-                webServer.broadcastStatusForce();
-                deferredPostedProgramApply_ = false;
-                fileSystem.refreshFsInfo();
-            } else {
-                logger.log(LogModule::FlashCommitCoordinator, "program: JSON ok id=%u, file written, rebuildProgramIndex scheduled\n",
-                           (unsigned)postedId);
-                deferredPostedProgramIndexPhase_ = true;
-                webServer.broadcastStatusForce();
-                core.feedWatchdog();
-                espHalFeedWdt();
-                return; // следующий тик пересоберёт индекс
-            }
-        } else {
-            logger.log(LogModule::FlashCommitCoordinator, "program: deferred rebuildProgramIndex (heap=%u)\n", espHalFreeHeap());
-            const bool ok = config.rebuildProgramIndex();
-            recordFlashCommitSnapshot(FlashCommitOp::SAVE_PROGRAM, ok, ok, config.getCRC());
-            logger.log(LogModule::FlashCommitCoordinator, "program: flash write %s (heap=%u)\n", ok ? "ok" : "failed", espHalFreeHeap());
+        logger.log(LogModule::FlashCommitCoordinator, "program: starting deferred apply %s (heap=%u)\n",
+                   HttpPostJson::TMP_PROGRAM, espHalFreeHeap());
+        if (!flushPostedBody(HttpPostJson::TMP_PROGRAM)) {
+            recordFlashCommitSnapshot(FlashCommitOp::SAVE_PROGRAM, false, false, config.getCRC());
+            logger.log(LogModule::FlashCommitCoordinator, "program: failed to write tmp from RAM\n");
             webServer.broadcastStatusForce();
             deferredPostedProgramApply_ = false;
             deferredPostedProgramIndexPhase_ = false;
             fileSystem.refreshFsInfo();
+            return;
         }
+        uint8_t postedId = 0;
+        ErrorCode commitErr = ErrorCode::NONE;
+        const bool parsedOk = config.commitPostedProgramFile(HttpPostJson::TMP_PROGRAM, &postedId, &commitErr);
+        if (!parsedOk) {
+            if (commitErr != ErrorCode::NONE) core.getErrorManager().set(commitErr);
+            logger.log(LogModule::FlashCommitCoordinator, "program: tmp apply failed (%s)\n",
+                       errorCodeToString(commitErr));
+            recordFlashCommitSnapshot(FlashCommitOp::SAVE_PROGRAM, false, false, config.getCRC());
+            webServer.broadcastStatusForce();
+            deferredPostedProgramApply_ = false;
+            deferredPostedProgramIndexPhase_ = false;
+            fileSystem.refreshFsInfo();
+            return;
+        }
+
+        // Файл и индекс в одном тике: иначе UI видит fail при уже лежащем JSON.
+        logger.log(LogModule::FlashCommitCoordinator, "program: JSON ok id=%u, rebuildProgramIndex now (heap=%u)\n",
+                   (unsigned)postedId, espHalFreeHeap());
+        core.feedWatchdog();
+        espHalFeedWdt();
+        bool ok = config.rebuildProgramIndex();
+        if (!ok) {
+            char path[BufferBytes::Fs::PROGRAM_PATH];
+            program_json::formatProgramPath(path, sizeof(path), postedId);
+            char bakPath[BufferBytes::Fs::TEMP_PATH];
+            snprintf(bakPath, sizeof(bakPath), "%s.bak", path);
+            if (fileSystem.exists(bakPath)) {
+                fileSystem.deleteFile(path);
+                (void)fileSystem.rename(bakPath, path);
+                logger.log(LogModule::FlashCommitCoordinator, "program: restored %s from .bak after index fail\n",
+                           path);
+            } else {
+                fileSystem.deleteFile(path);
+                logger.log(LogModule::FlashCommitCoordinator, "program: removed orphan %s after index fail\n",
+                           path);
+            }
+            (void)config.rebuildProgramIndex();
+        } else {
+            char bakPath[BufferBytes::Fs::TEMP_PATH];
+            char path[BufferBytes::Fs::PROGRAM_PATH];
+            program_json::formatProgramPath(path, sizeof(path), postedId);
+            snprintf(bakPath, sizeof(bakPath), "%s.bak", path);
+            if (fileSystem.exists(bakPath)) fileSystem.deleteFile(bakPath);
+        }
+        recordFlashCommitSnapshot(FlashCommitOp::SAVE_PROGRAM, ok, ok, config.getCRC());
+        logger.log(LogModule::FlashCommitCoordinator, "program: flash write %s (heap=%u)\n", ok ? "ok" : "failed",
+                   espHalFreeHeap());
+        webServer.broadcastStatusForce();
+        deferredPostedProgramApply_ = false;
+        deferredPostedProgramIndexPhase_ = false;
+        fileSystem.refreshFsInfo();
         return;
     }
 

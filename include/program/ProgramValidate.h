@@ -21,6 +21,8 @@ enum class Issue : uint8_t {
     DrivesStarterRelay,
     /// input_id / relay_id / trigger id нет на устройстве.
     InvalidRef,
+    /// SMS_OWNER с пустым message.
+    EmptyMessage,
 };
 
 struct IdTable {
@@ -33,6 +35,7 @@ struct ChannelRef {
     uint8_t input_id{0};
     uint16_t input_trigger_id{0};
     uint16_t temp_trigger_id{0};
+    const char* message{nullptr}; ///< для SMS_OWNER; иначе nullptr
 };
 
 struct ChannelTables {

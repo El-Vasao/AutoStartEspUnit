@@ -188,6 +188,7 @@ void GsmController::handleGprsGetIp() {
     }
 
     if (_awaitError) {
+        if (_stack.at.isBusy() || _stack.at.hasResult()) return;
         _retryCount++;
         resetAwait();
         if (_retryCount >= Gsm::MAX_RETRIES) {
@@ -211,7 +212,10 @@ void GsmController::handleGprsGetIp() {
     }
 
     if (awaitTimedOut(now)) {
+        // Дедлайн GSM идёт с enqueue, AtSession — с startNext: не слать второй SAPBR поверх живого AT.
+        if (_stack.at.isBusy() || _stack.at.hasResult()) return;
         _retryCount++;
+        resetAwait();
         if (_retryCount >= Gsm::MAX_RETRIES) {
             changeState(GsmState::ERROR);
             core.getErrorManager().set(classifyBearerFail_());

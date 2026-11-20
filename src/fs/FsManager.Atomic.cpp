@@ -414,7 +414,10 @@ bool FsManager::closeWriteStream(File& f, const char* originalPath, bool commit)
         noteFsUnknown_();
         return false;
     }
-    if (hadBackup) LittleFS.remove(bakPath);
+    // Для /programs/*.json оставляем .bak до следующего commit — откат, если индекс не собрался.
+    const bool keepBak = (strncmp(originalPath, "/programs/", 10) == 0) &&
+                         (strstr(originalPath, "index.json") == nullptr);
+    if (hadBackup && !keepBak) LittleFS.remove(bakPath);
 
     espHalFeedWdt();
 #ifdef SERIAL_DEBUG

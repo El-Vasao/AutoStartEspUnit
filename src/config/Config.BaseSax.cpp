@@ -32,7 +32,7 @@ bool streq(const char* a, const char* b) { return a && b && strcmp(a, b) == 0; }
 void initBaseLikeFillBasic(BaseConfig& t) {
     for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
         t.sensors[i].id = ChannelSilk::numberFromSlot(i, ChannelSilk::Kind::Sensor);
-        t.sensors[i].coeff = 0.1f;
+        t.sensors[i].coeff = 0.0f;
         t.sensors[i].name[0] = '\0';
         t.sensors[i].rom[0] = '\0';
     }
@@ -40,7 +40,7 @@ void initBaseLikeFillBasic(BaseConfig& t) {
         t.inputs[i].id = ChannelSilk::numberFromSlot(i, ChannelSilk::Kind::Input);
         t.inputs[i].enabled = true;
         t.inputs[i].type = InputType::DIGITAL;
-        t.inputs[i].active_state = LOW;
+        t.inputs[i].active_state = true; // как DefaultConfig / UI по умолчанию
         t.inputs[i].name[0] = '\0';
         t.inputs[i].pulse.pulses_per_rev = 1;
         t.inputs[i].pulse.threshold_rpm = 0;
@@ -107,6 +107,7 @@ public:
         junkNest_ = 0;
         extraTrimmed_ = 0;
         seenActive_ = false;
+        seenSections_ = 0;
         hasAdcCalibrate_ = false;
         adcCalibrateVoltage_ = 0.0f;
         trig_ = TriggerConfig{};
@@ -115,6 +116,7 @@ public:
 
     bool hasAdcCalibrate() const { return hasAdcCalibrate_; }
     float adcCalibrateVoltage() const { return adcCalibrateVoltage_; }
+    uint16_t seenSections() const { return seenSections_; }
 
     void endDocument() override {}
 
@@ -132,11 +134,19 @@ public:
         }
         switch (top()) {
             case St::Root: {
-                if (streq(pending_, "wifi")) push(St::Wifi);
-                else if (streq(pending_, "gsm")) push(St::Gsm);
-                else if (streq(pending_, "mqtt")) push(St::Mqtt);
-                else if (streq(pending_, "vehicle")) push(St::Vehicle);
-                else if (streq(pending_, "thermostat")) push(St::Thermostat);
+                if (streq(pending_, "wifi")) {
+                    seenSections_ |= ConfigSection::Wifi;
+                    push(St::Wifi);
+                } else if (streq(pending_, "gsm")) {
+                    seenSections_ |= ConfigSection::Gsm;
+                    push(St::Gsm);
+                } else if (streq(pending_, "mqtt")) {
+                    seenSections_ |= ConfigSection::Mqtt;
+                    push(St::Mqtt);
+                } else if (streq(pending_, "vehicle")) {
+                    seenSections_ |= ConfigSection::Vehicle;
+                    push(St::Vehicle);
+                } else if (streq(pending_, "thermostat")) push(St::Thermostat);
                 else if (streq(pending_, "battery_saver")) push(St::BatterySaver);
                 else if (streq(pending_, "time")) push(St::TimeCfg);
                 else {
@@ -215,10 +225,7 @@ public:
             return;
         }
         const St closing = top();
-        if (closing == St::InputObj && ii_ != 255) {
-            InputConfig& ic = t_->inputs[ii_];
-            if (ic.type == InputType::DIGITAL && !seenActive_) ic.active_state = true;
-        }
+        // active_state без ключа — initBaseLikeFillBasic / DefaultConfig (true), не форсировать здесь.
         if (closing == St::InTrigObj) {
             if (t_->input_triggers_count < Limits::MAX_TRIGGERS) {
                 t_->input_triggers[t_->input_triggers_count++] = trig_;
@@ -252,14 +259,18 @@ public:
                 si_ = 255;
                 push(St::SensorsArr);
             } else if (streq(pending_, "inputs")) {
+                seenSections_ |= ConfigSection::Inputs;
                 ii_ = 255;
                 push(St::InputsArr);
             } else if (streq(pending_, "relays")) {
+                seenSections_ |= ConfigSection::Relays;
                 ri_ = 255;
                 push(St::RelaysArr);
             } else if (streq(pending_, "input_triggers")) {
+                seenSections_ |= ConfigSection::InputTriggers;
                 push(St::InTrigArr);
             } else if (streq(pending_, "temperature_triggers")) {
+                seenSections_ |= ConfigSection::TempTriggers;
                 push(St::TempTrigArr);
             }
         }
@@ -383,7 +394,7 @@ public:
                         t_->sensors[si_].id = n;
                     }
                 } else if (streq(pending_, "coeff"))
-                    t_->sensors[si_].coeff = json_scalar::parseF(v, 0.1f);
+                    t_->sensors[si_].coeff = json_scalar::parseF(v, 0.0f);
                 else if (streq(pending_, "name"))
                     strlcpy(t_->sensors[si_].name, v ? v : "", sizeof t_->sensors[si_].name);
                 else if (streq(pending_, "rom"))
@@ -445,9 +456,9 @@ public:
                 else if (streq(pending_, "upper_threshold"))
                     t_->thermostat.upper_threshold = json_scalar::parseF(v, 10.0f);
                 else if (streq(pending_, "program_id_lower"))
-                    t_->thermostat.program_id_lower = json_scalar::parseU8(v, 1);
+                    t_->thermostat.program_id_lower = json_scalar::parseU8(v, 0);
                 else if (streq(pending_, "program_id_upper"))
-                    t_->thermostat.program_id_upper = json_scalar::parseU8(v, 2);
+                    t_->thermostat.program_id_upper = json_scalar::parseU8(v, 0);
                 break;
             case St::BatterySaver:
                 if (streq(pending_, "enabled")) t_->battery_saver.enabled = json_scalar::parseBool(v, false);
@@ -464,7 +475,7 @@ public:
                 else if (streq(pending_, "max_attempts_per_day"))
                     t_->battery_saver.max_attempts_per_day = json_scalar::parseU8(v, 3);
                 else if (streq(pending_, "program_id"))
-                    t_->battery_saver.program_id = json_scalar::parseU8(v, 1);
+                    t_->battery_saver.program_id = json_scalar::parseU8(v, 0);
                 break;
             case St::TimeCfg:
                 if (streq(pending_, "enabled")) t_->time.enabled = json_scalar::parseBool(v, true);
@@ -536,6 +547,7 @@ private:
     uint8_t ii_{255};
     uint8_t ri_{255};
     bool seenActive_{false};
+    uint16_t seenSections_{0};
     TriggerConfig trig_;
     TempTriggerConfig ttrig_;
 
@@ -554,11 +566,13 @@ private:
 
 bool parseBaseConfigStreamingFromFile(File& file, BaseConfig& cfg, ParseMode mode,
                                       bool* outHasAdcCalibrate,
-                                      float* outAdcCalibrateVoltage) {
+                                      float* outAdcCalibrateVoltage,
+                                      uint16_t* outSeenSections) {
     BaseConfigListener listener(cfg);
     const bool complete = jsonStreamingParseWholeFile(file, listener);
     if (outHasAdcCalibrate) *outHasAdcCalibrate = listener.hasAdcCalibrate();
     if (outAdcCalibrateVoltage) *outAdcCalibrateVoltage = listener.adcCalibrateVoltage();
+    if (outSeenSections) *outSeenSections = listener.seenSections();
     if (listener.rootNotObject() || !listener.sawRootObject() || listener.failed()) return false;
     if (!complete && mode == ParseMode::Strict) return false;
     if (listener.extraTrimmed()) {

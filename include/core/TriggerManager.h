@@ -31,6 +31,9 @@ public:
     /// Копирует флаги включения из конфига, не сбрасывая защёлки (восстановление после OTA).
     void syncEnabledFromConfig();
 
+    /// Защёлки по текущему уровню без запуска (boot / после OTA).
+    void seedLatchesFromCurrent();
+
     /// Если true, используется Timing::TRIGGER_CHECK_INTERVAL_IDLE_MS.
     void setPollIdle(bool idle) { _pollIdle = idle; }
 

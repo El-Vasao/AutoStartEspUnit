@@ -42,6 +42,12 @@ void CellularCore::init(GsmController& gsm, MqttClient& mqtt, WebServer& web, Ti
             return g->tcpEpochBusy() || g->timeSyncBusy() || g->modemServiceEpochBusy();
         },
         _gsm);
+    _mqtt->setTransportSendBusy(
+        [](void* ctx) -> bool {
+            auto* g = static_cast<GsmController*>(ctx);
+            return g->tcpSendBusy();
+        },
+        _gsm);
     // Разбор rx_incomplete: состояние транспорта +IPD/send и активность SoftAP.
     _mqtt->setOnRxIncomplete(
         [](void* ctx, const uint8_t* /*head*/, uint16_t have, uint32_t need) {

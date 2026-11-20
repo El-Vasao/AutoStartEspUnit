@@ -86,10 +86,42 @@
     try { return JSON.parse(JSON.stringify(obj)); } catch (e) { return obj; }
   }
 
+  /** `K1|K2|…` / `IN1|…` / `T1|…` for Ajv string patterns from hwCounts. */
+  APP.schemaNormalize.silkIdPattern = function silkIdPattern(prefix, count, allowEmpty) {
+    const n = clampInt(count, 0, 64);
+    const ids = [];
+    for (let i = 1; i <= n; i++) ids.push(String(prefix) + i);
+    const body = ids.join('|');
+    if (!body) return allowEmpty ? '^$' : '^(?!)$';
+    return allowEmpty ? `^(?:|${body})$` : `^(?:${body})$`;
+  };
+
+  function patchSilkPatternsInSchema(node, relays, inputs, sensors) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      for (const item of node) patchSilkPatternsInSchema(item, relays, inputs, sensors);
+      return;
+    }
+    const pat = node.pattern;
+    if (typeof pat === 'string') {
+      const allowEmpty = pat.includes('(?:|');
+      if (relays > 0 && /K\[1-\d+\]/.test(pat)) {
+        node.pattern = APP.schemaNormalize.silkIdPattern('K', relays, allowEmpty);
+      } else if (inputs > 0 && /IN\[1-\d+\]/.test(pat)) {
+        node.pattern = APP.schemaNormalize.silkIdPattern('IN', inputs, allowEmpty);
+      } else if (sensors > 0 && /T\[1-\d+\]/.test(pat)) {
+        node.pattern = APP.schemaNormalize.silkIdPattern('T', sensors, allowEmpty);
+      }
+    }
+    for (const v of Object.values(node)) {
+      if (v && typeof v === 'object') patchSilkPatternsInSchema(v, relays, inputs, sensors);
+    }
+  }
+
   /**
    * Apply hardware-dependent limits to validation schema.
    * Source of truth for numbers: firmware-reported hwCounts (/bootstrap),
-   * which must match Limits::MAX_* on the device.
+   * which must match HardwareLimits on the device.
    */
   APP.schemaNormalize.applyHardwareLimits = function applyHardwareLimits(schema, hwCounts) {
     const sc = deepClone(schema);
@@ -98,16 +130,6 @@
       const relays = clampInt(hc.relays, 0, 64);
       const inputs = clampInt(hc.inputs, 0, 64);
       const sensors = clampInt(hc.sensors, 0, 16);
-
-      // Helper to set maximum in nested nodes if present.
-      const setMax = (node, max) => {
-        if (!node || typeof node !== 'object') return;
-        node.maximum = max;
-      };
-
-      // vehicle.starter_relay_id: uses ids, no hwCount-based limit
-
-      // engine_input_id: no maxItems-based limit (uses ids)
 
       // Arrays sized to hardware inventories. Skip 0 so Ajv init before hwCounts stays at schema defaults.
       if (sensors > 0) {
@@ -119,6 +141,9 @@
       if (relays > 0) {
         try { sc.properties.relays.maxItems = relays; } catch (e) {}
       }
+
+      // Silk id patterns in settings/program schemas (K[1-5], IN[1-3], T[1-3]) follow hwCounts.
+      patchSilkPatternsInSchema(sc, relays, inputs, sensors);
 
       return sc;
     } catch (e) {

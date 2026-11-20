@@ -48,26 +48,10 @@ int8_t DigitalInputs::findIndexById(uint16_t inputId) const {
 void DigitalInputs::begin() {
     logger.log(LogModule::DigitalInputs, "start\n");
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
-        const auto& cfg = config.getBase().inputs[i];
-        uint8_t pin = inputs[i].pin;
-        pinMode(pin, INPUT_PULLUP);
-
-        // Устанавливаем флаг включения из конфига
-        _runtimeEnabled[i] = cfg.enabled;
-
-        if (cfg.type == InputType::PULSE_COUNTER) {
-            _rpm[i].configure(cfg.pulse.pulses_per_rev);
-            resetRpm(i);
-            if (_runtimeEnabled[i]) attachCounterInterrupt(i);
-        } else {
-            bool raw = digitalRead(pin);
-            inputs[i].currentState = raw;
-            inputs[i].lastRawState = raw;
-            inputs[i].stable = true;
-            prevStates[i] = raw;
-        }
+        pinMode(inputs[i].pin, INPUT_PULLUP);
+        _runtimeEnabled[i] = config.getBase().inputs[i].enabled;
     }
-
+    applyConfig();
     logger.log(LogModule::DigitalInputs, "ok\n");
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
         const auto& cfg = config.getBase().inputs[i];
@@ -79,6 +63,28 @@ void DigitalInputs::begin() {
                    cfg.active_state ? "HIGH" : "LOW",
                    _runtimeEnabled[i] ? "ON" : "OFF");
     }
+}
+
+void DigitalInputs::applyConfig() {
+    for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
+        const auto& cfg = config.getBase().inputs[i];
+        detachCounterInterrupt(i);
+        _runtimeEnabled[i] = cfg.enabled;
+        if (cfg.type == InputType::PULSE_COUNTER) {
+            _rpm[i].configure(cfg.pulse.pulses_per_rev);
+            resetRpm(i);
+            if (_runtimeEnabled[i]) attachCounterInterrupt(i);
+        } else {
+            bool raw = digitalRead(inputs[i].pin);
+            inputs[i].currentState = raw;
+            inputs[i].lastRawState = raw;
+            inputs[i].stable = true;
+            prevStates[i] = raw;
+            _frequencies[i] = 0;
+            _rpmConfirm[i].reset();
+        }
+    }
+    logger.log(LogModule::DigitalInputs, "config applied\n");
 }
 
 void DigitalInputs::attachCounterInterrupt(uint8_t index) {

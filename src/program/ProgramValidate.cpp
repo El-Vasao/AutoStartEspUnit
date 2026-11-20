@@ -36,6 +36,9 @@ Issue checkStep(ActionId action, const ChannelRef& ch, uint8_t starterRelayNumbe
     if (action == ActionId::TEMP_TRIGGER_ENABLE || action == ActionId::TEMP_TRIGGER_DISABLE) {
         if (!containsId(tables.tempTriggers, ch.temp_trigger_id)) return Issue::InvalidRef;
     }
+    if (action == ActionId::SMS_OWNER) {
+        if (!ch.message || !ch.message[0]) return Issue::EmptyMessage;
+    }
     return Issue::None;
 }
 
@@ -44,6 +47,7 @@ const char* issueToString(Issue issue) {
         case Issue::UnknownAction:      return "unknown action";
         case Issue::DrivesStarterRelay: return "drives the starter relay";
         case Issue::InvalidRef:         return "invalid channel reference";
+        case Issue::EmptyMessage:       return "empty SMS message";
         case Issue::None:               break;
     }
     return "";

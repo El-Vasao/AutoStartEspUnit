@@ -184,10 +184,15 @@ bool OtaHandler::feedOne(const uint8_t* data, size_t len, size_t& consumed) {
                 logger.log(LogModule::OtaHandler, "extract %s (%u bytes)\n", _nameBuf, (unsigned)_fileSize);
 
                 if (_fileSize == 0) {
-                    // Пустой файл: всё равно создать через open/close.
+                    // Пустой файл: open/close обязательны; сбой не оставлять «Done» со старым хвостом.
                     File f = fileSystem.openWriteStream(_nameBuf, 0);
-                    if (f) {
-                        fileSystem.closeWriteStream(f, _nameBuf, true);
+                    if (!f) {
+                        failStream("openWriteStream пустого файла не удался");
+                        return false;
+                    }
+                    if (!fileSystem.closeWriteStream(f, _nameBuf, true)) {
+                        failStream("closeWriteStream пустого файла не удался");
+                        return false;
                     }
                     _phase = Phase::NameLen;
                     _metaHave = 0;

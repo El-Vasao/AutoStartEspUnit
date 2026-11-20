@@ -41,11 +41,6 @@ bool Config::reset() {
     configCRC = config_internal::crc16SerializedBaseConfig(baseCache, &serLen);
     loaded = true;
 
-    if (!writeFactoryPrograms()) {
-        logger.log(LogModule::Config, "factory config written, programs not created\n");
-        return false;
-    }
-
     logger.log(LogModule::Config, "write ok, CRC=%04X\n", configCRC);
     return true;
 }

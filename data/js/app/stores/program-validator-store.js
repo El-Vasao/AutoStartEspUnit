@@ -5,37 +5,6 @@
 
   const v = () => (APP.validation || {});
 
-  function deepClone(obj) {
-    try { return JSON.parse(JSON.stringify(obj)); } catch (e) { return obj; }
-  }
-
-  function clampInt(n, lo, hi) {
-    const x = Number(n);
-    if (!Number.isFinite(x)) return lo;
-    if (x < lo) return lo;
-    if (x > hi) return hi;
-    return Math.trunc(x);
-  }
-
-  function patchProgramSchemaWithHwLimits(schema, hwCounts) {
-    const sc = deepClone(schema);
-    try {
-      // IDs are not tied to 0..N-1 indices anymore. Keep bounds wide.
-      const relayNode = sc?.properties?.steps?.items?.properties?.relay_id;
-      if (relayNode && typeof relayNode === 'object') {
-        relayNode.minimum = 0;
-        relayNode.maximum = 65535;
-      }
-
-      const inputNode = sc?.properties?.steps?.items?.properties?.input_id;
-      if (inputNode && typeof inputNode === 'object') {
-        inputNode.minimum = 0;
-        inputNode.maximum = 65535;
-      }
-    } catch (e) {}
-    return sc;
-  }
-
   APP.stores.registerProgramValidatorStore = function registerProgramValidatorStore(Alpine) {
     Alpine.store('programValidator', {
       loaded: false,
@@ -53,14 +22,16 @@
           if (!Ajv2020) throw new Error('Ajv2020 bundle missing (window.ajv2020)');
 
           let programSchema = APP.preloaded?.programValidationSchema;
-          let indexSchema = APP.preloaded?.programIndexValidationSchema;
+          const indexSchema = APP.preloaded?.programIndexValidationSchema;
           if (!programSchema || typeof programSchema !== 'object') throw new Error('program validation schema missing (preloaded)');
           if (!indexSchema || typeof indexSchema !== 'object') throw new Error('program index validation schema missing (preloaded)');
 
-          // Patch program schema with runtime HW limits from /bootstrap.
+          // Silk bounds (K1..Kn / IN1..INm) follow /bootstrap hwCounts, not hardcoded schema ranges.
           try {
             const hwCounts = Alpine?.store?.('deviceStatus')?.hwCounts || null;
-            programSchema = patchProgramSchemaWithHwLimits(programSchema, hwCounts);
+            if (APP.schemaNormalize?.applyHardwareLimits) {
+              programSchema = APP.schemaNormalize.applyHardwareLimits(programSchema, hwCounts);
+            }
           } catch (e3) {}
 
           const ajv = APP.validation.createAjv();
@@ -99,16 +70,43 @@
         try {
           const starterId = String(Alpine.store('settings')?.vehicle?.starter_relay_id || '').trim();
           const steps = Array.isArray(data?.steps) ? data.steps : [];
-          if (starterId) {
-            steps.forEach((s, i) => {
-              if (!String(s?.action || '').startsWith('RELAY_')) return;
-              if (String(s?.relay_id || '').trim() !== starterId) return;
+          const inTrig = Alpine.store('settings')?.input_triggers || [];
+          const tempTrig = Alpine.store('settings')?.temperature_triggers || [];
+          const inIds = new Set(inTrig.map((t) => Number(t?.id)).filter((n) => n > 0));
+          const tempIds = new Set(tempTrig.map((t) => Number(t?.id)).filter((n) => n > 0));
+          steps.forEach((s, i) => {
+            const action = String(s?.action || '');
+            if (starterId && action.startsWith('RELAY_') && String(s?.relay_id || '').trim() === starterId) {
               const path = `steps.${i}.relay_id`;
               if (!out[path]) out[path] = [];
               out[path].push('Реле стартера управляется только шагом «Запуск двигателя»');
               ok = false;
-            });
-          }
+            }
+            if (action === 'SMS_OWNER' && !String(s?.message || '').trim()) {
+              const path = `steps.${i}.message`;
+              if (!out[path]) out[path] = [];
+              out[path].push('Укажите текст SMS');
+              ok = false;
+            }
+            if (action === 'INPUT_TRIGGER_ENABLE' || action === 'INPUT_TRIGGER_DISABLE') {
+              const id = Number(s?.input_trigger_id) || 0;
+              if (!inIds.has(id)) {
+                const path = `steps.${i}.input_trigger_id`;
+                if (!out[path]) out[path] = [];
+                out[path].push('Выберите триггер входа');
+                ok = false;
+              }
+            }
+            if (action === 'TEMP_TRIGGER_ENABLE' || action === 'TEMP_TRIGGER_DISABLE') {
+              const id = Number(s?.temp_trigger_id) || 0;
+              if (!tempIds.has(id)) {
+                const path = `steps.${i}.temp_trigger_id`;
+                if (!out[path]) out[path] = [];
+                out[path].push('Выберите температурный триггер');
+                ok = false;
+              }
+            }
+          });
         } catch (e) {}
         return { ok, errorsByPath: out };
       },
