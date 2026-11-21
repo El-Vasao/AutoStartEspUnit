@@ -135,7 +135,9 @@ Tick Machine::tick(const Sample& s) {
                 endAttempt(StopReason::Condition, s, t);
                 return t;
             }
-            if (p_.method == StartMethod::Timed && elapsed >= p_.crankMs) {
+            // Двигатель уже завёлся: полное окно выше порога «работает» — прокрутку не продолжаем.
+            const bool engineCaught = s.voltageValid && s.voltageWindowFull && s.voltage >= p_.runningVoltage;
+            if (p_.method == StartMethod::Timed && (engineCaught || elapsed >= p_.crankMs)) {
                 t.relay = RelayCmd::Off;
                 crankMs_ = elapsed;
                 phase_ = Phase::Settling;

@@ -328,6 +328,40 @@ void test_crank_clamped_to_max_and_gap_tracked() {
     TEST_ASSERT_EQUAL_UINT32(4100, m.last().maxGapMs);
 }
 
+void test_timed_crank_stops_when_engine_caught() {
+    Machine m;
+    m.begin(timedParams(), 0);
+    Tick t = m.tick(at(0));
+    TEST_ASSERT_EQUAL((int)RelayCmd::On, (int)t.relay);
+
+    t = m.tick(at(400, 11.0f));
+    TEST_ASSERT_EQUAL((int)RelayCmd::None, (int)t.relay);
+
+    // Двигатель схватился раньше crankMs: стартер снимается сразу, дальше settle и проверка окна.
+    t = m.tick(at(600, 13.6f));
+    TEST_ASSERT_EQUAL((int)RelayCmd::Off, (int)t.relay);
+    TEST_ASSERT_TRUE(t.resetVoltageWindow);
+    TEST_ASSERT_EQUAL((int)Phase::Settling, (int)m.phase());
+
+    t = m.tick(at(3600, 13.6f));
+    TEST_ASSERT_EQUAL((int)Outcome::Success, (int)t.outcome);
+    TEST_ASSERT_EQUAL((int)StopReason::VoltageOk, (int)m.last().reason);
+    TEST_ASSERT_EQUAL_UINT32(600, m.last().crankMs);
+}
+
+void test_timed_crank_ignores_voltage_without_full_window() {
+    Machine m;
+    m.begin(timedParams(), 0);
+    m.tick(at(0));
+    Tick t = m.tick(at(600, 13.6f, false));
+    TEST_ASSERT_EQUAL((int)RelayCmd::None, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Cranking, (int)m.phase());
+
+    t = m.tick(at(2000, 13.6f, false));
+    TEST_ASSERT_EQUAL((int)RelayCmd::Off, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Settling, (int)m.phase());
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -353,5 +387,7 @@ int main(int, char**) {
     RUN_TEST(test_blocked_during_resting);
     RUN_TEST(test_zero_rest_starts_next_attempt_same_tick);
     RUN_TEST(test_crank_clamped_to_max_and_gap_tracked);
+    RUN_TEST(test_timed_crank_stops_when_engine_caught);
+    RUN_TEST(test_timed_crank_ignores_voltage_without_full_window);
     return UNITY_END();
 }
