@@ -13,8 +13,7 @@ stateDiagram-v2
   GPRS_ATTACH --> GPRS_GETIP
   GPRS_GETIP --> READY
   READY --> ERROR
-  ERROR --> INIT: L1 begin
-  ERROR --> ERROR: L2 CIPSHUT / L3 SAPBR / L4 CFUN
+  ERROR --> INIT: L1-L4 затем begin
 ```
 
 ## Роль
@@ -85,18 +84,18 @@ stateDiagram-v2
 ### 3а) CellularCore glue
 
 - После первого `service()` — settle **`Gsm::POST_BOOT_SETTLE_MS` (20 s)** до `gsm.begin()`.
-- `mqtt.loop()` вызывается всегда при READY (mid-CIPSEND TX no-op, RX ring дренируется); reattach — по политике bearer, не блокируется только из‑за mid-send.
+- `mqtt.loop()` на обычной сессии READY крутится и во время CIPSEND. Он не вызывается после слива эпохи голоса/SMS и на время тяжёлой синхронизации часов. Первый `CIPSTART` ждёт, пока синхронизация после загрузки устоится. Reattach не блокируется только из‑за mid-send.
 - Hypothesis `AT`/`CGMI`: пауза **`HYP_RETRY_GAP_MS`** между повторами.
-- **Voice/SMS exclusive epoch:** пока `modemServiceEpochBusy()`, MQTT не стартует/не reconnect; при `serviceEpochNeedsMqttDrain()` — `drainMqttDisconnect_` (только после полного CIP idle → `notifyMqttDrained*`). `ProgramExecutor::stop` abort’ит voice epoch. `ctrlPlaneBusy` = TCP ∨ time (вкл. CCLK-lite) ∨ voice/SMS — gates new CIPSEND.
-- **Time sync:** CCLK-lite при живом MQTT; heavy cascade после drain (`CIPSHUT`/`TIMESHUT` → CIPGSMLOC → CNTP). Reattach откладывается, пока heavy cascade busy.
+- **Voice/SMS exclusive epoch:** пока `modemServiceEpochBusy()`, MQTT не стартует и не переподключается; при `serviceEpochNeedsMqttDrain()` — `drainMqttDisconnect_`. Эпоху обрывают `ProgramExecutor::stop` и передача слота `start()`. `ctrlPlaneBusy` = TCP-эпоха ∨ любая синхронизация времени (включая CCLK-lite) ∨ voice/SMS, плюс команда в полёте и ожидание QoS1 PUBACK.
+- **Time sync:** CCLK-lite при живом MQTT; heavy cascade после drain (`CIPSHUT`/`TIMESHUT` → CIPGSMLOC → CNTP). Тяжёлая синхронизация сливает MQTT так же, как голос. Reattach откладывается, пока heavy cascade busy. Голос и SMS отменяют идущий каскад времени.
 
 ### 3б) Voice / SMS / inbound DTMF
 
 Файлы: `src/gsm/GsmController.Voice.cpp`, URC в `GsmController.Urc.cpp`, init `AT+CLIP=1` / `AT+DDET=1` / `AT+CMGF=1`.
 
-- **Исходящие:** `requestCallOwner()` → `ATDphone;`, гудки до `+CLCC` stat 0 или 25 с, затем `ATH`. `requestSmsOwner(text)` → `AT+CMGF=1`, затем `AT+CMGS` + тело + Ctrl+Z. Приглашение `>` — до 10 с, `OK` после Ctrl+Z — до 60 с. `+CMS ERROR` / `ERROR` до `>` завершают шаг сразу. Голосовой потолок 60 с на фазы приёма SMS не действует.
-- **Входящие:** `RING`/`+CLIP` → совпадение `owner_phone` (хвост цифр) **и** непустой `dtmf_password` → слив MQTT → `ATA` → пароль DTMF → цифры id программы + `#` → `ATH` → `takePendingProgramStart` → `ProgramExecutor::start`.
-- Несовпадение CLIP/DTMF или таймаут → сброс линии, без старта программы.
+- **Исходящие:** `requestCallOwner()` → `ATDphone;`, гудки до `+CLCC` stat 0 или 25 с, затем `ATH`. `requestSmsOwner(text)` → `AT+CMGF=1`, затем `AT+CMGS` + тело + Ctrl+Z. Приглашение `>` — до 10 с, `OK` после Ctrl+Z — до 60 с. `+CMS ERROR` / `ERROR` до `>` шлёт ESC и ждёт, шаг сразу не кончается. Голосовой потолок 60 с на фазы приёма SMS не действует; он ещё действует, пока MQTT сливается и идёт `StopTcp`, до `AT+CMGF`.
+- **Входящие:** `RING`/`+CLIP`. Пустые `owner_phone` или `dtmf_password` звонок не берут. Совпадение — последние 10 цифр (короче — целиком). Чужой CLIP пишется в журнал, `ATH` не шлётся, гудки продолжаются. Совпавший номер: слив MQTT → `ATA`. Пароль сравнивается, как только набрано ровно столько цифр, сколько в нём задано; `#` и `*` на этом этапе кладут трубку. Id 1–255, не больше 3 цифр, конец `#`. Флаг пуска ставится в момент принятого `#`, до OK на `ATH`. Ядро в том же тике может вызвать `start()`, пока `ATH` ещё только в очереди. ERROR или таймаут `ATH` гасит флаг, только если его ещё не забрали.
+- Несовпадение пароля, пустой `#`, `*` и четвёртая цифра id кладут трубку без пуска.
 - После звонка GPRS/MQTT обычно переподключается (ожидаемо).
 
 Полевой чеклист: сценарии **8–10** в [`gsm_mqtt_field_log.md`](gsm_mqtt_field_log.md).
@@ -122,9 +121,11 @@ MQTT реализован **в прошивке** как неблокирующ�
 - **L3**: bearer reset (`SAPBR=0,1`), wait result
 - **L4**: модемный reset (`CFUN=1,1`), затем `gsmNoteModemSoftReboot`
 
-После `ERROR_RECOVERY_MAX_CYCLES` полных L1–L4 — sticky `GSM_NO_RESPONSE`, пауза `ERROR_RECOVERY_EXHAUSTED_MS`, затем ещё один медленный круг (или UI modem reboot). Счётчик циклов сбрасывается на READY.
+После `ERROR_RECOVERY_MAX_CYCLES` (3) полных проходов — `GSM_NO_RESPONSE`, пауза `ERROR_RECOVERY_EXHAUSTED_MS` (5 мин), затем счётчик циклов обнуляется и три цикла начинаются снова. Это не один дополнительный медленный круг. `GSM_NO_RESPONSE` снимается на следующем READY. Каждый из L1–L4 ставит `_restartPending` и уходит в `begin()` → INIT, а не остаётся в ERROR.
 
-На READY отдельно: TCP reconnect (MQTT), reattach с backoff (ступени до ~180 с, зависимость от CSQ) — см. `handleReady` / `CellularCore`. Backoff **не** сбрасывается на каждом входе в READY — только после стабильной MQTT-сессии (`clearReattachBackoff`). PDP DEACT / CLOSED-threshold идут через тот же `_reattachRequested` + cooldown. Перед уходом с READY: `tcp.stop` и ожидание idle AT bus; `CellularCore` дренирует MQTT как при `suspend`.
+Паузы: L1 — `ERROR_RECOVERY_DELAY_MS` (30 с), L2 и L3 — `ERROR_RECOVERY_COOLDOWN_MS` (2 с), L4 — тишина после `CFUN` (`POST_CFUN_QUIET_MS`, 20 с). Если подъём застрял дольше 5 мин и уровень ещё ниже 2, L1 пропускается.
+
+На READY отдельно: TCP reconnect (MQTT), reattach с backoff. Ступени 5, 10, 20, 40, 80, 160 с. Потолок константы 180 с на этой лестнице не достигается. Если BER уже прочитан и RSSI ниже 6 или равен 99, пол паузы — 60 с. Backoff **не** сбрасывается на каждом входе в READY — только после стабильной MQTT-сессии (`clearReattachBackoff`). Несовпадение APN ведёт в `GPRS_SETUP`, иначе reattach идёт в `GPRS_ATTACH`. PDP DEACT / CLOSED-threshold идут через тот же `_reattachRequested` + cooldown. Перед уходом с READY: `tcp.stop` и ожидание idle AT bus; `CellularCore` дренирует MQTT как при `suspend`.
 
 CSQ/COPS на READY — только при `!tcpSocketActive()` (не поверх живого MQTT CIP).
 
@@ -156,7 +157,7 @@ CSQ/COPS на READY — только при `!tcpSocketActive()` (не пове�
 - Повторы «сбои подключения MQTT → переподключение GSM» должны быть ограничены по частоте (не каждый тик цикла).
 - Частые куски RX (хвост кольца `GsmController`) — `logSerialOnly`. Зеркало текста AT идёт в SSE; мягкая очередь `SSE_SOFT_QUEUE_MAX=20` и жёсткая `SSE_MAX_QUEUED_MESSAGES=21` (1 место в резерве): при переполнении мягкой очереди копится счётчик, затем `[SSE] dropped N log messages` через резервный слот.
 - Куча: периодический снимок не чаще `Timing::HEAP_SNAPSHOT_INTERVAL_MS` (5 мин) и только при сдвиге ≥ `HEAP_SNAPSHOT_DELTA_BYTES`; при деградации (`mqtt_connect_fail`, OTA/режим, `gsm_ready`) — помеченный `Core::logHeapSnapshot`.
-- Исходящий MQTT: короткие `[MqttClient] публ. online`, `публ. state` full или delta `байт=N`, `публ. reply байт=N` (без потока PING и SEND OK).
+- Исходящий MQTT: `[MqttClient] pub online true`, `pub state full seq=… bytes=…` (или delta), без потока PING и SEND OK.
 
 ### Сценарии проверки
 
@@ -164,14 +165,14 @@ CSQ/COPS на READY — только при `!tcpSocketActive()` (не пове�
 
 - Цель: убедиться, что входящие байты проходят независимо от MQTT.
 - Поднять GSM до `READY`, выполнить разовый TCP (HTTP GET на `1.1.1.1:80`).
-- Ожидание: в журнале теста `bytes > 0` или подтверждённое чтение через `CIPRXGET`.
+- Ожидание: входящие байты видны как `+IPD` после `CIPRXGET=0`. Отдельного чтения через `CIPRXGET` нет.
 
 **2) Рукопожатие MQTT**
 
 - После паузы (`POST_BOOT_SETTLE_MS`) и GSM READY: TCP даёт `CONNECT OK`, затем успешный MQTT CONNECT (`CONNACK`).
 - Нет шторма `CIPSTART` во время `CIPSEND` и между `>` и `SEND OK`.
-- Ожидание журнала: строка вида `[MqttClient] подключено. подписка=...` после подписки.
-- После успешной сессии MQTT: `[MqttClient] публ. online`, затем `публ. state` full, дальше периодически delta или пропуск.
+- Ожидание журнала: `connected. subscription=` после подписки.
+- После SUBACK и трёх хэшей каталога: `pub state full`, затем `pub online true`. Дальше периодически delta или пропуск.
 
 **3) UI при SoftAP**
 
@@ -183,17 +184,17 @@ CSQ/COPS на READY — только при `!tcpSocketActive()` (не пове�
 **4) Уход из READY / передача переподключения**
 
 - Симулировать серию сбоев MQTT ≥3 или PDP DEACT.
-- Ожидание: `[Sim800TcpTransport] вызов stop()` / CIPCLOSE до SAPBR; `[CellularCore] GSM вышел из READY — слив MQTT`; нет шторма очереди AT.
-- Повторные сбои: пауза растёт (журнал `переподключение … пауза=N с`); после устойчивого Connected пауза сбрасывается.
+- Ожидание: CIPCLOSE до SAPBR; `GSM left READY — flushing MQTT`; нет шторма очереди AT.
+- Повторные сбои: `reconnect (…) pause=%us rssi=%d`; после устойчивого Connected пауза сбрасывается.
 
 **5) last_err delivery**
 
-- Ввести ошибку (например MQTT disconnect), дождаться status с `last_err`.
-- Оборвать TCP до SEND OK: `last_err` должен появиться снова после reconnect (не «съеден» ранним markDelivered).
+- Ввести ошибку (например MQTT disconnect), дождаться status с ключом `err`.
+- Оборвать TCP до SEND OK: `err` должен появиться снова после reconnect (не «съеден» ранним markDelivered).
 
 **6) Шлюз подтверждения команды**
 
-- При загруженном Ctrl: команда без успешной постановки 202 не должна исполняться (`команда не в очереди (ack занят)`).
+- При загруженном Ctrl: команда без успешной постановки 202 не должна исполняться (`command not queued (ack busy)`).
 - При живой сессии: `run` даёт 202, затем финал 200/500.
 
 **7) Потолок поиска скорости**

@@ -10,6 +10,8 @@
 - Фронтенд: [FRONTEND.md](FRONTEND.md)
 - Тесты: [TESTING.md](TESTING.md)
 - Продуктовые инварианты: [PRODUCT.md](PRODUCT.md)
+- Чем руководствуется прошивка: [BEHAVIOR.md](BEHAVIOR.md)
+- Сценарии использования: [USAGE.md](USAGE.md)
 - Конвенции: [CONVENTIONS.md](CONVENTIONS.md)
 
 ## Модули

@@ -36,7 +36,7 @@ python build.py -m            # монитор
 2. `pio run -e esp32c3` (и по желанию `--target upload`)
 3. Копирует `dist/autostart-<ts>-<type>.bin`
 4. Собирает OTA (`dist/*-ota.bin`), если нет `--no-ota`
-5. `fs`: собирает `index.html.gz`, `style.css.gz` и `app.js.gz` (и схемы), затем `uploadfs`
+5. `fs`: собирает `index.html.gz`, `style.css.gz` и `app.js.gz` (и схемы), затем `uploadfs`. Если в `data/` есть `config.json`, он попадает в образ LittleFS. OTA-пакет этот файл не включает.
 
 Прямой PlatformIO тоже работает, если не нужны Version.h, OTA и упаковка gzip:
 

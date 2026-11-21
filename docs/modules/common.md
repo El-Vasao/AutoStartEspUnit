@@ -1,14 +1,12 @@
 # `common`: Logger и устойчивость hot-path
 
-## Logger (только SSE)
-Файлы:
-- `include/common/Logger.h`
-- `src/common/Logger.cpp`
+## Logger
 
-Политика:
-- Логи идут в UI через SSE (UART0 занят GSM).
-- Дроп при перегрузке — на стороне **SSE soft/OTA queue gates** в `WebServer`
-  (встроенного token-bucket throttle в `Logger` нет).
+Подробности журнала — в [../CONVENTIONS.md](../CONVENTIONS.md).
+
+- Логи идут в UI через SSE. При `SERIAL_DEBUG` та же строка печатается в UART.
+- Дроп при перегрузке — мягкая очередь SSE в `WebServer` (`SSE_SOFT_QUEUE_MAX` 20). Отдельного OTA-гейта и token-bucket в `Logger` нет.
+- Вызов с чужой задачи кладётся в кольцо из `Logging::DEFERRED_SLOTS` (4) слота.
 
 Цель: **лучше потерять часть логов, чем повесить цикл** при активной UI-сессии и GSM churn.
 

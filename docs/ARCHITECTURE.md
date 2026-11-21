@@ -78,7 +78,7 @@ flowchart TD
 - ёмкости/лимиты фиксируем в `include/common/Constants.h` (`JsonBytes::*`).
 
 Дополнение:
-- Для рантайм-исполнения программ — компактные шаги без строк (`CompiledStep`).
+- Для рантайм-исполнения программ — компактные шаги `CompiledStep`. Строка действия в рантайме не хранится; текст SMS лежит в фиксированном `message[]`.
 - Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`).
 - MQTT: топики `online`/`state`/`programs`/`hwMap`/`trigMap`/`cmd`/`reply`; payload статуса ≤900; кадр ≤ `MQTT_CIPSEND_MAX` (1600), слот `TX_MAX` 3072. Birth: каталоги → full retained `state` → `online=true`. Период = full retain; край = delta. Норматив — `docs/modules/mqtt.md`.
 
@@ -95,8 +95,8 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
   - Период/`status`: full retained `state`; край ~250 мс: delta без retain; каталоги retain = 8 hex (см. `docs/modules/mqtt.md`)
   - Кадр ≤ `MQTT_CIPSEND_MAX` (1600)
 - **Anti-hang**: чтение/запись режутся `MqttFsmClient::Budgets`. Локальное время encode+stage (~10 мс) только логируется.
-  SIM800: send-epoch до `SEND OK`, `mqtt.loop()` всегда при READY (см. [`modules/gsm.md`](modules/gsm.md)).
-  MQTT outbound: Ctrl/Tele (`TX_Q_DEPTH=3`, sticky Full/Catalog, Delta coalesce), атомарный CIPSEND. RX overflow → reconnect.
+  SIM800: send-epoch до `SEND OK`. `mqtt.loop()` на READY крутится и во время CIPSEND, кроме эпохи голоса/SMS после слива и тяжёлой синхронизации часов (см. [`modules/gsm.md`](modules/gsm.md)).
+  MQTT outbound: Ctrl/Tele (`TX_Q_DEPTH=3`). Новый полный кадр заменяет неотправленный полный или дельту; каталог ничего не заменяет; телеметрия оставляет слот команде. Атомарный CIPSEND. RX overflow → reconnect.
 
 ### Долгие операции и watchdog/cooperate
 Любые потенциально долгие операции (flash, большие сериализации, loop’ы по файлам):
@@ -112,8 +112,9 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
 - `OTA_UPDATE` (в т.ч. во время stream-upload):
   - программы stop, реле safe, triggers/battery saver/thermostat runtime off, cellular suspend;
   - **SSE остаётся** (логи/статус под обычными soft gates);
-  - пакет льётся стримом в `Update` + FS tail, без полного `/update.bin` на LittleFS;
-  - после успешного `streamFinish` — reboot.
+  - пакет кладётся в кольцо 4 КБ, `Update` и хвост LittleFS пишет основной цикл, без полного `/update.bin` на LittleFS;
+  - HTTP отвечает `rebooting: true`, когда приём помечен финальным; смена слота и reboot — после успешного `streamFinish` на цикле;
+  - неудачный `streamFinish` не перезагружает и возвращает режим, из которого вошли (`NORMAL`, `SETUP_AP` или `EMERGENCY_AP`). Из `NORMAL_SILENT` OTA не начинается.
 
 Символы до OTA `otaUploadPressureActive` / `OTA_PREP_*` / `closeSseForOta` **удалены** (ESP32-C3).
 
@@ -153,8 +154,8 @@ MQTT чувствителен к стабильности цикла (SIM800 + S
 
 ### Журнал SSE: политика обратного давления
 - При активной UI-сессии возможен log-storm (GSM churn + transport polling).
-- Политика: **лучше дропать логи через soft/OTA SSE queue gates**, чем блокировать loop.
-  Встроенного token-bucket throttle в `Logger` больше нет — gate на стороне `WebServer`.
+- Политика: **лучше дропать логи через мягкую очередь SSE**, чем блокировать loop.
+  Встроенного token-bucket throttle в `Logger` нет. При `SERIAL_DEBUG` строка ещё печатается в UART.
 
 ## 3.4) Порог решения: замена сетевого стека
 

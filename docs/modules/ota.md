@@ -1,11 +1,12 @@
 # `ota`: stream-обновление прошивки и ассетов
 
 ## Роль
-`OtaHandler` принимает OTA-пакет **стримом** из `POST /upload`: чанки идут в FSM → `Update.write` (firmware) → `Update.end` → boot сразу на running → запись UI в LittleFS → `streamFinish` переключает boot на новый слот.
+`OtaHandler` принимает OTA-пакет из `POST /upload`. Обработчик кладёт байты в кольцо 4 КБ. Цикл сливает кольцо в FSM: `Update.write` (firmware) → `Update.end` → boot сразу на running → запись UI в LittleFS → `streamFinish` переключает boot на новый слот.
 
 ```mermaid
 flowchart LR
-  Upload[POST /upload] --> Fsm[OtaHandler stream]
+  Upload[POST /upload] --> Ring[кольцо 4 КБ]
+  Ring --> Fsm[OtaHandler.update]
   Fsm --> Fw[Update.write firmware]
   Fw --> End[Update.end]
   End --> Pin[boot = running]
@@ -38,9 +39,9 @@ flowchart LR
 1. `POST /upload` (index=0): `prepareHttpUploadSession()` + deferred `switchMode(OTA_UPDATE)`.
 2. `enterOTAUpdate`: stop программы, `relay.allOff()`, **SSE не закрывается**; GSM suspend в `handleOTAUpdate`.
 3. Чанки → `streamFeed`. По последнему байту прошивки — `Update.end(true)`, запомнить новый слот (`_pendingBoot`), `esp_ota_set_boot_partition(running)`. Дальше файлы хвоста. `_fwCommitted` значит прошивка записана, boot ещё на running.
-4. `final` → `streamFinish`. Повторный `Update.end` только если сессия ещё открыта (тот же pin). Когда поток Done и успешен — `esp_ota_set_boot_partition(_pendingBoot)` → ответ `{"success":true,"rebooting":true}` → reboot из `OtaHandler::update`.
-5. Обрыв / таймаут / ошибка **до** `Update.end` → `Update.abort()`, выход в NORMAL без перезагрузки при неудачной загрузке.
-   Ошибка **после** `Update.end`: `abort` не вызывается (сессия закрыта). Boot уже на running; `failStream` ещё раз вызывает `esp_ota_set_boot_partition(esp_ota_get_running_partition())`.
+4. HTTP отвечает `{"success":true,"rebooting":true}`, как только `final` поставлен. Смена слота и reboot — позже, в `OtaHandler::update`: `streamFinish` вызывает `esp_ota_set_boot_partition(_pendingBoot)` и перезагружает, только если поток Done. Повторный `Update.end` только если сессия ещё открыта (тот же pin).
+5. Обрыв / таймаут / ошибка **до** `Update.end` → `Update.abort()`, выход в `otaReturnMode` (`NORMAL`, `SETUP_AP` или `EMERGENCY_AP`) без перезагрузки.
+   Ошибка **после** `Update.end`: `abort` не вызывается (сессия закрыта). Boot уже на running; `failStream` ещё раз вызывает `esp_ota_set_boot_partition(esp_ota_get_running_partition())`. Неудачный `streamFinish` тоже не перезагружает.
 
 ## Режимы отказа
 - Неполный fw до `end` → `Update.abort()`, старый app-слот остаётся boot.

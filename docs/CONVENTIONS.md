@@ -104,6 +104,6 @@
 ## Документация
 
 - Корневой [`AGENTS.md`](../AGENTS.md) — карта для агентов: дерево `src/`, команды сборки и тестов, чеклист «как добавить» поле/шаг/MQTT/SSE. Не дублирует модульные docs.
-- Документы верхнего уровня — `docs/UPPER_SNAKE.md` (`ARCHITECTURE.md`, `CONVENTIONS.md`, `BUILD.md`, `HARDWARE.md`, `FRONTEND.md`, `TESTING.md`, `PRODUCT.md`).
+- Документы верхнего уровня — `docs/UPPER_SNAKE.md` (`ARCHITECTURE.md`, `CONVENTIONS.md`, `BUILD.md`, `HARDWARE.md`, `FRONTEND.md`, `TESTING.md`, `PRODUCT.md`, `BEHAVIOR.md`, `USAGE.md`).
 - Документы модулей — `docs/modules/<каталог src>.md` (включая `gsm.md` и `modem.md`).
-- Неизвестный JSON на устройстве не конвертируется: пользователь пересоздаёт файл.
+- Неизвестные ключи JSON игнорируются. Обрыв `/config.json`, который ещё разбирается мягко, файл не переписывает. Жёсткий отказ разбора заменяет `/config.json` заводскими значениями и уходит в hard restart.

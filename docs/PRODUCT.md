@@ -15,25 +15,29 @@
 
 Классический автозапуск опирается на SIM800 voice/SMS поверх того же UART, что и MQTT:
 
-- Исходящие шаги программ: `CALL_OWNER`, `SMS_OWNER` → `gsm.owner_phone`.
-- Входящий звонок: CLIP = owner + DTMF-пароль (`gsm.dtmf_password`) → цифры id программы + `#`.
+- Исходящие шаги программ: `CALL_OWNER`, `SMS_OWNER` → `gsm.owner_phone`. `NO CARRIER` / `BUSY` / `NO ANSWER` / 25 с всё равно успех `CALL_OWNER`, если `ATH` вернул OK. Шаг провален, только если набор, сброс или GSM отклонили вызов, и этот провал реле не гасит.
+- Входящий звонок: CLIP владельца (последние 10 цифр) и непустой DTMF-пароль фиксированной длины. `#` пароль не заканчивает. Id программы 1–255 и `#`. Флаг пуска ставится в момент `#`, до OK на `ATH`. Пустые пароль или телефон входящий пуск выключают. Чужой CLIP трубку не берёт.
 - На время голоса/SMS MQTT CIP **приостанавливается** (exclusive modem epoch); после эпохи MQTT переподключается. Параллельный CIP+voice не поддерживается.
 - Входящий `ProgramExecutor::start` забирает слот у текущей (как MQTT `run`): реле при удачной передаче не гасятся, кроме работающего стартера; при неудаче — `allOff()`.
 
-См. [`modules/gsm.md`](modules/gsm.md), [`modules/program.md`](modules/program.md).
+См. [`BEHAVIOR.md`](BEHAVIOR.md), [`modules/gsm.md`](modules/gsm.md), [`modules/program.md`](modules/program.md).
 
 ## ENGINE_START
 
 Шаг `ENGINE_START` — единственный путь к реле стартера. Алгоритм, вход, окно напряжения, попытки и тайминги берутся из `config.vehicle`, не из полей шага.
 
 - Timed / RPM / input — три алгоритма в `StarterMachine`.
+- Успех timed — полное окно АЦП не ниже `engine_running_voltage_threshold` после `wait_after_start_sec`. Порог «заглушен» относится только к флагу двигателя. Rpm и input успешны по условию, без проверки напряжения.
+- Вход блокировки с id 0 блокировку выключает. Иначе негодный или активный вход даёт `START_BLOCKED`. Срез защиты стартера — `RELAY_TIMEOUT` и обрыв шага.
 - Неизвестное имя шага не мапится в `ENGINE_START`.
 - CALL/SMS шаги и входящий DTMF **не** трогают реле.
+
+Полный автомат — [`BEHAVIOR.md`](BEHAVIOR.md).
 
 ```mermaid
 flowchart LR
   Step[ENGINE_START] --> Rules[VehicleRules]
   Rules --> Starter[StarterMachine]
   Starter --> Relay[starter relay]
-  Starter -->|fail| Err[START_FAILED / RELAY_TIMEOUT]
+  Starter -->|fail| Err[START_FAILED / START_BLOCKED / RELAY_TIMEOUT]
 ```

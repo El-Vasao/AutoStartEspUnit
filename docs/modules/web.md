@@ -25,14 +25,14 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 
 ## Сессии UI
 
-- Клиент периодически обновляет аренду (`POST /ui/session`) — для таймаута простоя SoftAP и допуска журнала в SSE.
+- Клиент периодически обновляет аренду (`POST /ui/session`) — для таймаута простоя SoftAP и допуска журнала и кадров статуса в SSE.
 - Фиксированный пул сессий без heap; таймаут `WebUi::SESSION_TIMEOUT_MS`, heartbeat — `WebUi::HEARTBEAT_INTERVAL_MS`.
-- SSE **не требует** сессию; сессия с фронтенда — по возможности.
+- Кадры `log` и статуса уходят, только пока есть живая сессия UI. Закрытие последней сессии закрывает SSE. Фронтенд сначала касается сессии, затем открывает `EventSource`.
 
 ## Контракт по памяти (ESP32-C3)
 
-- Лимиты: `JsonBytes::Web`, `WebSseLimits`, `APConfig` в `include/common/Constants.h`.
-- JSON API body: `sendJsonBuffered` — один emit в буфер (~4 KB) + `beginResponse`.
+- Лимиты: `JsonBytes::Web`, `WebSseLimits`, `ApConfig` в `include/common/Constants.h`.
+- JSON API body: `sendJsonBuffered`. `/bootstrap` ограничен 4096 байтами, `GET /config/get` — 5120 (`Limits::CONFIG_JSON_SIZE`).
 - `String` только кратковременно (параметры AsyncWebServer).
 
 ### `/bootstrap`
@@ -51,12 +51,13 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 
 Нет `noteHeavyUiTraffic` / `POST /ui/ready` / UI-storm defer / pre-OTA pressure.
 
-Порядок FE:
+Порядок FE (`data/js/app/core.js`):
 
-1. список HTTP (`/bootstrap` → схемы → `/config/get` → `/programs`);
-2. EventSource `/events` (без искусственных SoftAP gaps на ESP32-C3);
-3. по возможности `POST /ui/session` → живые обновления;
-4. на SSE connect — baseline burst (`clocks`→`mode`→`gsm`→`hardware` в одном тике под soft gate);
+1. `GET /bootstrap`;
+2. схемы настроек и шагов из бандла (`APP.preloaded`), не отдельным HTTP;
+3. `GET /config/get`, затем список программ;
+4. касание сессии и `EventSource` `/events`;
+5. на SSE connect — baseline burst (`clocks`→`mode`→`gsm`→`hardware` в одном тике под soft gate);
    unlock после `mode`+`hardware` (или уже из `bootstrap.live`).
 
 ## Контракт видимости UI
@@ -95,8 +96,8 @@ Web-подсистема — локальный UI поверх SoftAP/captive p
 
 ## SSE
 
-- `log` — текст через `logger.log()` (при активной UI-сессии + подписчике);
-- incremental status — kinds (`clocks`/`hardware`/…); connect → baseline burst (soft-gated).
+- `log` — текст через `logger.log()` (при активной UI-сессии и подписчике);
+- incremental status — `clocks`, `mode`, `gsm`, `hardware`, `error`, `runtime`, `program`, `flash`, плюс `resync`. Connect → baseline burst (soft-gated). `clocks` ещё имеет свой период `Timing::SSE_CLOCKS_INTERVAL_MS` = 1000 мс.
 
 Лимиты:
 
@@ -120,7 +121,7 @@ ESP32-C3 Arduino: AsyncTCP/ESPAsyncWebServer callbacks могут выполня
 
 | Операция | Контекст | Контракт |
 |----------|----------|----------|
-| `core.otaStreamFeed` / `otaStreamFinish` / `otaStreamAbort` | upload handler `POST /upload` | Пишет в FSM `OtaHandler`; не делает LittleFS commit всего пакета; режим `OTA_UPDATE` **откладывается** через `pendingDeferredOtaFromWebUpload` → drain в `Core::update` |
+| `core.otaStreamFeed` / `otaStreamFinish` / `otaStreamAbort` | upload handler `POST /upload` | `feed` копирует байты в кольцо 4 КБ (`Ota::HTTP_RING_SIZE`). `finish` только помечает `final`. `Update`, LittleFS, `streamFinish` и reboot идут в `OtaHandler::update` на цикле. `abort` всё ещё вызывает `streamAbort` с задачи загрузки и может закрыть поток LittleFS. Режим `OTA_UPDATE` **откладывается** через `pendingDeferredOtaFromWebUpload` |
 | `core.onOtaHttpUploadStreamOpenedFromWeb` | upload index==0 | `prepareHttpUploadSession` + флаг deferred mode switch |
 | JSON body → RAM | `jsonPostStreamOnBody` | Копия в буфер `CONFIG_JSON_SIZE`; **запись tmp и apply** только из loop (`FlashCommitCoordinator`) |
 | `sendJsonBuffered` / RAM UI | GET handlers | Конфиг из кэша; мелкие gzip/схемы из предзагрузки; крупный `app.js.gz` — окно, которое наполняет цикл. LittleFS и `beginResponse(FS)` из колбэка нельзя |
@@ -138,7 +139,7 @@ ESP32-C3 Arduino: AsyncTCP/ESPAsyncWebServer callbacks могут выполня
 
 - `gUploadCtx` — один активный stream OTA; 409 если уже `active`
 - `gOtaHttpUploadAwaitTimedOut` — выставляется из Core timer, читается в upload handler
-- `gBootstrapInFlight` — сериализует тяжёлый `/bootstrap` (второй запрос → 409)
+- `gBootstrapInFlight` — сериализует тяжёлый `/bootstrap` (второй запрос → **429** `BOOTSTRAP_BUSY`)
 - SSE payload/`gSse*` буферы — заполняются из main tick; async только подписывает клиентов
 
 ### Logger → SSE
@@ -150,7 +151,7 @@ ESP32-C3 Arduino: AsyncTCP/ESPAsyncWebServer callbacks могут выполня
 1. UI SoftAP, SSE подключён, GSM READY, публикация статуса MQTT.
 2. Параллельно: `POST /config/save` (большой JSON) пока идёт программа — должен уйти в deferred, UI видит busy.
 3. `POST /upload` stream OTA при активном SSE — cellular suspend после deferred mode switch; feed не блокирует loop на весь файл.
-4. Двойной `/bootstrap` / второй `/upload` — 409 Busy.
+4. Двойной `/bootstrap` — 429 `BOOTSTRAP_BUSY`. Второй `/upload` — 409 Busy.
 5. Шторм логов (SERIAL_DEBUG) при SSE — soft queue, без WDT.
 
-Код править при нарушении контракта (flash apply из async, mode switch из upload handler без deferred flag). Текущая реализация соответствует таблице выше.
+Код править при нарушении контракта (flash apply из async, mode switch из upload handler без deferred flag). Запись `Update` и хвоста LittleFS живёт в цикле, не в обработчике загрузки. `abort` загрузки — исключение: он закрывает поток с задачи HTTP.

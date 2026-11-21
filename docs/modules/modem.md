@@ -22,11 +22,12 @@ flowchart TD
 ```mermaid
 stateDiagram-v2
   [*] --> Idle
-  Idle --> WaitPrompt: CIPSEND
-  Idle --> WaitResult: AT
-  WaitPrompt --> WaitResult: prompt
-  WaitResult --> Idle: OK / ERROR / таймаут
+  Idle --> Waiting: команда в очереди
+  Waiting --> Done: OK / ERROR / таймаут / приглашение
+  Done --> Idle
 ```
+
+`AtSession` завершает `CIPSEND` на приглашении `>`. `SEND OK` и `SEND FAIL` — URC транспорта: они закрывают эпоху отправки, это не второе ожидание `AtSession`. Очереди: 6 обычных слотов и 2 приоритетных.
 
 ## `+IPD` и TCP
 

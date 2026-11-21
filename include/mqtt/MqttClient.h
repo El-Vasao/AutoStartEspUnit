@@ -53,7 +53,7 @@ public:
     static void onProgramLifecycleThunk(void* ctx, uint8_t programId, bool finishedOk);
 
 private:
-    enum class PendingKind : uint8_t { None, Thin, Status, List, HwMap };
+    enum class PendingKind : uint8_t { None, Thin, Status, List, HwMap, TrigMap };
 
     enum class BirthPhase : uint8_t {
         WaitSuback,

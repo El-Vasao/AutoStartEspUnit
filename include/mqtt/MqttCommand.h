@@ -14,6 +14,7 @@ enum class MqttCommandKind : uint8_t {
     Set,
     SetTime,
     HwMap,
+    TrigMap,
 };
 
 enum class MqttSetName : uint8_t {
@@ -74,6 +75,7 @@ inline const char* mqttCmdKindStr(MqttCommandKind k) {
         case MqttCommandKind::Set: return "set";
         case MqttCommandKind::SetTime: return "set_time";
         case MqttCommandKind::HwMap: return "hwmap";
+        case MqttCommandKind::TrigMap: return "trigmap";
         default: return "";
     }
 }

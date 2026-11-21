@@ -239,8 +239,14 @@ bool MqttClient::stageReply_(const PendingReply& pr) {
         }
     } else if (pr.kind == PendingKind::HwMap) {
         const bool a = publishHwMapBody_();
+        if (a) {
+            ok = publishThinReply_(pr.id, MqttCmd::CODE_OK);
+        } else {
+            ok = publishThinReply_(pr.id, MqttCmd::CODE_UNPROCESSABLE);
+        }
+    } else if (pr.kind == PendingKind::TrigMap) {
         const bool b = publishTrigMapBody_();
-        if (a && b) {
+        if (b) {
             ok = publishThinReply_(pr.id, MqttCmd::CODE_OK);
         } else {
             ok = publishThinReply_(pr.id, MqttCmd::CODE_UNPROCESSABLE);
@@ -272,9 +278,9 @@ void MqttClient::flushPending_() {
                 ok = publishThinReply_(pr.id, MqttCmd::CODE_UNPROCESSABLE);
             }
         } else if (pr.kind == PendingKind::HwMap) {
-            const bool a = publishHwMapBody_();
-            const bool b = publishTrigMapBody_();
-            ok = publishThinReply_(pr.id, (a && b) ? MqttCmd::CODE_OK : MqttCmd::CODE_UNPROCESSABLE);
+            ok = publishThinReply_(pr.id, publishHwMapBody_() ? MqttCmd::CODE_OK : MqttCmd::CODE_UNPROCESSABLE);
+        } else if (pr.kind == PendingKind::TrigMap) {
+            ok = publishThinReply_(pr.id, publishTrigMapBody_() ? MqttCmd::CODE_OK : MqttCmd::CODE_UNPROCESSABLE);
         }
         if (!ok) break;
         for (uint8_t i = 1; i < _pendingCount; i++) {
@@ -304,6 +310,7 @@ bool MqttClient::validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const
         case MqttCommandKind::Status:
         case MqttCommandKind::Seq:
         case MqttCommandKind::HwMap:
+        case MqttCommandKind::TrigMap:
             return true;
         case MqttCommandKind::Set:
             if (cmd.setName == MqttSetName::None || !cmd.hasEnabled) {
@@ -545,6 +552,15 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
             logger.log(LogModule::MqttClient, "hwmap id=%s\n", cmd.id);
             PendingReply pr{};
             pr.kind = PendingKind::HwMap;
+            strlcpy(pr.id, cmd.id, sizeof(pr.id));
+            pr.code = MqttCmd::CODE_OK;
+            (void)stageReply_(pr);
+            return;
+        }
+        case MqttCommandKind::TrigMap: {
+            logger.log(LogModule::MqttClient, "trigmap id=%s\n", cmd.id);
+            PendingReply pr{};
+            pr.kind = PendingKind::TrigMap;
             strlcpy(pr.id, cmd.id, sizeof(pr.id));
             pr.code = MqttCmd::CODE_OK;
             (void)stageReply_(pr);

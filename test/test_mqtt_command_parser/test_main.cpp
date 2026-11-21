@@ -31,6 +31,34 @@ void test_parse_stop_list_status() {
     TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"h1\",\"cmd\":\"hwmap\"}", cmd));
     TEST_ASSERT_EQUAL((int)MqttCommandKind::HwMap, (int)cmd.kind);
     TEST_ASSERT_EQUAL_STRING("hwmap", mqttCmdKindStr(cmd.kind));
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"t1\",\"cmd\":\"trigmap\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::TrigMap, (int)cmd.kind);
+    TEST_ASSERT_EQUAL_STRING("trigmap", mqttCmdKindStr(cmd.kind));
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"p1\",\"cmd\":\"programs\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::List, (int)cmd.kind);
+}
+
+void test_catalog_cmds_ignore_case() {
+    MqttCommand cmd;
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"h\",\"cmd\":\"hwMap\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::HwMap, (int)cmd.kind);
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"h\",\"cmd\":\"HWMAP\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::HwMap, (int)cmd.kind);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"t\",\"cmd\":\"trigMap\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::TrigMap, (int)cmd.kind);
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"t\",\"cmd\":\"TRIGMAP\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::TrigMap, (int)cmd.kind);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"p\",\"cmd\":\"Programs\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::List, (int)cmd.kind);
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"p\",\"cmd\":\"PROGRAMS\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::List, (int)cmd.kind);
+
+    TEST_ASSERT_FALSE(parseMqttCommandJson("{\"id\":\"x\",\"cmd\":\"hwmaps\"}", cmd));
+    TEST_ASSERT_FALSE(parseMqttCommandJson("{\"id\":\"x\",\"cmd\":\"program\"}", cmd));
 }
 
 void test_parse_set_thermostat() {
@@ -155,6 +183,7 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_parse_run);
     RUN_TEST(test_parse_stop_list_status);
+    RUN_TEST(test_catalog_cmds_ignore_case);
     RUN_TEST(test_parse_set_thermostat);
     RUN_TEST(test_parse_set_input_ref);
     RUN_TEST(test_parse_set_time);

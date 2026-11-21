@@ -4,10 +4,10 @@ ESP32-C3 firmware + Alpine.js SoftAP UI for vehicle remote auto-start (SIM800 MQ
 
 ## Layout
 
-- `include/<mod>/`, `src/<mod>/` — firmware modules (`common`, `config`, `core`, `fs`, `gsm`, `io`, `json`, `modem`, `mqtt`, `ota`, `program`, `web`)
+- `include/<mod>/`, `src/<mod>/` — firmware modules (`app`, `common`, `config`, `core`, `fs`, `gsm`, `io`, `json`, `modem`, `mqtt`, `ota`, `program`, `web`)
 - `data/` — UI sources; `build.py` concatenates `JS_LIBS` into `/app.js.gz`
 - `test/test_*/` — Unity native; `test/js/` — Node `node --test "test/js/**/*.test.mjs"`
-- `docs/` — architecture and module notes; conventions in `docs/CONVENTIONS.md`
+- `docs/` — architecture and module notes; behavior in `docs/BEHAVIOR.md`, usage in `docs/USAGE.md`; conventions in `docs/CONVENTIONS.md`
 
 ## Commands
 
@@ -26,9 +26,9 @@ CI: `.github/workflows/ci.yml`.
 ## Rules
 
 - Logger: `logger.log(LogModule::X, "...\n", ...)`. No `Serial.print` in app code.
-- No heap `String` on hot paths. Time via `millis()` differences. Async HTTP handlers must not touch LittleFS.
+- No heap `String` on hot paths. Time via `millis()` differences. JSON and static HTTP handlers must not touch LittleFS. OTA abort still closes the upload stream from the HTTP task.
 - UART0 is shared by SIM800 and debug Serial.
-- First-build: unknown JSON keys are ignored; files the firmware rejects are not converted. Soft parse of `/config.json` and `FallbackWebPage` stay.
+- Unknown JSON keys are ignored. A lenient truncated `/config.json` is not rewritten. A hard parse failure replaces `/config.json` with factory defaults and hard-restarts. `FallbackWebPage` stays.
 - Names: `docs/CONVENTIONS.md`.
 
 ## How to add

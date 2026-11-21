@@ -105,15 +105,26 @@ MqttSetName setNameFrom(const char* n) {
     return MqttSetName::None;
 }
 
+bool eqIgnoreAscii(const char* a, const char* b) {
+    if (!a || !b) return false;
+    while (*a && *b) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return false;
+        ++a;
+        ++b;
+    }
+    return *a == *b;
+}
+
 MqttCommandKind cmdFrom(const char* c) {
     if (strcmp(c, "run") == 0) return MqttCommandKind::Run;
     if (strcmp(c, "stop") == 0) return MqttCommandKind::Stop;
-    if (strcmp(c, "list") == 0) return MqttCommandKind::List;
+    if (strcmp(c, "list") == 0 || eqIgnoreAscii(c, "programs")) return MqttCommandKind::List;
     if (strcmp(c, "status") == 0) return MqttCommandKind::Status;
     if (strcmp(c, "seq") == 0) return MqttCommandKind::Seq;
     if (strcmp(c, "set") == 0) return MqttCommandKind::Set;
     if (strcmp(c, "set_time") == 0) return MqttCommandKind::SetTime;
-    if (strcmp(c, "hwmap") == 0) return MqttCommandKind::HwMap;
+    if (eqIgnoreAscii(c, "hwmap")) return MqttCommandKind::HwMap;
+    if (eqIgnoreAscii(c, "trigmap")) return MqttCommandKind::TrigMap;
     return MqttCommandKind::None;
 }
 
