@@ -32,7 +32,8 @@ bool ProgramExecutor::isStartBlocked() const {
 }
 
 void ProgramExecutor::failStart(const char* reason, ErrorCode code) {
-    logger.log(LogModule::Starter, "start failed: %s, all relays OFF\n", reason);
+    logger.log(LogModule::Starter, "start failed: %s, relays on=0x%02X, all OFF\n", reason,
+               (unsigned)core.getRelay().getMask());
     core.getRelay().allOff();
     finish(false);
     if (code != ErrorCode::NONE) core.getErrorManager().set(code);
