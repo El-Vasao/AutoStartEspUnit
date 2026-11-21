@@ -50,6 +50,8 @@ private:
     uint32_t _lastReattachRequestMs{0};
     uint8_t _lastLoggedFailStreak{0};
     bool _loggedBootNtpWait{false};
+    /// Один лог на эпоху слива MQTT (voice/SMS или time-sync), без спама каждый service().
+    bool _loggedMqttFlush{false};
     /// Защёлка после MQTT Connected при failStreak==0 → gsm.clearReattachBackoff().
     bool _mqttStableNoted{false};
 };

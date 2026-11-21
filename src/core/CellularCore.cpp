@@ -34,6 +34,7 @@ void CellularCore::init(GsmController& gsm, MqttClient& mqtt, WebServer& web, Ti
     _bootSettleUntilMs = 0;
     _lastSettleLogMs = 0;
     _loggedBootNtpWait = false;
+    _loggedMqttFlush = false;
     _mqttStableNoted = false;
     // MQTT Ctrl/CIPSTART: эпоха TCP, тяжёлый каскад времени, CCLK-lite (взаимоисключение с CIPSEND) или голос.
     _mqtt->setCtrlPlaneBusy(
@@ -65,7 +66,9 @@ void CellularCore::init(GsmController& gsm, MqttClient& mqtt, WebServer& web, Ti
 bool CellularCore::drainMqttDisconnect_() {
     if (!_gsm || !_mqtt) return true;
     _mqtt->setReconnectEnabled(false);
-    if (_mqttStarted || _mqtt->needsDisconnectDrain() || _mqtt->isSessionConnected()) {
+    // Graceful tear-down только пока сессия Connected или кадры слива ещё в очереди.
+    // После FSM→Idle остаётся CIPCLOSE: ждать tcpBusBusy, не звать disconnect() снова.
+    if (_mqtt->isSessionConnected() || _mqtt->needsDisconnectDrain()) {
         _mqtt->disconnect();
     }
     const uint32_t t0 = millis();
@@ -76,6 +79,7 @@ bool CellularCore::drainMqttDisconnect_() {
             _mqttStarted = false;
             _mqttStableNoted = false;
             _lastLoggedFailStreak = 0;
+            _loggedMqttFlush = false;
             return true;
         }
         if ((uint32_t)(millis() - t0) >= Cellular::MQTT_DRAIN_MAX_MS) break;
@@ -115,8 +119,9 @@ void CellularCore::service() {
 
     // Исключительная эпоха голоса/SMS: слить MQTT до ATD/ATA/CMGS.
     if (_gsm->serviceEpochNeedsMqttDrain()) {
-        if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
-            if (_mqttStarted) {
+        if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain()) || _gsm->tcpBusBusy()) {
+            if (!_loggedMqttFlush) {
+                _loggedMqttFlush = true;
                 logger.log(LogModule::CellularCore, "MQTT flush for voice/SMS epoch\n");
             }
             if (!drainMqttDisconnect_()) return;
@@ -130,8 +135,9 @@ void CellularCore::service() {
     // CCLK-lite слив не просит. Пропускать, пока голос владеет модемом (взаимное исключение).
     if (_timeSync && _timeSync->needsMqttDrainForSync() && !_gsm->modemServiceEpochBusy() &&
         !_gsm->serviceEpochNeedsMqttDrain()) {
-        if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
-            if (_mqttStarted) {
+        if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain()) || _gsm->tcpBusBusy()) {
+            if (!_loggedMqttFlush) {
+                _loggedMqttFlush = true;
                 logger.log(LogModule::CellularCore, "MQTT flush for time-sync yield\n");
             }
             if (!drainMqttDisconnect_()) return;
@@ -155,6 +161,7 @@ void CellularCore::service() {
                     _mqttStarted = false;
                     _mqttStableNoted = false;
                     _lastLoggedFailStreak = 0;
+                    _loggedMqttFlush = false;
                 }
             }
             return;
@@ -247,5 +254,6 @@ void CellularCore::suspend() {
     _lastReattachRequestMs = 0;
     _lastLoggedFailStreak = 0;
     _loggedBootNtpWait = false;
+    _loggedMqttFlush = false;
     _mqttStableNoted = false;
 }
