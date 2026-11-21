@@ -62,12 +62,14 @@ void ModeManager::switchMode(CoreMode newMode) {
 
     logger.log(LogModule::ModeManager, "mode change: %s -> %s\n", oldModeName, newModeName);
 
+    // OTA из SETUP/EMERGENCY: SoftAP и HTTP не останавливаем, иначе загрузка рвётся посреди запроса.
+    const bool keepWeb = (newMode == CoreMode::OTA_UPDATE);
     // Выходим из текущего режима.
     // Важно: exit/enter должны быть быстрыми и не делать тяжёлых блокирующих операций.
     switch (_currentMode) {
         case CoreMode::BOOT:            exitBoot(); break;
-        case CoreMode::EMERGENCY_AP:    exitEmergencyAP(); break;
-        case CoreMode::SETUP_AP:        exitSetupAP(); break;
+        case CoreMode::EMERGENCY_AP:    exitEmergencyAP(keepWeb); break;
+        case CoreMode::SETUP_AP:        exitSetupAP(keepWeb); break;
         case CoreMode::NORMAL:          exitNormal(); break;
         case CoreMode::NORMAL_SILENT:   exitNormalSilent(); break;
         case CoreMode::OTA_UPDATE:      exitOTAUpdate(); break;
@@ -121,9 +123,9 @@ void ModeManager::enterEmergencyAP() {
     }
 }
 
-void ModeManager::exitEmergencyAP() {
+void ModeManager::exitEmergencyAP(bool keepWeb) {
     logger.log(LogModule::ModeManager, "exit EMERGENCY_AP\n");
-    if (_webServer) {
+    if (_webServer && !keepWeb) {
         _webServer->stop();
     }
 }
@@ -135,9 +137,9 @@ void ModeManager::enterSetupAP() {
     }
 }
 
-void ModeManager::exitSetupAP() {
+void ModeManager::exitSetupAP(bool keepWeb) {
     logger.log(LogModule::ModeManager, "exit SETUP_AP\n");
-    if (_webServer) {
+    if (_webServer && !keepWeb) {
         _webServer->stop();
     }
 }

@@ -130,6 +130,10 @@ static void drainDeferredOtaFromWebUpload_(CorePrivate& impl) {
     impl.pendingDeferredOtaFromWebUpload = false;
     const CoreMode cur = impl.modeManager.getCurrentMode();
     if (cur != CoreMode::NORMAL && cur != CoreMode::SETUP_AP && cur != CoreMode::EMERGENCY_AP) {
+        // Загрузка уже пошла, а режим её не принимает: сессия Failed и ответ ошибкой, без тихого сброса.
+        logger.log(LogModule::Core, "OTA upload refused in mode %u\n", (unsigned)cur);
+        impl.otaHandler.streamAbort();
+        impl.otaHandler.notifyHttpUploadComplete(false);
         return;
     }
     impl.otaReturnMode = cur;

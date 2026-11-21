@@ -271,6 +271,10 @@ bool OtaHandler::streamFinish() {
 
     // Прошивка должна быть целиком.
     if (_phase == Phase::Header || _phase == Phase::Firmware) {
+        logger.log(LogModule::OtaHandler,
+                   "incomplete firmware: phase=%u hdr=%u fwSize=%u fwRemaining=%u accepted=%u\n",
+                   (unsigned)_phase, (unsigned)_hdrHave, (unsigned)_fwSize, (unsigned)_fwRemaining,
+                   (unsigned)_totalAccepted);
         failStream("прошивка неполная");
         return false;
     }

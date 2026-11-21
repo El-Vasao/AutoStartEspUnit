@@ -5,6 +5,12 @@
 #include <string>
 #include <vector>
 
+#if defined(_GLIBCXX_HAS_GTHREADS) || defined(_LIBCPP_HAS_THREADS)
+#define OTA_TEST_HAS_THREADS 1
+#include <atomic>
+#include <thread>
+#endif
+
 #include "LogSink.h"
 #include "Update.h"
 #include "fs/FsManager.h"
@@ -59,6 +65,10 @@ bool bootIsRunning() {
 
 bool bootIsNext() {
     return esp_ota_get_boot_partition() == esp_ota_test_next_partition();
+}
+
+void runUpdateUntilDone(OtaHandler& ota) {
+    for (int i = 0; i < 100000 && ota.isOngoing(); ++i) ota.update();
 }
 
 } // пространство имён
@@ -154,6 +164,118 @@ static void test_tail_failure_after_end_does_not_abort() {
     TEST_ASSERT_FALSE(ota.streamSucceeded());
 }
 
+static void test_ring_stall_times_out_and_fails_session() {
+    OtaHandler ota;
+    ota.prepareHttpUploadSession();
+    std::vector<uint8_t> full(Ota::HTTP_RING_SIZE, 0xAB);
+    TEST_ASSERT_TRUE(ota.enqueueHttpBytes(full.data(), full.size()));  // кольцо полное, цикл не сливает
+    const uint8_t extra[] = {0x01};
+    const unsigned long t0 = millis();
+    TEST_ASSERT_FALSE(ota.enqueueHttpBytes(extra, sizeof extra));
+    TEST_ASSERT_TRUE(millis() - t0 > Timing::OTA_RING_WAIT_MS);
+    TEST_ASSERT_TRUE(test_log::contains("HTTP ring stalled"));
+    // Сессия Failed: повтор отказывает сразу, без нового ожидания.
+    const unsigned long t1 = millis();
+    TEST_ASSERT_FALSE(ota.enqueueHttpBytes(extra, sizeof extra));
+    TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(t1), static_cast<uint32_t>(millis()));
+}
+
+static void test_prepare_discards_stale_ring_bytes() {
+    OtaHandler ota;
+    ota.prepareHttpUploadSession();
+    const uint8_t junk[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    TEST_ASSERT_TRUE(ota.enqueueHttpBytes(junk, sizeof junk));  // хвост прошлой сессии
+    ota.prepareHttpUploadSession();                             // новая сессия выбрасывает его
+    const auto pkt = firmwarePacket();
+    TEST_ASSERT_TRUE(ota.enqueueHttpBytes(pkt.data(), pkt.size()));  // пришло до begin: должно сохраниться
+    ota.markHttpFinal();
+    ota.notifyHttpUploadComplete(true);
+    ota.begin();
+    runUpdateUntilDone(ota);
+    TEST_ASSERT_TRUE(ota.streamSucceeded());
+    TEST_ASSERT_EQUAL_INT(1, ota_stub::beginCount());
+    TEST_ASSERT_EQUAL_INT(1, ota_stub::endCount());
+    TEST_ASSERT_EQUAL_INT(0, ota_stub::abortCount());
+}
+
+static void test_begin_resets_parser_after_failed_session() {
+    OtaHandler ota;
+    // Первая сессия: fwSize=4, пришли два байта прошивки и финал. Поток уходит в Failed.
+    ota.prepareHttpUploadSession();
+    const uint8_t cut[] = {4, 0, 0, 0, 0xE9, 0x03};
+    TEST_ASSERT_TRUE(ota.enqueueHttpBytes(cut, sizeof cut));
+    ota.markHttpFinal();
+    ota.notifyHttpUploadComplete(true);
+    ota.begin();
+    runUpdateUntilDone(ota);
+    TEST_ASSERT_FALSE(ota.streamSucceeded());
+    TEST_ASSERT_TRUE(test_log::contains("прошивка неполная"));
+    // Вторая сессия без onModeExit: парсер должен начаться с нуля, а не с остатков первой.
+    ota.prepareHttpUploadSession();
+    const auto pkt = firmwarePacket();
+    TEST_ASSERT_TRUE(ota.enqueueHttpBytes(pkt.data(), pkt.size()));
+    ota.markHttpFinal();
+    ota.notifyHttpUploadComplete(true);
+    ota.begin();
+    runUpdateUntilDone(ota);
+    TEST_ASSERT_TRUE(ota.streamSucceeded());
+    TEST_ASSERT_EQUAL_INT(2, ota_stub::beginCount());
+    TEST_ASSERT_EQUAL_INT(1, ota_stub::endCount());
+    TEST_ASSERT_EQUAL_INT(1, ota_stub::abortCount());
+}
+
+#if defined(OTA_TEST_HAS_THREADS)
+// Producer (как async HTTP) и consumer (цикл) гоняют 256 КБ через кольцо. Часы в delay() не двигаем:
+// лимит ожидания кольца не должен зависеть от планировщика хоста.
+static void test_ring_stress_producer_consumer_keeps_all_bytes() {
+    std::vector<uint8_t> fw(256 * 1024);
+    uint32_t expectCheck = 0;
+    for (size_t i = 0; i < fw.size(); ++i) {
+        fw[i] = static_cast<uint8_t>((i * 131u) ^ (i >> 8));
+        expectCheck = expectCheck * 131u + fw[i];
+    }
+    std::vector<uint8_t> pkt;
+    appendU32(pkt, static_cast<uint32_t>(fw.size()));
+    pkt.insert(pkt.end(), fw.begin(), fw.end());
+    appendU16(pkt, 0);  // nameLen 0: хвост пуст
+
+    OtaHandler ota;
+    ota.prepareHttpUploadSession();
+    ota.begin();
+    delayAdvancesTestClock() = false;
+
+    std::atomic<bool> enqueueOk{true};
+    std::thread producer([&] {
+        size_t off = 0;
+        uint32_t seed = 12345u;
+        while (off < pkt.size()) {
+            seed = seed * 1103515245u + 12345u;
+            size_t n = 1 + (seed >> 16) % 300;
+            if (n > pkt.size() - off) n = pkt.size() - off;
+            if (!ota.enqueueHttpBytes(pkt.data() + off, n)) {
+                enqueueOk = false;
+                break;
+            }
+            off += n;
+        }
+        ota.markHttpFinal();
+        ota.notifyHttpUploadComplete(enqueueOk.load());
+    });
+    for (uint64_t i = 0; i < 50000000ull && ota.isOngoing(); ++i) {
+        ota.update();
+        std::this_thread::yield();
+    }
+    if (ota.isOngoing()) ota.streamAbort();  // лимит итераций сорван: освободить producer
+    producer.join();
+    delayAdvancesTestClock() = true;
+
+    TEST_ASSERT_TRUE(enqueueOk.load());
+    TEST_ASSERT_TRUE(ota.streamSucceeded());
+    TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(fw.size()), static_cast<uint32_t>(ota_stub::writtenBytes()));
+    TEST_ASSERT_EQUAL_UINT32(expectCheck, ota_stub::checksum());
+}
+#endif
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_tail_rejects_config_and_program);
@@ -161,5 +283,11 @@ int main(int, char**) {
     RUN_TEST(test_boot_stays_running_until_stream_finish);
     RUN_TEST(test_stream_finish_activates_new_boot);
     RUN_TEST(test_tail_failure_after_end_does_not_abort);
+    RUN_TEST(test_ring_stall_times_out_and_fails_session);
+    RUN_TEST(test_prepare_discards_stale_ring_bytes);
+    RUN_TEST(test_begin_resets_parser_after_failed_session);
+#if defined(OTA_TEST_HAS_THREADS)
+    RUN_TEST(test_ring_stress_producer_consumer_keeps_all_bytes);
+#endif
     return UNITY_END();
 }

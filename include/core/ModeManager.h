@@ -50,9 +50,9 @@ private:
     void enterBoot();
     void exitBoot();
     void enterEmergencyAP();
-    void exitEmergencyAP();
+    void exitEmergencyAP(bool keepWeb);
     void enterSetupAP();
-    void exitSetupAP();
+    void exitSetupAP(bool keepWeb);
     void enterNormal();
     void exitNormal();
     void enterNormalSilent();

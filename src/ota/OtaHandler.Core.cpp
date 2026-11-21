@@ -5,9 +5,17 @@
 #include "common/Logger.h"
 #include "common/Constants.h"
 #include "fs/FsManager.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <Update.h>
 #include <esp_ota_ops.h>
+
+namespace {
+// Кольцо async → цикл: _httpRingHead и _httpRingCount меняются только под этой секцией.
+// Байты в слоты пишет и читает вне секции: async пишет только свободные, цикл — только занятые.
+portMUX_TYPE s_httpRingMux = portMUX_INITIALIZER_UNLOCKED;
+} // пространство имён
 
 OtaHandler::OtaHandler() = default;
 
@@ -29,9 +37,6 @@ void OtaHandler::resetStreamState() {
     _nameBuf[0] = '\0';
     _fileSize = 0;
     _fileRemaining = 0;
-    _httpRingHead = 0;
-    _httpRingCount = 0;
-    _httpFinalMarked = false;
     _streamFinishDone = false;
 }
 
@@ -104,7 +109,9 @@ void OtaHandler::failStream(const char* why) {
 
 void OtaHandler::prepareHttpUploadSession() {
     core.logHeapSnapshot("ota_wait_upload");
-    resetStreamState();
+    // Вызов из async (index==0): LittleFS и Update не трогаем. Парсер сбросит begin() на цикле.
+    resetHttpRing_();
+    _httpFinalMarked = false;
     _phase = Phase::Header;
     _awaitHttpUploadSession = true;
     _httpUploadDone = false;
@@ -120,20 +127,43 @@ bool OtaHandler::enqueueHttpBytes(const uint8_t* data, size_t len) {
     if (_phase == Phase::Failed) return false;
     if (!data && len > 0) return false;
     size_t off = 0;
+    bool stalled = false;
+    uint32_t stallStartMs = 0;
     while (off < len) {
+        // Индексы читаем и меняем только под секцией. Байты пишем в свободные слоты уже вне её.
+        taskENTER_CRITICAL(&s_httpRingMux);
         const uint16_t free = httpRingFree_();
+        const uint16_t tail =
+            static_cast<uint16_t>((_httpRingHead + _httpRingCount) % Ota::HTTP_RING_SIZE);
+        taskEXIT_CRITICAL(&s_httpRingMux);
         if (free == 0) {
+            const uint32_t now = millis();
+            if (!stalled) {
+                stalled = true;
+                stallStartMs = now;
+            }
+            // Сессия уже сорвана (abort или ошибка цикла): не ждём.
+            if (_phase == Phase::Failed) return false;
+            if ((uint32_t)(now - stallStartMs) > Timing::OTA_RING_WAIT_MS) {
+                // Цикл не слил кольцо за лимит: поток Failed, колбэк ответит ошибкой и вызовет abort.
+                logger.log(LogModule::OtaHandler,
+                           "HTTP ring stalled (no drain for %u ms), upload aborted\n",
+                           (unsigned)Timing::OTA_RING_WAIT_MS);
+                _phase = Phase::Failed;
+                return false;
+            }
             // Отдать квант loopTask, чтобы drainHttpRing_ забрал байты.
             delay(1);
             continue;
         }
+        stalled = false;
         const size_t n = (len - off) < free ? (len - off) : free;
         for (size_t i = 0; i < n; i++) {
-            const uint16_t idx =
-                static_cast<uint16_t>((_httpRingHead + _httpRingCount) % Ota::HTTP_RING_SIZE);
-            _httpRing[idx] = data[off + i];
-            _httpRingCount++;
+            _httpRing[(tail + i) % Ota::HTTP_RING_SIZE] = data[off + i];
         }
+        taskENTER_CRITICAL(&s_httpRingMux);
+        _httpRingCount = static_cast<uint16_t>(_httpRingCount + n);
+        taskEXIT_CRITICAL(&s_httpRingMux);
         off += n;
     }
     return true;
@@ -145,21 +175,35 @@ bool OtaHandler::markHttpFinal() {
 }
 
 void OtaHandler::drainHttpRing_() {
-    while (_httpRingCount > 0) {
-        uint8_t chunk[64];
+    uint8_t chunk[64];
+    for (;;) {
+        // Сливает только цикл. Байты читаем вне секции, head и count двигаем под ней.
+        taskENTER_CRITICAL(&s_httpRingMux);
+        const uint16_t head = _httpRingHead;
         const uint16_t n =
             _httpRingCount < sizeof(chunk) ? _httpRingCount : static_cast<uint16_t>(sizeof(chunk));
+        taskEXIT_CRITICAL(&s_httpRingMux);
+        if (n == 0) return;
         for (uint16_t i = 0; i < n; i++) {
-            chunk[i] = _httpRing[_httpRingHead];
-            _httpRingHead = static_cast<uint16_t>((_httpRingHead + 1) % Ota::HTTP_RING_SIZE);
-            _httpRingCount--;
+            chunk[i] = _httpRing[(head + i) % Ota::HTTP_RING_SIZE];
         }
+        taskENTER_CRITICAL(&s_httpRingMux);
+        _httpRingHead = static_cast<uint16_t>((head + n) % Ota::HTTP_RING_SIZE);
+        _httpRingCount = static_cast<uint16_t>(_httpRingCount - n);
+        taskEXIT_CRITICAL(&s_httpRingMux);
         if (!streamFeed(chunk, n)) {
-            _httpRingCount = 0;
-            _httpRingHead = 0;
+            // Кольцо не сбрасываем молча: поток Failed, async выйдет по enqueue.
+            _phase = Phase::Failed;
             return;
         }
     }
+}
+
+void OtaHandler::resetHttpRing_() {
+    taskENTER_CRITICAL(&s_httpRingMux);
+    _httpRingHead = 0;
+    _httpRingCount = 0;
+    taskEXIT_CRITICAL(&s_httpRingMux);
 }
 
 void OtaHandler::notifyHttpUploadComplete(bool ok) {
@@ -183,6 +227,9 @@ void OtaHandler::onModeExit() {
 void OtaHandler::begin() {
     logger.log(LogModule::OtaHandler, "OTA update started (stream)\n");
     core.logHeapSnapshot("ota_mode_begin");
+    // Парсер и открытый файл сбрасываем здесь, на цикле. Кольцо и флаги HTTP не трогаем: байты и финал могли прийти раньше.
+    resetStreamState();
+    _phase = Phase::Header;
     _ongoing = true;
     _lastLogTime = 0;
 }

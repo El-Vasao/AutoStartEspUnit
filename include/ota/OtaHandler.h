@@ -24,7 +24,7 @@ public:
     void update();
     void onModeExit();
 
-    /// Начать ожидание multipart-загрузки; сбрасывает FSM потока.
+    /// Начать сессию HTTP (вызов из async): сбрасывает кольцо и флаги. FSM потока сбрасывает begin().
     void prepareHttpUploadSession();
 
     /// Async HTTP: только в кольцо RAM (Update/LittleFS — из update()).
@@ -72,6 +72,7 @@ private:
     bool _httpFinalMarked{false};
     bool _streamFinishDone{false};
 
+    // Async пишет в кольцо, цикл сливает. _httpRingHead и _httpRingCount меняются только под s_httpRingMux (OtaHandler.Core.cpp).
     uint8_t _httpRing[Ota::HTTP_RING_SIZE]{};
     uint16_t _httpRingHead{0};
     uint16_t _httpRingCount{0};
@@ -113,5 +114,6 @@ private:
     bool closeOutFile(bool commit);
     bool feedOne(const uint8_t* data, size_t len, size_t& consumed);
     void drainHttpRing_();
+    void resetHttpRing_();
     uint16_t httpRingFree_() const { return static_cast<uint16_t>(Ota::HTTP_RING_SIZE - _httpRingCount); }
 };

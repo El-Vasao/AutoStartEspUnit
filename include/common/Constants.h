@@ -203,6 +203,9 @@ namespace Timing {
     constexpr uint32_t OTA_WAIT_LOG_INTERVAL_MS = 5000;
     /// Потоковое OTA по SoftAP: простой без multipart final (крупные пакеты ~1.2 МБ).
     constexpr uint32_t OTA_HTTP_UPLOAD_IDLE_MS = 180000;
+    /// Колбэк HTTP ждёт место в кольце не дольше этого; дольше — загрузка прерывается.
+    /// Не 5 с: переход NORMAL→OTA ждёт MQTT/GSM (suspend), это несколько секунд.
+    constexpr uint32_t OTA_RING_WAIT_MS = 15000;
 
     constexpr uint32_t MILLIS_PER_DAY = 86400000UL;
 

@@ -84,7 +84,14 @@ inline void advance(unsigned long d) { set(ms() + d); }
 
 inline unsigned long millis() { return test_clock::ms(); }
 inline unsigned long micros() { return test_clock::us(); }
-inline void delay(unsigned long d) { test_clock::advance(d); }
+// Стресс-тест гоняет delay() из producer-потока: в этот момент часы не двигаем (таймаут кольца не от планировщика).
+inline bool& delayAdvancesTestClock() {
+    static bool v = true;
+    return v;
+}
+inline void delay(unsigned long d) {
+    if (delayAdvancesTestClock()) test_clock::advance(d);
+}
 inline void yield() {}
 
 // В MinGW и glibc < 2.38 нет strlcpy/strlcat.

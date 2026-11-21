@@ -15,6 +15,7 @@ struct OtaUpdateCounters {
     bool begun{false};
     size_t size{0};
     size_t written{0};
+    uint32_t check{0};  // хэш байтов в порядке записи: проверка целостности потока
 };
 
 inline OtaUpdateCounters& otaUpdateCounters() {
@@ -27,6 +28,8 @@ inline int beginCount() { return otaUpdateCounters().beginN; }
 inline int writeCount() { return otaUpdateCounters().writeN; }
 inline int endCount() { return otaUpdateCounters().endN; }
 inline int abortCount() { return otaUpdateCounters().abortN; }
+inline size_t writtenBytes() { return otaUpdateCounters().written; }
+inline uint32_t checksum() { return otaUpdateCounters().check; }
 
 inline void reset() {
     otaUpdateCounters() = OtaUpdateCounters{};
@@ -42,6 +45,7 @@ public:
         c.begun = true;
         c.size = size;
         c.written = 0;
+        c.check = 0;
         return true;
     }
 
@@ -49,6 +53,7 @@ public:
         auto& c = otaUpdateCounters();
         c.writeN++;
         if (!c.begun || !data) return 0;
+        for (size_t i = 0; i < len; i++) c.check = c.check * 131u + data[i];
         c.written += len;
         return len;
     }
