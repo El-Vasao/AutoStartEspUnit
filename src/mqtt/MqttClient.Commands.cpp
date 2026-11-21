@@ -210,6 +210,8 @@ bool MqttClient::publishThinReply_(const char* id, uint16_t code, uint32_t statu
 
 bool MqttClient::ctrlPlaneBlocked_() const {
     if (_fsm.hasCtrlOutbound()) return true;
+    // Держать финал hwmap/list, пока 202 ещё ждёт PUBACK — иначе тела уйдут, 200 нет, flush повторит тела.
+    if (_fsm.qos1ReplyPending()) return true;
     if (_ctrlPlaneBusy && _ctrlPlaneBusy(_ctrlPlaneBusyCtx)) return true;
     return false;
 }

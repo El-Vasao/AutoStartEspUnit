@@ -41,3 +41,11 @@ test('float coercion', () => {
   assert.equal(c.byValueType('float', ''), '');
   assert.equal(c.byValueType('float', 'x', 1.5), 1.5);
 });
+
+test('comma decimal accepted for float and int', () => {
+  const c = loadCoerce();
+  assert.equal(c.byValueType('float', '1,5'), 1.5);
+  assert.equal(c.byValueType('float', '12,25'), 12.25);
+  assert.equal(c.byValueType('int', '1,9'), 1);
+  assert.equal(c.byValueType('int', '-2,5'), -2);
+});

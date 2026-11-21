@@ -280,8 +280,13 @@
             return;
           }
           if (!result.ok) {
-            // If validation errors already set above, do not overwrite them with generic message.
-            if (!this.validationErrors?.length) {
+            // HTTP 4xx/5xx may carry errors[] even when onHttpOk did not run.
+            const serverErrs = result?.data?.errors;
+            if (Array.isArray(serverErrs) && serverErrs.length) {
+              this.validationErrors = serverErrs.map(e => ({ ...e, source: 'server' }));
+              Alpine.store('uiToast')?.goToValidationField?.(serverErrs[0]?.field);
+              Alpine.store('uiToast')?.error?.(serverErrs[0]?.message || 'Проверьте поля');
+            } else if (!this.validationErrors?.length) {
               Alpine.store('uiToast').setHardwareError('Не удалось сохранить. Перезагрузите и повторите.');
             }
           }

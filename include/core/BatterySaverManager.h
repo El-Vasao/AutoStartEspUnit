@@ -28,6 +28,7 @@ public:
 
     void setEnabled(bool en) { _runtimeEnabled = en; }
     bool isEnabled() const { return _runtimeEnabled; }
+    uint8_t attemptsToday() const { return _attemptsToday; }
 
 private:
     Config& _config;

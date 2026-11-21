@@ -32,6 +32,7 @@ struct SseStatusPort {
     bool engineRunning{false};
     bool thermostatRuntime{false};
     bool batterySaverRuntime{false};
+    uint8_t batterySaverAttemptsToday{0};
 
     bool timeSynced{false};
     bool timeStale{false};

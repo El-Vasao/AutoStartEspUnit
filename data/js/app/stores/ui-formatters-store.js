@@ -63,14 +63,16 @@
       },
       sensorLabelByRom(rom) {
         try {
-          const r = String(rom || '');
+          const r = String(rom || '').trim();
           if (!r) return '—';
           const s = Alpine.store('settings');
           const list = Array.isArray(s?.sensors) ? s.sensors : [];
           const hit = list.find(x => x && String(x.rom || '') === r);
-          const name = hit?.name;
-          if (typeof name === 'string' && name.trim()) return name.trim();
-          return r;
+          if (!hit) return r;
+          const id = String(hit.id || '').trim();
+          if (id) return this._silkWithName(id, hit.name) || r;
+          const name = String(hit.name || '').trim();
+          return name || r;
         } catch (e) {}
         return String(rom || '');
       },
@@ -93,6 +95,17 @@
           const list = Array.isArray(s?.sensors) ? s.sensors : [];
           const hit = list.find(x => x && String(x.id || '') === sid);
           return this._silkWithName(sid, hit?.name) || '—';
+        } catch (e) {}
+        return '—';
+      },
+      /** Live bus reading: silk of the bound config slot, else the ROM at this bus index. */
+      sensorLiveLabel(reading, physicalIdx) {
+        try {
+          const id = String(reading?.id || '').trim();
+          if (id && id !== 'null') return this.sensorLabelById(id);
+          const roms = Alpine.store('deviceStatus')?.temperatureSensorRoms;
+          const rom = Array.isArray(roms) ? String(roms[physicalIdx] || '').trim() : '';
+          if (rom) return rom;
         } catch (e) {}
         return '—';
       },

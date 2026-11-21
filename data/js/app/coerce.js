@@ -23,7 +23,7 @@
 
     if (t === 'int') {
       if (typeof raw === 'number' && Number.isFinite(raw)) return Math.trunc(raw);
-      const s = asString(raw);
+      const s = asString(raw).trim().replace(',', '.');
       if (s === '') return '';
       const n = Number(s);
       if (!Number.isFinite(n)) return (fallback !== undefined) ? fallback : raw;
@@ -32,7 +32,7 @@
 
     if (t === 'float') {
       if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
-      const s = asString(raw);
+      const s = asString(raw).trim().replace(',', '.');
       if (s === '') return '';
       const n = Number(s);
       if (!Number.isFinite(n)) return (fallback !== undefined) ? fallback : raw;

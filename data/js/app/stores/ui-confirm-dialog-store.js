@@ -10,18 +10,22 @@
       message: '',
       cancelLabel: 'Отмена',
       confirmLabel: 'Да',
+      confirmVariant: 'danger',
       extraLabel: '',
       onConfirm: null,
       onCancel: null,
       onExtra: null,
       _lastFocus: null,
+      _gen: 0,
 
-      show({ title, message, onConfirm, onCancel = null, onExtra = null, cancelLabel = 'Отмена', confirmLabel = 'Да', extraLabel = '' }) {
+      show({ title, message, onConfirm, onCancel = null, onExtra = null, cancelLabel = 'Отмена', confirmLabel = 'Да', extraLabel = '', confirmVariant = 'danger' }) {
+        this._gen = (this._gen || 0) + 1;
         try { this._lastFocus = document.activeElement; } catch (e) { this._lastFocus = null; }
         this.title = title;
         this.message = message;
         this.cancelLabel = String(cancelLabel || 'Отмена');
         this.confirmLabel = String(confirmLabel || 'Да');
+        this.confirmVariant = String(confirmVariant || 'danger');
         this.extraLabel = String(extraLabel || '');
         this.onConfirm = onConfirm;
         this.onCancel = onCancel;
@@ -64,18 +68,22 @@
       },
 
       cancel() {
+        const gen = this._gen;
         try { this.onCancel?.(); } catch (e) {}
-        this._close();
+        // Nested show() bumps _gen — leave the new dialog open.
+        if (this._gen === gen) this._close();
       },
 
       confirm() {
+        const gen = this._gen;
         try { this.onConfirm?.(); } catch (e) {}
-        this._close();
+        if (this._gen === gen) this._close();
       },
 
       extra() {
+        const gen = this._gen;
         try { this.onExtra?.(); } catch (e) {}
-        this._close();
+        if (this._gen === gen) this._close();
       }
     });
 

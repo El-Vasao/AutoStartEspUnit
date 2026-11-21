@@ -87,10 +87,12 @@
         }
       },
 
-      async delete(id) {
+      async delete(id, opts = {}) {
+        const name = (opts && opts.name != null) ? String(opts.name).trim() : '';
+        const message = name ? `Удалить «${name}»?` : 'Удалить программу?';
         Alpine.store('uiDialog').show({
           title: 'Удаление',
-          message: 'Удалить программу?',
+          message,
           onConfirm: async () => {
             try {
               const self = this;
@@ -103,6 +105,7 @@
                 request: async () => await APP.api.apiJson(`${programEndpoint()}?id=${id}`, { method: 'DELETE' }),
                 onCommitOk: async () => {
                   Alpine.store('uiToast').success('Программа удалена');
+                  try { self.cancelEdit?.(); } catch (e) {}
                   await self.loadList(true);
                 }
               });
@@ -162,6 +165,7 @@
       },
 
       newProgram() {
+        if (!this.loadOk) return;
         let maxId = 0;
         for (const p of this.items) if (p.id > maxId) maxId = p.id;
         const nextId = maxId + 1;

@@ -13,10 +13,17 @@
         _baselineObj: null,
         _dirtyTimer: null,
         _validateTimer: null,
+        _uiKeySeq: 0,
+
+        nextStepUiKey() {
+          this._uiKeySeq = (this._uiKeySeq || 0) + 1;
+          return `s${this._uiKeySeq}`;
+        },
 
         initEditor() {
           const prog = this.$store.programs.current;
           if (prog) {
+            this._uiKeySeq = 0;
             this.form = {
               id: prog.id,
               name: prog.name,
@@ -38,7 +45,7 @@
 
         stripStepForCompare(step) {
           if (!step) return {};
-          const { actionDef, category, ...rest } = step;
+          const { actionDef, category, _uiKey, ...rest } = step;
           return rest;
         },
 
@@ -100,6 +107,8 @@
             else if (p === 'message') base.message = (s.message !== undefined) ? String(s.message || '') : '';
           }
 
+          // Client-only Alpine key; never sent to the device.
+          base._uiKey = this.nextStepUiKey();
           return base;
         },
 
@@ -161,6 +170,7 @@
             action: foundAction.value,
             category: foundCategory.name,
             actionDef: foundAction,
+            _uiKey: this.nextStepUiKey(),
           };
 
           const params = foundAction.params || [];
@@ -284,11 +294,7 @@
         },
 
         deleteProgram() {
-          this.$store.uiDialog.show({
-            title: 'Удаление',
-            message: `Удалить «${this.form.name}»?`,
-            onConfirm: () => this.$store.programs.delete(this.form.id)
-          });
+          this.$store.programs.delete(this.form.id, { name: this.form.name });
         },
 
         // ----- schema-driven UI helpers -----

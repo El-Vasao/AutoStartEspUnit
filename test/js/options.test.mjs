@@ -6,6 +6,7 @@ function load({
   startMethod = 'timed',
   starterRelayId = 'K2',
   relayNames = {},
+  relayLabels = {},
   inputNames = {},
 } = {}) {
   const env = createBrowserEnv({
@@ -27,9 +28,9 @@ function load({
       deviceStatus: {
         hwMap: {
           relays: [
-            { id: 'K1', label: '' },
-            { id: 'K2', label: '' },
-            { id: 'K3', label: '' },
+            { id: 'K1', label: relayLabels.K1 || '' },
+            { id: 'K2', label: relayLabels.K2 || '' },
+            { id: 'K3', label: relayLabels.K3 || '' },
           ],
           inputs: [
             { id: 'IN1', label: '' },
@@ -76,6 +77,31 @@ test('program relays exclude the starter relay', () => {
 
 test('relay label uses settings name with silk', () => {
   const relays = load({ relayNames: { K2: 'Зажигание' } })('relays');
+  assert.equal(relays[1].label, 'K2 · Зажигание');
+});
+
+test('empty relay name does not fall back to bootstrap label', () => {
+  const relays = load({ relayNames: { K2: '' }, relayLabels: { K2: 'Зажигание' } })('relays');
+  assert.equal(relays[1].label, 'K2');
+});
+
+test('missing relay settings row uses bootstrap label', () => {
+  const env = createBrowserEnv({
+    stores: {
+      settings: { relays: [{ id: 'K1', name: '' }] },
+      deviceStatus: {
+        hwMap: {
+          relays: [
+            { id: 'K1', label: 'Стартер' },
+            { id: 'K2', label: 'Зажигание' },
+          ],
+        },
+      },
+    },
+  });
+  env.load('js/app/options.js');
+  const relays = plain(env.APP.options.forSource('relays', env.Alpine));
+  assert.equal(relays[0].label, 'K1');
   assert.equal(relays[1].label, 'K2 · Зажигание');
 });
 

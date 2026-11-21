@@ -59,10 +59,8 @@
                 extraLabel: 'Отменить',
                 cancelLabel: 'Остаться',
                 confirmLabel: 'Сохранить',
-                onCancel: () => {
-                  // Leave without saving (changes remain in editor)
-                  go();
-                },
+                confirmVariant: 'primary',
+                // Stay: cancel only closes the dialog (default onCancel null).
                 onExtra: () => {
                   try {
                     if (typeof window.__programEditorRevert === 'function') window.__programEditorRevert();
@@ -102,9 +100,7 @@
               extraLabel: 'Отменить',
               cancelLabel: 'Остаться',
               confirmLabel: 'Сохранить',
-              onCancel: () => {
-                go();
-              },
+              confirmVariant: 'primary',
               onExtra: () => {
                 try { this.$store.settings?.revertAll?.(); } catch (e) {}
                 go();

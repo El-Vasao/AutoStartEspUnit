@@ -122,6 +122,7 @@ public:
 
     bool getBatterySaverRuntime() const;
     void setBatterySaverRuntime(bool en);
+    uint8_t getBatterySaverAttemptsToday() const;
 
     bool getTriggerRuntime(uint8_t index) const;
     void setTriggerRuntime(uint8_t index, bool en);

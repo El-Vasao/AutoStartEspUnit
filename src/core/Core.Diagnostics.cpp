@@ -137,6 +137,11 @@ void Core::setBatterySaverRuntime(bool en) {
     impl.batterySaverManager.setEnabled(en);
 }
 
+uint8_t Core::getBatterySaverAttemptsToday() const {
+    const CorePrivate& impl = *_impl;
+    return impl.batterySaverManager.attemptsToday();
+}
+
 bool Core::getTriggerRuntime(uint8_t index) const {
     const CorePrivate& impl = *_impl;
     return impl.triggerManager.isInputTriggerEnabled(index);

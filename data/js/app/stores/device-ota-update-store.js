@@ -11,6 +11,17 @@
       status: '',
       file: null,
       setFile(file) { this.file = file; },
+      clearLock() {
+        this.started = false;
+        this.uploading = false;
+      },
+      clearAfterReboot() {
+        this.started = false;
+        this.uploading = false;
+        this.progress = 0;
+        this.status = '';
+        this.file = null;
+      },
       async start() {
         if (this.started) return;
         if (!this.file) { Alpine.store('uiToast').flash('Выберите файл .bin', 'warning', 4000); return; }
@@ -26,6 +37,7 @@
         formData.append('data', this.file);
         const xhr = new XMLHttpRequest();
         xhr.open('POST', (APP.api.endpoints?.upload || '/upload'), true);
+        xhr.timeout = 180000;
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
             this.progress = (e.loaded / e.total * 100).toFixed(1);
@@ -35,22 +47,32 @@
         xhr.onload = () => {
           if (xhr.status === 200) {
             this.progress = 100;
+            this.uploading = false;
             this.status = 'Готово. Ожидание перезагрузки…';
             // Stream OTA flashes during upload; device reboots after final.
           } else {
             APP.utils.LS.del('otaInProgress');
+            APP.utils.LS.del('otaPostRebootGoPanel');
             Alpine.store('uiToast').setHardwareError('Ошибка прошивки.');
             this.status = 'Ошибка загрузки';
-            this.started = false;
-            this.uploading = false;
+            this.clearLock();
           }
         };
         xhr.onerror = () => {
+          // After HTTP 200 the device may drop Wi‑Fi while rebooting — keep waiting for clocks.
+          if (Number(this.progress) >= 100) return;
           APP.utils.LS.del('otaInProgress');
+          APP.utils.LS.del('otaPostRebootGoPanel');
           Alpine.store('uiToast').setHardwareError('Ошибка сети при прошивке.');
           this.status = 'Ошибка сети';
-          this.started = false;
-          this.uploading = false;
+          this.clearLock();
+        };
+        xhr.ontimeout = () => {
+          APP.utils.LS.del('otaInProgress');
+          APP.utils.LS.del('otaPostRebootGoPanel');
+          Alpine.store('uiToast').setHardwareError('Таймаут прошивки.');
+          this.status = 'Таймаут загрузки';
+          this.clearLock();
         };
         xhr.send(formData);
       }

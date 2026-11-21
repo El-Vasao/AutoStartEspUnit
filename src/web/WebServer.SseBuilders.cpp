@@ -144,6 +144,9 @@ static void emitRuntimeObject(Print& p, const SseStatusPort& st) {
     p.print("\"batterySaver\":");
     p.print(st.batterySaverRuntime ? "true" : "false");
     commaOut(p, &rr);
+    p.print("\"batterySaverAttemptsToday\":");
+    p.print((unsigned)st.batterySaverAttemptsToday);
+    commaOut(p, &rr);
     p.print("\"inputTriggersById\":{");
     {
         bool ik = false;

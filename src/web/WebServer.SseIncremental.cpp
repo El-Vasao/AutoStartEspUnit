@@ -104,6 +104,7 @@ static SseStatusPort makeStatusPort() {
     st.engineRunning = core.isEngineRunning();
     st.thermostatRuntime = core.getThermostatRuntime();
     st.batterySaverRuntime = core.getBatterySaverRuntime();
+    st.batterySaverAttemptsToday = core.getBatterySaverAttemptsToday();
     {
         const auto& ts = core.getTimeSync();
         st.timeSynced = ts.isSynced();

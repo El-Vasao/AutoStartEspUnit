@@ -261,7 +261,7 @@
             <div class="modal-actions">
                 <button class="btn" type="button" @click="$store.uiDialog.cancel()" x-text="$store.uiDialog.cancelLabel || 'Отмена'"></button>
                 <button class="btn warning" type="button" @click="$store.uiDialog.extra()" x-show="$store.uiDialog.extraLabel" x-text="$store.uiDialog.extraLabel"></button>
-                <button class="btn danger" type="button" @click="$store.uiDialog.confirm()" x-text="$store.uiDialog.confirmLabel || 'Да'"></button>
+                <button type="button" :class="['btn', $store.uiDialog.confirmVariant || 'danger']" @click="$store.uiDialog.confirm()" x-text="$store.uiDialog.confirmLabel || 'Да'"></button>
             </div>
         </div>
     </div>
@@ -333,7 +333,7 @@
                                         data-gesture="sensor"
                                         :data-index="index"
                                     >
-                                        <div class="tile-name" x-text="$store.uiFormat.sensorName(index)"></div>
+                                        <div class="tile-name" x-text="$store.uiFormat.sensorLiveLabel(s, index)"></div>
                                         <div class="tile-sub" x-text="(s && s.valid && typeof s.t === 'number') ? s.t.toFixed(1) + '°C' : ''"></div>
                                     </div>
                                 </template>
@@ -436,10 +436,7 @@
                                 data-gesture="thermostat"
                             >
                                 <div class="tile-name">Термостат</div>
-                                <div class="tile-sub">
-                                    <span x-text="$store.uiFormat.sensorLabelById($store.settings.thermostat.sensor_id)"></span>
-                                    <span x-text="' | ' + ($store.settings.thermostat.comparison === 'above' ? 'выше' : 'ниже') + ' ' + $store.settings.thermostat.lower_threshold + '°C'"></span>
-                                </div>
+                                <div class="tile-sub" x-text="$store.uiFormat.sensorLabelById($store.settings.thermostat.sensor_id)"></div>
                                 <div class="tile-sub" x-text="'Ниже ' + $store.uiFormat.programLabel($store.settings.thermostat.program_id_lower) + ' · Выше ' + $store.uiFormat.programLabel($store.settings.thermostat.program_id_upper)"></div>
                             </div>
                     </div>
@@ -488,7 +485,7 @@
                 <template x-if="$store.programs.loaded">
                     <div>
                         <!-- Кнопка новой программы -->
-                        <template x-if="!$store.programs.current">
+                        <template x-if="!$store.programs.current && $store.programs.loadOk">
                             <div class="card">
                                 <div class="button-group justify-end">
                                     <button class="btn primary" type="button" @click="$store.programs.newProgram()" :disabled="$store.deviceOta.started">Новая программа</button>
@@ -496,15 +493,18 @@
                             </div>
                         </template>
 
-                        <!-- Если список не загрузился, не блокируем UI -->
+                        <!-- Если список не загрузился — не предлагаем создавать (maxId по пустому списку даст id 1) -->
                         <template x-if="!$store.programs.loadOk && !$store.programs.current">
                             <div class="card">
-                                <div>Список программ недоступен. Можно создать новую.</div>
+                                <div>Список программ недоступен.</div>
+                                <div class="button-group mt-16">
+                                    <button class="btn" type="button" @click="$store.programs.loadList(true)" :disabled="$store.programs.loading">Повторить</button>
+                                </div>
                             </div>
                         </template>
 
                         <!-- Список программ -->
-                        <template x-if="!$store.programs.current">
+                        <template x-if="!$store.programs.current && $store.programs.loadOk">
                             <div>
                                 <template x-if="$store.programs.loading">
                                     <div class="card">Загрузка…</div>
@@ -576,7 +576,7 @@
 
                                     <h4>Шаги</h4>
                                     <div id="stepsContainer">
-                                        <template x-for="(step, index) in form.steps" :key="index">
+                                        <template x-for="(step, index) in form.steps" :key="step._uiKey || ('i' + index)">
                                             <div class="step-card" :class="stepCardClass(index)">
                                                 <div class="step-action-row">
                                                     <div class="step-action-title" x-text="(step.category ? (step.category + ': ') : '') + (step.actionDef?.label || step.action)"></div>
@@ -914,7 +914,7 @@
                                                                 @change="onSelectChange"
                                                             >
                                                                 <template x-for="opt in options()" :key="String(opt.value)">
-                                                                    <option :value="opt.value" x-text="opt.label"></option>
+                                                                    <option :value="opt.value" :selected="String(opt.value) === String(value)" x-text="opt.label"></option>
                                                                 </template>
                                                             </select>
                                                         </template>
@@ -1083,7 +1083,7 @@
                                                                     @change="onSelectChange"
                                                                 >
                                                                     <template x-for="opt in options()" :key="String(opt.value)">
-                                                                        <option :value="opt.value" x-text="opt.label"></option>
+                                                                        <option :value="opt.value" :selected="String(opt.value) === String(value)" x-text="opt.label"></option>
                                                                     </template>
                                                                 </select>
                                                             </template>
@@ -1159,7 +1159,7 @@
                                                                     @change="onSelectChange"
                                                                 >
                                                                     <template x-for="opt in options()" :key="String(opt.value)">
-                                                                        <option :value="opt.value" x-text="opt.label"></option>
+                                                                        <option :value="opt.value" :selected="String(opt.value) === String(value)" x-text="opt.label"></option>
                                                                     </template>
                                                                 </select>
                                                             </template>

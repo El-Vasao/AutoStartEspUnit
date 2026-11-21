@@ -100,6 +100,8 @@ public:
     bool hasOutbound() const { return _txQCount != 0; }
     /// Истина, если любой Ctrl (ответ/PING/online/…) в очереди или ещё отправляется.
     bool hasCtrlOutbound() const;
+    /// Истина, пока ответ QoS1 ждёт PUBACK (или DUP/таймаут слота).
+    bool qos1ReplyPending() const { return _qos1ReplyActive; }
     /// Истина, пока несхлопываемый Full Tele в очереди или ещё отправляется.
     bool hasFullTeleOutbound() const;
 

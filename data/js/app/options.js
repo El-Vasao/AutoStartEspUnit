@@ -10,14 +10,13 @@
     return n ? `${silk} · ${n}` : silk;
   }
 
-  function settingsNameById(Alpine, listKey, id) {
+  function settingsRowById(Alpine, listKey, id) {
     try {
       const list = Alpine.store('settings')?.[listKey];
-      if (!Array.isArray(list)) return '';
-      const hit = list.find((x) => x && String(x.id || '').trim() === String(id || '').trim());
-      return String(hit?.name || '').trim();
+      if (!Array.isArray(list)) return null;
+      return list.find((x) => x && String(x.id || '').trim() === String(id || '').trim()) || null;
     } catch (e) {
-      return '';
+      return null;
     }
   }
 
@@ -28,8 +27,12 @@
     if (!(hw && Array.isArray(hw[listKey]) && hw[listKey].length)) return [];
     return hw[listKey].map((r) => {
       const id = String(r?.id || '').trim();
-      const name = settingsNameById(Alpine, listKey, id)
-        || String(r?.label || r?.name || '').trim();
+      // A settings row owns the name, including an empty one. Bootstrap label is only
+      // for channels the settings list does not have yet.
+      const row = settingsRowById(Alpine, listKey, id);
+      const name = row
+        ? String(row.name || '').trim()
+        : String(r?.label || r?.name || '').trim();
       return { value: id, label: silkLabel(id, name) };
     }).filter((o) => o.value);
   }

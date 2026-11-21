@@ -34,6 +34,11 @@
         const rt = Alpine.store('deviceStatus')?.runtime || {};
         return !!rt.batterySaver;
       },
+      get batterySaverAttemptsToday() {
+        const rt = Alpine.store('deviceStatus')?.runtime || {};
+        const n = Number(rt.batterySaverAttemptsToday);
+        return Number.isFinite(n) ? n : 0;
+      },
 
       handleLongPress(type, index) {
         switch (type) {
@@ -66,7 +71,20 @@
 
           if (type === 'sensor') {
             ui.activeSubTab = 'sensors';
-            queueMicrotask(() => scrollTo(ids.sensorItem ? ids.sensorItem(index) : `settings-sensor-${index}`));
+            const st = Alpine.store('deviceStatus');
+            const reading = st?.tempSensors?.[index];
+            const sensors = Array.isArray(settings?.sensors) ? settings.sensors : [];
+            const sid = String(reading?.id || '').trim();
+            let slot = (sid && sid !== 'null')
+              ? sensors.findIndex((s) => s && String(s.id || '').trim() === sid)
+              : -1;
+            if (slot < 0) {
+              const rom = String(st?.temperatureSensorRoms?.[index] || '').trim();
+              if (rom) slot = sensors.findIndex((s) => s && String(s.rom || '').trim() === rom);
+            }
+            if (slot >= 0) {
+              queueMicrotask(() => scrollTo(ids.sensorItem ? ids.sensorItem(slot) : `settings-sensor-${slot}`));
+            }
             return;
           }
           if (type === 'input') {

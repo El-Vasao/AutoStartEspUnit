@@ -200,6 +200,7 @@
               APP.utils.LS.set('lastUptime', data.uptime);
               if (rebooted) {
                 APP.utils.LS.del('otaInProgress');
+                try { Alpine.store('deviceOta')?.clearAfterReboot?.(); } catch (e) {}
                 if (APP.utils.LS.get('otaPostRebootGoPanel') === '1') {
                   APP.utils.LS.del('otaPostRebootGoPanel');
                   Alpine.store('uiState').setActiveTab('panel');
@@ -241,8 +242,15 @@
           case 'program':
             if (Object.prototype.hasOwnProperty.call(data, 'lastProgramName')) this.lastProgramName = data.lastProgramName || '—';
             if (Object.prototype.hasOwnProperty.call(data, 'currentProgramName')) this.currentProgramName = data.currentProgramName;
-            if (data.timerRemaining !== undefined) this.timerRemaining = data.timerRemaining;
-            if (data.programRunning !== undefined) this.programRunning = !!data.programRunning;
+            if (data.timerRemaining !== undefined || data.programRunning !== undefined) {
+              const nextTimer = (data.timerRemaining !== undefined)
+                ? data.timerRemaining
+                : this.timerRemaining;
+              const nextRunning = (data.programRunning !== undefined)
+                ? !!data.programRunning
+                : this.programRunning;
+              this._applyClockBaseline(this.uptime, nextTimer, nextRunning);
+            }
             break;
           case 'flash':
             if (data.flashCommit) this.flashCommit = data.flashCommit;
