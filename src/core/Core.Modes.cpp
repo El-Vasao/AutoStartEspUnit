@@ -61,13 +61,21 @@ void Core::notifyOtaHttpUploadComplete(bool ok) {
 void Core::exitOtaToNormalMode() {
     CorePrivate& impl = *_impl;
     if (impl.modeManager.getCurrentMode() != CoreMode::OTA_UPDATE) return;
-    impl.modeManager.switchMode(CoreMode::NORMAL);
+    const CoreMode back = impl.otaReturnMode;
+    impl.modeManager.switchMode(
+        (back == CoreMode::SETUP_AP || back == CoreMode::EMERGENCY_AP || back == CoreMode::NORMAL)
+            ? back
+            : CoreMode::NORMAL);
 }
 
 void Core::onOtaHttpUploadAwaitTimedOut() {
     logHeapSnapshot("ota_upload_timeout");
     webServer.markOtaHttpUploadAwaitTimedOut();
     exitOtaToNormalMode();
+}
+
+bool Core::otaHoldsFlash() const {
+    return _impl->otaHandler.holdsFlash();
 }
 
 void Core::handleBoot() {
@@ -174,12 +182,9 @@ void Core::handleBoot() {
             }
             case CorePrivate::BootStage::InitHardware: {
                 logger.log(LogModule::Core, "BOOT: hardware init\n");
-                // Карта каналов — порядок Pin::*PINS = шёлк K/IN; id в таблице пинов больше нет.
-                impl.bootHwMapBad = false;
-
+                // Карта каналов — порядок Pin::*PINS = шёлк K/IN.
                 impl.sensors.begin();
                 impl.relay.begin();
-                if (impl.bootHwMapBad) impl.relay.allOff();
                 impl.inputs.begin();
 
                 impl.bootStage = CorePrivate::BootStage::InitManagers;
@@ -203,8 +208,6 @@ void Core::handleBoot() {
                 logger.log(LogModule::Core, "BOOT: selecting initial mode\n");
                 CoreMode initialMode = CoreMode::NORMAL;
                 if (impl.bootTargetMode == CoreMode::EMERGENCY_AP) {
-                    initialMode = CoreMode::EMERGENCY_AP;
-                } else if (impl.bootHwMapBad) {
                     initialMode = CoreMode::EMERGENCY_AP;
                 } else if (impl.bootConfigLoaded && config.getBase().setup_required) {
                     initialMode = CoreMode::SETUP_AP;
@@ -259,8 +262,7 @@ void Core::handleNormal() {
     serviceCellularLink();
     {
         uint8_t pid = 0;
-        // takePending снимает команду. На шаге стартера start() всё равно откажет — запрос нельзя терять.
-        if (!impl.programExecutor.isInStarterStep() && impl.gsm.takePendingProgramStart(pid)) {
+        if (impl.gsm.takePendingProgramStart(pid)) {
             logger.log(LogModule::Core, "incoming DTMF, program %u start\n", (unsigned)pid);
             (void)impl.programExecutor.start(pid);
         }
@@ -304,8 +306,7 @@ void Core::handleNormalSilent() {
     serviceCellularLink();
     {
         uint8_t pid = 0;
-        // takePending снимает команду. На шаге стартера start() всё равно откажет — запрос нельзя терять.
-        if (!impl.programExecutor.isInStarterStep() && impl.gsm.takePendingProgramStart(pid)) {
+        if (impl.gsm.takePendingProgramStart(pid)) {
             logger.log(LogModule::Core, "incoming DTMF, program %u start\n", (unsigned)pid);
             (void)impl.programExecutor.start(pid);
         }

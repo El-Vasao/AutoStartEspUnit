@@ -12,6 +12,8 @@
 #include "program/ProgramValidate.h"
 #include "program/internal/ProgramExecutorInternal.h"
 
+#include <cstring>
+
 using namespace program_executor_internal;
 
 ProgramExecutor::ProgramExecutor()
@@ -55,31 +57,39 @@ uint32_t ProgramExecutor::getTimerRemainingMs() const {
 }
 
 bool ProgramExecutor::start(uint8_t programId) {
-    if (isInStarterStep()) {
-        logger.log(LogModule::ProgramExecutor, "program %u start rejected: engine start in progress (program %u)\n",
-                   (unsigned)programId, (unsigned)_programId);
-        return false;
-    }
-    stop();
+    // Сначала в BSS-буфер: текущие шаги и реле не трогать, пока новая не принята.
+    static CompiledStep stageSteps[Limits::MAX_STEPS_PER_PROGRAM];
+    static ActionId stageActions[Limits::MAX_STEPS_PER_PROGRAM];
+    char stageName[TextBytes::Programs::NAME];
+    uint8_t stageCount = 0;
+    stageName[0] = '\0';
 
-    _localSteps = _localStepsArr;
-    _localActions = _localActionsArr;
-    _currentProgramName[0] = '\0';
-    _localStepCount = 0;
-    if (!config.loadProgramCompiled(programId, _localSteps, Limits::MAX_STEPS_PER_PROGRAM,
-                                    &_localStepCount, _currentProgramName, sizeof(_currentProgramName))) {
+    const auto salvageFailedHandoff = [this]() {
+        if (!_running) return;
+        if (core.getGSM().modemServiceEpochBusy()) {
+            core.getGSM().abortModemServiceEpoch();
+        }
+        logger.log(LogModule::ProgramExecutor,
+                   "handoff failed: stop program %u and allOff\n", (unsigned)_programId);
+        core.getRelay().allOff();
+        _starter.clear();
+        _starterRelayIdx = -1;
+        _startInputIdx = -1;
+        finish(false);
+    };
+
+    if (!config.loadProgramCompiled(programId, stageSteps, Limits::MAX_STEPS_PER_PROGRAM, &stageCount,
+                                    stageName, sizeof(stageName))) {
         logger.log(LogModule::ProgramExecutor, "program %u not found or invalid\n", programId);
-        _localActions = nullptr;
-        _localSteps = nullptr;
-        _localStepCount = 0;
+        salvageFailedHandoff();
         return false;
     }
-    if (_localStepCount == 0) {
+    if (stageCount == 0) {
         logger.log(LogModule::ProgramExecutor, "program %u empty\n", programId);
-        _localActions = nullptr;
-        _localSteps = nullptr;
+        salvageFailedHandoff();
         return false;
     }
+
     const auto& base = config.getBase();
     const uint8_t starterRelayId = base.vehicle.starter_relay_id;
     uint16_t inTrigIds[Limits::MAX_TRIGGERS];
@@ -98,23 +108,46 @@ bool ProgramExecutor::start(uint8_t programId) {
         {inTrigIds, nInTrig},
         {tempTrigIds, nTempTrig},
     };
-    for (uint8_t i = 0; i < _localStepCount; i++) {
-        _localActions[i] = _localSteps[i].action;
-        const program_validate::ChannelRef ch{_localSteps[i].relay_id, _localSteps[i].input_id,
-                                              _localSteps[i].input_trigger_id, _localSteps[i].temp_trigger_id,
-                                              _localSteps[i].message};
+    for (uint8_t i = 0; i < stageCount; i++) {
+        stageActions[i] = stageSteps[i].action;
+        const program_validate::ChannelRef ch{stageSteps[i].relay_id, stageSteps[i].input_id,
+                                              stageSteps[i].input_trigger_id, stageSteps[i].temp_trigger_id,
+                                              stageSteps[i].message};
         const program_validate::Issue issue =
-            program_validate::checkStep(_localActions[i], ch, starterRelayId, tables);
+            program_validate::checkStep(stageActions[i], ch, starterRelayId, tables);
         if (issue != program_validate::Issue::None) {
             logger.log(LogModule::ProgramExecutor, "program %u rejected: step %u %s\n", (unsigned)programId,
                        (unsigned)(i + 1), program_validate::issueToString(issue));
-            _localActions = nullptr;
-            _localSteps = nullptr;
-            _localStepCount = 0;
             core.getErrorManager().set(ErrorCode::PROGRAM_INVALID_REF);
+            salvageFailedHandoff();
             return false;
         }
     }
+
+    // Удачная передача: без allOff; стартер гасить только если крутил.
+    if (_running) {
+        if (core.getGSM().modemServiceEpochBusy()) {
+            core.getGSM().abortModemServiceEpoch();
+        }
+        RelayController& relays = core.getRelay();
+        const int8_t si = relays.starterIndex();
+        if (si >= 0 && relays.getState((uint8_t)si)) {
+            relays.off((uint8_t)si);
+        }
+        logger.log(LogModule::ProgramExecutor, "handoff from program %u to %u (no allOff)\n",
+                   (unsigned)_programId, (unsigned)programId);
+        _starter.clear();
+        _starterRelayIdx = -1;
+        _startInputIdx = -1;
+        finish(false);
+    }
+
+    memcpy(_localStepsArr, stageSteps, sizeof(CompiledStep) * stageCount);
+    memcpy(_localActionsArr, stageActions, sizeof(ActionId) * stageCount);
+    _localSteps = _localStepsArr;
+    _localActions = _localActionsArr;
+    _localStepCount = stageCount;
+    strlcpy(_currentProgramName, stageName, sizeof(_currentProgramName));
 
     _programId = programId;
     _running = true;
@@ -125,8 +158,7 @@ bool ProgramExecutor::start(uint8_t programId) {
     logger.log(LogModule::ProgramExecutor, "program %u start: %s (steps=%u)\n",
                programId, _currentProgramName, (unsigned)_localStepCount);
 
-    const CompiledStep& firstStep = _localSteps[0];
-    executeStep(firstStep, _localActions[0]);
+    executeStep(_localSteps[0], _localActions[0]);
     return true;
 }
 

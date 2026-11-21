@@ -13,9 +13,9 @@ class TimeSyncManager;
  * Отслеживает напряжение и запускает программу при длительном низком напряжении.
  *
  * Защиты:
- * - `voltage_abort_threshold`: немедленный abort попыток и stop программы battery saver;
+ * - `voltage_abort_threshold`: после ENGINE_START — дождаться свежего окна АЦП, затем stop;
  * - минимальная длительность низкого напряжения до старта;
- * - минимальный интервал между попытками;
+ * - минимальный интервал между попытками (`_lastAttempt==0` — ещё не было);
  * - лимит попыток в сутки (календарные сутки при synced wall-clock; иначе псевдо-день от millis).
  */
 class BatterySaverManager {
@@ -41,7 +41,7 @@ private:
     uint32_t _dayStart;
     uint32_t _calendarDayKey;
     uint32_t _lowStartTime;
-    /// После ENGINE_START не рвать программу по просадке прокрутки, пока не накопится новое окно.
+    /// После ENGINE_START не рвать по просадке прокрутки, пока не наберётся новое окно АЦП.
     bool _holdAbortAfterCrank{false};
-    uint32_t _abortLowSince{0};
+    bool _postCrankWindowResetPending{false};
 };

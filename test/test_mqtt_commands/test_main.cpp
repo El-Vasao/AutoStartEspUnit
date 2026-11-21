@@ -263,22 +263,26 @@ static void test_full_inbound_releases_id_ring() {
     TEST_ASSERT_EQUAL_INT(0, g_starts);
 }
 
-static void test_run_during_starter_is_conflict_and_keeps_active() {
+static void test_run_during_starter_handoff_preempts() {
     acceptRun("keep", 2);
     dispatch();
     TEST_ASSERT_EQUAL_INT(1, g_starts);
     TEST_ASSERT_TRUE(MqttClientTestAccess::activeIs(*g_mqtt, "keep"));
 
+    // Передача управления разрешена и на шаге стартера (гасится только стартер).
     ProgramExecutorTestFlags::set(true, true);
     acceptRun("late", 2);
     dispatch();
 
-    TEST_ASSERT_EQUAL_INT(1, g_starts);
-    TEST_ASSERT_TRUE(MqttClientTestAccess::activeIs(*g_mqtt, "keep"));
-    TEST_ASSERT_TRUE(MqttClientTestAccess::inFlight(*g_mqtt, "keep"));
-    TEST_ASSERT_TRUE(txHas(thin("late", MqttCmd::CODE_CONFLICT).c_str()));
-    TEST_ASSERT_FALSE(MqttClientTestAccess::inFlight(*g_mqtt, "late"));
-    TEST_ASSERT_EQUAL_UINT16(MqttCmd::CODE_CONFLICT, MqttClientTestAccess::ringCode(*g_mqtt, "late"));
+    TEST_ASSERT_EQUAL_INT(2, g_starts);
+    TEST_ASSERT_TRUE(MqttClientTestAccess::activeIs(*g_mqtt, "late"));
+    TEST_ASSERT_TRUE(MqttClientTestAccess::inFlight(*g_mqtt, "late"));
+    TEST_ASSERT_FALSE(txHas(thin("keep", MqttCmd::CODE_CONFLICT).c_str()));
+    TEST_ASSERT_FALSE(txHas(thin("late", MqttCmd::CODE_UNPROCESSABLE).c_str()));
+
+    g_mqtt->onProgramLifecycle(2, false);
+    MqttClientTestAccess::tick(*g_mqtt);
+    TEST_ASSERT_TRUE(txHas(thin("keep", MqttCmd::CODE_INTERNAL).c_str()));
 }
 
 static void test_disconnect_publishes_online_false_once() {
@@ -309,7 +313,7 @@ int main(int, char**) {
     RUN_TEST(test_preempt_run_final_reply_uses_old_id);
     RUN_TEST(test_failed_stage_ack_releases_id_ring);
     RUN_TEST(test_full_inbound_releases_id_ring);
-    RUN_TEST(test_run_during_starter_is_conflict_and_keeps_active);
+    RUN_TEST(test_run_during_starter_handoff_preempts);
     RUN_TEST(test_disconnect_publishes_online_false_once);
     return UNITY_END();
 }

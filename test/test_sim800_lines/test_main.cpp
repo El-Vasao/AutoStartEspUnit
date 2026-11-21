@@ -124,8 +124,7 @@ static void test_ipd_oversize_is_discard_not_clamped_payload() {
 
 static void test_ipd_oversize_does_not_glue_following_ok() {
     IpdFramer f;
-    const unsigned extra = 2;
-    const unsigned declared = (unsigned)IpdFramer::kMaxIpdLen + extra;
+    const unsigned declared = (unsigned)IpdFramer::kMaxIpdLen + 2;
     char hdr[24];
     snprintf(hdr, sizeof(hdr), "+IPD,%u:", declared);
     Ev last = Ev::Consumed;
@@ -133,16 +132,14 @@ static void test_ipd_oversize_does_not_glue_following_ok() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)last);
     TEST_ASSERT_TRUE(f.inDiscard());
 
-    for (unsigned i = 0; i < IpdFramer::kMaxIpdLen; i++) {
+    // Discard ограничен kMaxIpdLen — не держать dataMode на всю заявленную длину.
+    for (unsigned i = 0; i < IpdFramer::kMaxIpdLen - 1; i++) {
         last = f.feed('A');
         TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)last);
         TEST_ASSERT_TRUE(f.inDiscard());
     }
-    // Байты за буфером остаются внутри кадра, поэтому «OK» здесь не строка модема.
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)f.feed('O'));
-    TEST_ASSERT_TRUE(f.inDiscard());
-    TEST_ASSERT_EQUAL_STRING("", f.replay());
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)f.feed('K'));
+    last = f.feed('A');
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)last);
     TEST_ASSERT_FALSE(f.inDiscard());
     TEST_ASSERT_EQUAL_UINT8((uint8_t)IpdFramer::State::Idle, (uint8_t)f.state());
 

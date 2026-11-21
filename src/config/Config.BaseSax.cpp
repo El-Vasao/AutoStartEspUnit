@@ -120,9 +120,19 @@ public:
 
     void endDocument() override {}
 
+    void enterJunk_() {
+        push(St::Junk);
+        junkNest_ = 1;
+    }
+
     void startObject() override {
         if (failed_) return;
         if (sp_ < 0) {
+            // Второй «корень» после срыва стека — битый документ, не обнулять конфиг.
+            if (sawRootObject_) {
+                failed_ = true;
+                return;
+            }
             initBaseLikeFillBasic(*t_);
             sawRootObject_ = true;
             push(St::Root);
@@ -149,10 +159,7 @@ public:
                 } else if (streq(pending_, "thermostat")) push(St::Thermostat);
                 else if (streq(pending_, "battery_saver")) push(St::BatterySaver);
                 else if (streq(pending_, "time")) push(St::TimeCfg);
-                else {
-                    push(St::Junk);
-                    junkNest_ = 1;
-                }
+                else enterJunk_();
                 break;
             }
             case St::SensorsArr: {
@@ -161,8 +168,7 @@ public:
                     si_++;
                 else {
                     extraTrimmed_++;
-                    push(St::Junk);
-                    junkNest_ = 1;
+                    enterJunk_();
                     break;
                 }
                 push(St::SensorObj);
@@ -175,8 +181,7 @@ public:
                     ii_++;
                 else {
                     extraTrimmed_++;
-                    push(St::Junk);
-                    junkNest_ = 1;
+                    enterJunk_();
                     break;
                 }
                 push(St::InputObj);
@@ -190,8 +195,7 @@ public:
                     ri_++;
                 else {
                     extraTrimmed_++;
-                    push(St::Junk);
-                    junkNest_ = 1;
+                    enterJunk_();
                     break;
                 }
                 push(St::RelayObj);
@@ -199,6 +203,7 @@ public:
             }
             case St::InputObj: {
                 if (streq(pending_, "pulse")) push(St::PulseObj);
+                else enterJunk_();
                 break;
             }
             case St::InTrigArr: {
@@ -212,6 +217,7 @@ public:
                 break;
             }
             default:
+                enterJunk_();
                 break;
         }
     }
@@ -272,7 +278,11 @@ public:
             } else if (streq(pending_, "temperature_triggers")) {
                 seenSections_ |= ConfigSection::TempTriggers;
                 push(St::TempTrigArr);
+            } else {
+                enterJunk_();
             }
+        } else {
+            enterJunk_();
         }
     }
 
@@ -302,8 +312,9 @@ public:
                 if (streq(pending_, "ssid")) strlcpy(t_->wifi.ssid, v ? v : "", sizeof t_->wifi.ssid);
                 else if (streq(pending_, "password"))
                     strlcpy(t_->wifi.password, v ? v : "", sizeof t_->wifi.password);
-                else if (streq(pending_, "ap_timeout_sec"))
-                    t_->wifi.ap_timeout_sec = json_scalar::parseU16(v, 0);
+                else if (streq(pending_, "ap_timeout_sec")) {
+                    if (!json_scalar::tryParseU16(v, t_->wifi.ap_timeout_sec)) failed_ = true;
+                }
                 else if (streq(pending_, "ap_timeout_enabled"))
                     t_->wifi.ap_timeout_enabled = json_scalar::parseBool(v, false);
                 break;
@@ -468,12 +479,15 @@ public:
                     t_->battery_saver.voltage_abort_threshold = json_scalar::parseF(v, 10.5f);
                 else if (streq(pending_, "hysteresis"))
                     t_->battery_saver.hysteresis = json_scalar::parseF(v, 0.5f);
-                else if (streq(pending_, "min_low_voltage_duration_sec"))
-                    t_->battery_saver.min_low_voltage_duration_sec = json_scalar::parseU16(v, 180);
-                else if (streq(pending_, "min_time_between_attempts_sec"))
-                    t_->battery_saver.min_time_between_attempts_sec = json_scalar::parseU16(v, 1800);
-                else if (streq(pending_, "max_attempts_per_day"))
-                    t_->battery_saver.max_attempts_per_day = json_scalar::parseU8(v, 3);
+                else if (streq(pending_, "min_low_voltage_duration_sec")) {
+                    if (!json_scalar::tryParseU16(v, t_->battery_saver.min_low_voltage_duration_sec))
+                        failed_ = true;
+                } else if (streq(pending_, "min_time_between_attempts_sec")) {
+                    if (!json_scalar::tryParseU16(v, t_->battery_saver.min_time_between_attempts_sec))
+                        failed_ = true;
+                } else if (streq(pending_, "max_attempts_per_day")) {
+                    if (!json_scalar::tryParseU8(v, t_->battery_saver.max_attempts_per_day)) failed_ = true;
+                }
                 else if (streq(pending_, "program_id"))
                     t_->battery_saver.program_id = json_scalar::parseU8(v, 0);
                 break;

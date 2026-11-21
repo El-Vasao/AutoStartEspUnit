@@ -140,7 +140,8 @@ IpdFramer::Event IpdFramer::feed(char c) {
                     return Event::DataStart;
                 }
                 if (_declared > (uint32_t)kMaxIpdLen) {
-                    _discardLeft = _declared;
+                    // Потолок discard: иначе битая длина держит dataMode на огромный счётчик.
+                    _discardLeft = (uint32_t)kMaxIpdLen;
                     _len = 0;
                     _state = State::Discard;
                     return Event::Discard;

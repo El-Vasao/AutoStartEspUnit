@@ -13,6 +13,7 @@ void AtSession::reset() {
     _deadlineMs = 0;
     _res = Result{};
     _active = Request{};
+    _promptLineStart = true;
 }
 
 bool AtSession::enqueue_(Request* q, uint8_t qsize, uint8_t& head, uint8_t& count, const Request& r) {
@@ -49,6 +50,7 @@ void AtSession::startNext_(uint32_t nowMs) {
     _res = Result{};
     _deadlineMs = nowMs + (_active.timeoutMs ? _active.timeoutMs : 1);
     _state = State::Waiting;
+    _promptLineStart = true;
 
     // Текст TX пишется в лог в ModemUart::writeLine.
     _uart.writeLine(_active.cmd ? _active.cmd : "");
@@ -86,13 +88,19 @@ void AtSession::tick(uint32_t nowMs) {
 
 void AtSession::onByte(char c) {
     if (_state != State::Waiting) return;
+    if (c == '\r' || c == '\n') {
+        _promptLineStart = true;
+        return;
+    }
     if ((_active.expectMask & (uint8_t)Expect::Prompt) != 0) {
-        if (c == '>') {
+        // Голое `>` в начале строки — приглашение CIPSEND/CMGS; `>` внутри +IPD/строки — нет.
+        if (c == '>' && _promptLineStart) {
             _res.gotPrompt = true;
-            // Приглашение сразу завершает прелюдию CIPSEND.
             finish_(true, false, false);
+            return;
         }
     }
+    _promptLineStart = false;
 }
 
 void AtSession::onLine(const char* line) {

@@ -16,6 +16,9 @@ bool parseBool(const char* v, bool def);
 uint32_t parseU32(const char* v, uint32_t def);
 uint16_t parseU16(const char* v, uint16_t def);
 uint8_t parseU8(const char* v, uint8_t def);
+/// Строго: мусор или значение > предела типа → false (без насыщения).
+bool tryParseU16(const char* v, uint16_t& out);
+bool tryParseU8(const char* v, uint8_t& out);
 /// Десятичное со знаком, насыщение до [-32768, 32767].
 int16_t parseI16(const char* v, int16_t def);
 /// Конечное число с плавающей точкой; NaN/inf и мусор → def.

@@ -45,6 +45,20 @@ uint8_t parseU8(const char* v, uint8_t def) {
     return n > 255u ? 255 : static_cast<uint8_t>(n);
 }
 
+bool tryParseU16(const char* v, uint16_t& out) {
+    uint32_t n = 0;
+    if (!readUnsigned(v, n) || n > 65535u) return false;
+    out = static_cast<uint16_t>(n);
+    return true;
+}
+
+bool tryParseU8(const char* v, uint8_t& out) {
+    uint32_t n = 0;
+    if (!readUnsigned(v, n) || n > 255u) return false;
+    out = static_cast<uint8_t>(n);
+    return true;
+}
+
 int16_t parseI16(const char* v, int16_t def) {
     if (!v || !*v) return def;
     const char* digits = (*v == '-') ? v + 1 : v;

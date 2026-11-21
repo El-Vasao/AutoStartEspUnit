@@ -184,13 +184,12 @@
       },
 
       /**
-       * @param {'snapshot'|'clocks'|'hardware'|'runtime'|'program'|'flash'|'mode'|'gsm'|'error'|'status'} kind
+       * @param {'snapshot'|'clocks'|'hardware'|'runtime'|'program'|'flash'|'mode'|'gsm'|'error'} kind
        */
       patchFromSse(kind, data) {
         if (!data || typeof data !== 'object') return;
         switch (kind) {
           case 'snapshot':
-          case 'status':
             this.updateFromSSE(data);
             return;
           case 'clocks':

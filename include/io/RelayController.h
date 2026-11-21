@@ -70,7 +70,8 @@ private:
     int8_t _starterIdx{-1};
     bool _starterRebindPending{false};
     bool _lockout{false};
-    uint32_t _lockoutUntilMs{0};
+    uint32_t _lockoutStartMs{0};
+    uint32_t _lockoutDurationMs{0};
     esp_timer* _backstop{nullptr};
     volatile bool _backstopTripped{false};
 

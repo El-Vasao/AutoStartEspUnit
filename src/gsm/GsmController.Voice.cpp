@@ -9,6 +9,7 @@
 #include "config/Config.h"
 #include "gsm/GsmAtParse.h"
 #include "common/Logger.h"
+#include "modem/AtParam.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -67,7 +68,7 @@ bool GsmController::requestCallOwner() {
     if (_voicePhase != VoicePhase::Idle) return false;
     if (_state != GsmState::READY) return false;
     const char* phone = config.getBase().gsm.owner_phone;
-    if (!phone || !phone[0]) return false;
+    if (!at_param::phoneOk(phone)) return false;
 
     if (_timeStep != TimeStep::Idle) {
         timeFailStep_("voice_call");
@@ -91,8 +92,8 @@ bool GsmController::requestSmsOwner(const char* message) {
     if (_voicePhase != VoicePhase::Idle) return false;
     if (_state != GsmState::READY) return false;
     const char* phone = config.getBase().gsm.owner_phone;
-    if (!phone || !phone[0]) return false;
-    if (!message || !message[0]) return false;
+    if (!at_param::phoneOk(phone)) return false;
+    if (!at_param::smsBodyOk(message)) return false;
 
     if (_timeStep != TimeStep::Idle) {
         timeFailStep_("voice_sms");

@@ -38,6 +38,8 @@ public:
     void writeByte(uint8_t b);
 
     void flushInput();
+    /// Сбросить недособранную строку (после обрыва TCP / сброса +IPD).
+    void clearPartialLine() { _lineLen = 0; }
     /// Опустошить TX UART (смена скорости / IPR NV); это лучше сырого Serial.flush().
     void flushTx();
 

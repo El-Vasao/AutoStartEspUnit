@@ -19,6 +19,19 @@ void Machine::begin(const Params& p, uint32_t nowMs) {
     last_ = Attempt{};
 }
 
+void Machine::clear() {
+    phase_ = Phase::Idle;
+    attempt_ = 0;
+    phaseStartMs_ = 0;
+    crankMs_ = 0;
+    lastTickMs_ = 0;
+    haveTick_ = false;
+    haveMin_ = false;
+    minVoltage_ = 0.0f;
+    maxGapMs_ = 0;
+    last_ = Attempt{};
+}
+
 bool Machine::alreadyRunning(const Sample& s) const {
     if (p_.method == StartMethod::Timed) {
         // Один замер выше порога ещё не значит, что мотор жив — нужно полное окно.
@@ -73,8 +86,17 @@ Tick Machine::tick(const Sample& s) {
         case Phase::Resting:
             if (now - phaseStartMs_ < p_.restMs) return t;
             phase_ = Phase::Idle;
+            phaseStartMs_ = now;
             [[fallthrough]];
         case Phase::Idle:
+            if (p_.method == StartMethod::Timed && !s.voltageValid) {
+                // Без валидного АЦП не крутить: ждать окно как при settle, иначе NoVoltage.
+                if (now - phaseStartMs_ < p_.settleMs + p_.windowExtraMs) return t;
+                attempt_++;
+                endAttempt(StopReason::NoVoltage, s, t);
+                failOrRest(s, t);
+                return t;
+            }
             if (p_.method == StartMethod::Timed && s.voltageValid && !s.voltageWindowFull &&
                 s.voltage >= p_.runningVoltage) {
                 // Окно ещё не полное, напряжение не просело — рано и крутить, и объявлять успех.

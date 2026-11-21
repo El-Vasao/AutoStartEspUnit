@@ -136,7 +136,8 @@ static void test_adc_calibrate_voltage_is_out_param_only() {
 static void test_unknown_keys_and_extra_arrays_trim() {
     std::string json =
         "{\"not_a_field\":1,\"nested_unknown\":{\"x\":[1,{\"y\":true}]},"
-        "\"wifi\":{\"ssid\":\"Kept\",\"mystery\":false},"
+        "\"weird_arr\":[1,2,{\"z\":true}],"
+        "\"wifi\":{\"ssid\":\"Kept\",\"mystery\":false,\"nested\":{\"a\":1}},"
         "\"sensors\":[{\"id\":\"T1\",\"name\":\"a\"},{\"id\":\"T2\",\"name\":\"b\"},"
         "{\"id\":\"T3\",\"name\":\"c\"},{\"id\":\"T1\",\"name\":\"d\"},{\"id\":\"T2\",\"name\":\"e\"}],"
         "\"inputs\":[{\"id\":\"IN1\",\"name\":\"i0\"},{\"id\":\"IN2\",\"name\":\"i1\"},"
@@ -308,6 +309,12 @@ static void test_program_step_round_trip() {
     TEST_ASSERT_EQUAL_UINT8(0, start->relay_id);
 }
 
+static void test_battery_saver_u16_overflow_fails_strict() {
+    BaseConfig cfg;
+    const char* json = "{\"battery_saver\":{\"max_attempts_per_day\":300}}";
+    TEST_ASSERT_FALSE(parseCfg(json, cfg, config_internal::ParseMode::Strict));
+}
+
 static void test_tz_offset_out_of_range_keeps_previous() {
     // parseI16 ограничивает значение int16. Приведение к int8_t завернуло бы 300→44, 256→0, 128→-128, 32767→-1.
     // Вне -12..14 остаётся уже записанное значение (начальный default или более ранний ключ).
@@ -341,6 +348,7 @@ int main(int, char**) {
     RUN_TEST(test_program_file_id_must_match_expected);
     RUN_TEST(test_program_step_past_max_fails);
     RUN_TEST(test_program_step_round_trip);
+    RUN_TEST(test_battery_saver_u16_overflow_fails_strict);
     RUN_TEST(test_tz_offset_out_of_range_keeps_previous);
     return UNITY_END();
 }

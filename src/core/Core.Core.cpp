@@ -128,9 +128,11 @@ static void logHeapTag_(const char* tag) {
 static void drainDeferredOtaFromWebUpload_(CorePrivate& impl) {
     if (!impl.pendingDeferredOtaFromWebUpload) return;
     impl.pendingDeferredOtaFromWebUpload = false;
-    if (impl.modeManager.getCurrentMode() != CoreMode::NORMAL) {
+    const CoreMode cur = impl.modeManager.getCurrentMode();
+    if (cur != CoreMode::NORMAL && cur != CoreMode::SETUP_AP && cur != CoreMode::EMERGENCY_AP) {
         return;
     }
+    impl.otaReturnMode = cur;
     logHeapTag_("before deferred OTA switch");
     // Автомат потока уже запущен в onOtaHttpUploadStreamOpenedFromWeb — не сбрасывать его.
     impl.modeManager.switchMode(CoreMode::OTA_UPDATE);
@@ -156,7 +158,6 @@ bool Core::begin() {
     impl.bootStage = CorePrivate::BootStage::InitWiFiOff;
     impl.bootTargetMode = CoreMode::BOOT;
     impl.bootConfigLoaded = false;
-    impl.bootHwMapBad = false;
 
     logger.log(LogModule::Core, "start\n");
     logger.log(LogModule::Core, "reset reason: %s\n", getResetReason());
@@ -238,11 +239,11 @@ void Core::suspendCellularLink() {
 }
 
 bool Core::otaStreamFeed(const uint8_t* data, size_t len) {
-    return _impl->otaHandler.streamFeed(data, len);
+    return _impl->otaHandler.enqueueHttpBytes(data, len);
 }
 
 bool Core::otaStreamFinish() {
-    return _impl->otaHandler.streamFinish();
+    return _impl->otaHandler.markHttpFinal();
 }
 
 void Core::otaStreamAbort() {

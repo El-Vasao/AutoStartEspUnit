@@ -185,7 +185,6 @@ void FlashCommitCoordinator::tick(Core& core) {
             logger.log(LogModule::FlashCommitCoordinator, "program: failed to write tmp from RAM\n");
             webServer.broadcastStatusForce();
             deferredPostedProgramApply_ = false;
-            deferredPostedProgramIndexPhase_ = false;
             fileSystem.refreshFsInfo();
             return;
         }
@@ -199,7 +198,6 @@ void FlashCommitCoordinator::tick(Core& core) {
             recordFlashCommitSnapshot(FlashCommitOp::SAVE_PROGRAM, false, false, config.getCRC());
             webServer.broadcastStatusForce();
             deferredPostedProgramApply_ = false;
-            deferredPostedProgramIndexPhase_ = false;
             fileSystem.refreshFsInfo();
             return;
         }
@@ -238,7 +236,6 @@ void FlashCommitCoordinator::tick(Core& core) {
                    espHalFreeHeap());
         webServer.broadcastStatusForce();
         deferredPostedProgramApply_ = false;
-        deferredPostedProgramIndexPhase_ = false;
         fileSystem.refreshFsInfo();
         return;
     }

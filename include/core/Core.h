@@ -97,6 +97,9 @@ public:
     /// Таймаут ожидания `final` у multipart upload — помечает веб и выходит в NORMAL.
     void onOtaHttpUploadAwaitTimedOut();
 
+    /// Update/хвост FS владеют flash — web_ram и healthCheck не открывают LittleFS.
+    bool otaHoldsFlash() const;
+
     // Подкармливание watchdog (должно вызываться в длительных операциях)
     void feedWatchdog();
 

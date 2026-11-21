@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <esp_partition.h>
+#include "common/Constants.h"
 
 /**
  * @brief OTA: поток HTTP → Update (прошивка) + хвост файлов LittleFS.
@@ -26,10 +27,15 @@ public:
     /// Начать ожидание multipart-загрузки; сбрасывает FSM потока.
     void prepareHttpUploadSession();
 
-    /// Подать байты пакета из callback загрузки HTTP.
+    /// Async HTTP: только в кольцо RAM (Update/LittleFS — из update()).
+    bool enqueueHttpBytes(const uint8_t* data, size_t len);
+    /// Async HTTP: конец тела; streamFinish выполнит цикл.
+    bool markHttpFinal();
+
+    /// Подать байты в FSM (цикл / native-тесты).
     bool streamFeed(const uint8_t* data, size_t len);
 
-    /// Конец multipart: завершить Update и открытый файл FS; false при ошибке.
+    /// Конец пакета: завершить Update и открытый файл FS; false при ошибке.
     bool streamFinish();
 
     /// Прервать Update / открытую запись FS; поток остаётся в Failed.
@@ -40,6 +46,8 @@ public:
 
     bool isOngoing() const { return _ongoing; }
     bool streamSucceeded() const { return _streamDoneOk; }
+    /// Пока не Idle/Done/Failed — не трогать LittleFS из healthCheck / web_ram.
+    bool holdsFlash() const;
 
 private:
     enum class Phase : uint8_t {
@@ -61,6 +69,12 @@ private:
     bool _httpUploadDone{false};
     bool _httpUploadOk{false};
     uint32_t _httpSessionStartMs{0};
+    bool _httpFinalMarked{false};
+    bool _streamFinishDone{false};
+
+    uint8_t _httpRing[Ota::HTTP_RING_SIZE]{};
+    uint16_t _httpRingHead{0};
+    uint16_t _httpRingCount{0};
 
     Phase _phase{Phase::Idle};
     bool _updateBegun{false};
@@ -98,4 +112,6 @@ private:
     bool activatePendingBoot();
     bool closeOutFile(bool commit);
     bool feedOne(const uint8_t* data, size_t len, size_t& consumed);
+    void drainHttpRing_();
+    uint16_t httpRingFree_() const { return static_cast<uint16_t>(Ota::HTTP_RING_SIZE - _httpRingCount); }
 };

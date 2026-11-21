@@ -120,9 +120,6 @@ void TriggerManager::update() {
     if (now - _lastCheck < interval) return;
     _lastCheck = now;
 
-    // Пока крутится стартер, start() отвергается — не трогать защёлки, чтобы фронт не съесть.
-    if (_executor.isInStarterStep()) return;
-
     const auto& full = _config.getBase();
     const uint8_t nIn = (full.input_triggers_count < Limits::MAX_TRIGGERS)
                             ? full.input_triggers_count
@@ -147,12 +144,11 @@ void TriggerManager::update() {
             continue;
         }
         const bool active = (_inputs.getState((uint8_t)inIdx) == (t.trigger_level == 1));
+        // Неудачный start не сбрасывает защёлку: иначе битый id крутит allOff каждый проход.
         if (_inputLatch[i].update(active) && t.program_id != 0) {
             logger.log(LogModule::TriggerManager, "input trigger %d (input_id=%u idx=%d) fired, program %u start\n",
                        i, (unsigned)t.input_id, (int)inIdx, t.program_id);
-            if (!_executor.start(t.program_id)) {
-                _inputLatch[i].reset();
-            }
+            (void)_executor.start(t.program_id);
         }
     }
     for (uint8_t i = nIn; i < Limits::MAX_TRIGGERS; i++) {
@@ -181,9 +177,7 @@ void TriggerManager::update() {
         const auto cmp = trigger_rules::compareFromString(t.comparison);
         if (_tempLatch[i].update(temp, t.threshold, cmp, DS18B20::RELEASE_HYSTERESIS_C) && t.program_id != 0) {
             logger.log(LogModule::TriggerManager, "temperature trigger %d fired, program %u start\n", i, t.program_id);
-            if (!_executor.start(t.program_id)) {
-                _tempLatch[i].reset();
-            }
+            (void)_executor.start(t.program_id);
         }
     }
     for (uint8_t i = nTemp; i < Limits::MAX_TRIGGERS; i++) {

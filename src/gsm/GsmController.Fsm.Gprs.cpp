@@ -7,6 +7,7 @@
 #include "core/Core.h"
 #include "core/ErrorManager.h"
 #include "common/Logger.h"
+#include "modem/AtParam.h"
 
 void GsmController::handleGprsSetup() {
     const uint32_t now = millis();
@@ -34,6 +35,12 @@ void GsmController::handleGprsSetup() {
     if (_awaitOk) {
         resetAwait();
         const auto& gsmCfg = config.getBase().gsm;
+        if (!at_param::quotedOk(gsmCfg.apn) || !at_param::quotedOk(gsmCfg.apn_user) ||
+            !at_param::quotedOk(gsmCfg.apn_pass)) {
+            logger.log(LogModule::GsmController, "GPRS: APN/user/pass has quote or CR/LF\n");
+            changeState(GsmState::ERROR);
+            return;
+        }
         char cmd[Gsm::CMD_BUFFER_SIZE];
         switch (_gprsCfgStep) {
             case 0:

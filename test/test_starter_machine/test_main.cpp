@@ -157,6 +157,30 @@ void test_timed_idle_voltage_drop_before_window_cranks() {
     TEST_ASSERT_EQUAL_UINT8(1, m.attempt());
 }
 
+void test_timed_idle_invalid_voltage_does_not_crank() {
+    Machine m;
+    Params p = timedParams();
+    m.begin(p, 0);
+    Sample s = at(0);
+    s.voltageValid = false;
+    Tick t = m.tick(s);
+    TEST_ASSERT_EQUAL((int)RelayCmd::None, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Idle, (int)m.phase());
+
+    s.nowMs = p.settleMs + p.windowExtraMs - 1;
+    s.voltageValid = false;
+    t = m.tick(s);
+    TEST_ASSERT_EQUAL((int)Phase::Idle, (int)m.phase());
+    TEST_ASSERT_EQUAL((int)RelayCmd::None, (int)t.relay);
+
+    s.nowMs = p.settleMs + p.windowExtraMs;
+    t = m.tick(s);
+    TEST_ASSERT_TRUE(t.attemptEnded);
+    TEST_ASSERT_EQUAL((int)StopReason::NoVoltage, (int)m.last().reason);
+    TEST_ASSERT_EQUAL((int)Phase::Resting, (int)m.phase());
+    TEST_ASSERT_NOT_EQUAL((int)RelayCmd::On, (int)t.relay);
+}
+
 void test_engine_caught_during_rest_counts_as_success() {
     Machine m;
     m.begin(timedParams(), 0);
@@ -317,6 +341,7 @@ int main(int, char**) {
     RUN_TEST(test_timed_already_running_does_not_crank);
     RUN_TEST(test_timed_idle_waits_for_full_window_before_already_running);
     RUN_TEST(test_timed_idle_voltage_drop_before_window_cranks);
+    RUN_TEST(test_timed_idle_invalid_voltage_does_not_crank);
     RUN_TEST(test_engine_caught_during_rest_counts_as_success);
     RUN_TEST(test_rpm_condition_stops_immediately);
     RUN_TEST(test_rpm_ignores_crank_time_and_runs_to_max);

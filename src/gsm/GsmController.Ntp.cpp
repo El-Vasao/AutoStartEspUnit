@@ -7,6 +7,7 @@
 #include "common/Logger.h"
 #include "common/Constants.h"
 #include "gsm/GsmTimeParse.h"
+#include "modem/AtParam.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -360,6 +361,10 @@ void GsmController::serviceTimeSync(uint32_t now) {
 
     case TimeStep::CntpSet: {
         if (!_timeCmdSent) {
+            if (!at_param::quotedOk(_ntpServer)) {
+                failCntp("NTP bad chars");
+                return;
+            }
             char cmd[TextBytes::TimeCfg::NTP_SERVER + 24];
             snprintf(cmd, sizeof(cmd), "AT+CNTP=\"%s\",%d", _ntpServer, (int)_ntpTzQuarters);
             sendAt(cmd, "CNTP", AwaitKind::OK, Gsm::CNTP_AT_TIMEOUT_MS);

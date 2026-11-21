@@ -23,21 +23,32 @@ public:
     explicit JsonFilePrint(File& f) : file_(f) {}
 
     size_t write(uint8_t c) override {
+        if (shortWrite_) return 0;
         const size_t w = file_.write(c);
-        if (w != 0) {
-            totalBytes_ += static_cast<uint32_t>(w);
-            if ((totalBytes_ & 0xFFu) == 0U) espHalFeedWdt();
+        if (w != 1) {
+            shortWrite_ = true;
+            return 0;
         }
-        return w;
+        totalBytes_ += 1;
+        if ((totalBytes_ & 0xFFu) == 0U) espHalFeedWdt();
+        return 1;
     }
 
     size_t write(const uint8_t* buffer, size_t size) override {
+        if (shortWrite_ || !buffer) return 0;
         size_t done = 0;
         while (done < size) {
             size_t chunk = size - done;
             if (chunk > 128) chunk = 128;
             const size_t w = file_.write(buffer + done, chunk);
-            if (w == 0) break;
+            if (w != chunk) {
+                shortWrite_ = true;
+                if (w > 0) {
+                    done += w;
+                    totalBytes_ += w;
+                }
+                break;
+            }
             done += w;
             totalBytes_ += w;
             if ((totalBytes_ & 0xFFu) == 0U) espHalFeedWdt();
@@ -45,9 +56,13 @@ public:
         return done;
     }
 
+    bool shortWrite() const { return shortWrite_; }
+    uint32_t totalBytes() const { return totalBytes_; }
+
 private:
     File& file_;
     uint32_t totalBytes_{0};
+    bool shortWrite_{false};
 };
 
 static bool commitTmpToPath_atomic_(const char* path, char* tmpPath, bool hadBackupBackup) {
@@ -124,8 +139,9 @@ bool FsManager::writeJsonAtomicStream(const char* path, JsonStreamEncodeFn encod
     espHalFeedWdt();
     f.close();
 
-    if (written == 0 || written >= maxBytes) {
-        logger.log(LogModule::FsManager, "writeJsonAtomicStream: invalid byte count (%u)\n", (unsigned)written);
+    if (jfp.shortWrite() || written == 0 || written >= maxBytes) {
+        logger.log(LogModule::FsManager, "writeJsonAtomicStream: short or invalid write (%u short=%u)\n",
+                   (unsigned)written, (unsigned)jfp.shortWrite());
         LittleFS.remove(tmpPath);
         errorCount++;
         return false;

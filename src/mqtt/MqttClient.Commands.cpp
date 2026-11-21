@@ -432,13 +432,12 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
     switch (cmd.kind) {
         case MqttCommandKind::Run: {
             logger.log(LogModule::MqttClient, "run program=%u id=%s\n", (unsigned)cmd.programId, cmd.id);
-            const bool starterBusy = core.getProgramExecutor().isInStarterStep();
-            // start() зовёт stop()→finish(), а жизненный цикл отложен. Новый id до start()
-            // закрылся бы этим callback'ом как провал прерванного прогона.
-            const bool preempt = !starterBusy && _hasActiveRun && _activeRunId[0] != '\0';
+            // start() зовёт finish() без allOff при удачной передаче; жизненный цикл отложен.
+            // Новый id до start() закрылся бы этим callback'ом как провал прерванного прогона.
+            const bool preempt = _hasActiveRun && _activeRunId[0] != '\0';
             if (preempt) {
                 if (_hasPreemptedRun && _preemptedRunId[0] != '\0') {
-                    // Один слот ожидания: новый stop() затрёт ещё не доставленный callback.
+                    // Один слот ожидания: новый finish() затрёт ещё не доставленный callback.
                     replyRunFinal_(_preemptedRunId, false);
                 }
                 strlcpy(_preemptedRunId, _activeRunId, sizeof(_preemptedRunId));
@@ -449,7 +448,7 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
                 _activeRunProgram = 0;
             }
             bool started = false;
-            if (!starterBusy && _ports && _ports->control.startProgram) {
+            if (_ports && _ports->control.startProgram) {
                 started = _ports->control.startProgram(_ports->control.ctx, cmd.programId);
             }
             if (started && !core.getProgramExecutor().isRunning() && _hasPreemptedRun && _preemptedRunId[0] != '\0') {
@@ -463,7 +462,7 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
                 PendingReply pr{};
                 pr.kind = PendingKind::Thin;
                 strlcpy(pr.id, cmd.id, sizeof(pr.id));
-                pr.code = starterBusy ? mqttErrToHttpCode(MqttCmdErr::Conflict) : MqttCmd::CODE_UNPROCESSABLE;
+                pr.code = MqttCmd::CODE_UNPROCESSABLE;
                 finalizeIdRing_(pr.id, pr.code);
                 logger.log(LogModule::MqttClient, "command final id=%s code=%u\n", pr.id, (unsigned)pr.code);
                 (void)stageReply_(pr);

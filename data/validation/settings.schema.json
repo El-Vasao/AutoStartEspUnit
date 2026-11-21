@@ -26,7 +26,7 @@
         "ap_timeout_sec": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 99999
+          "maximum": 65535
         }
       }
     },
@@ -405,17 +405,17 @@
         "min_low_voltage_duration_sec": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 86400
+          "maximum": 65535
         },
         "min_time_between_attempts_sec": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 86400
+          "maximum": 65535
         },
         "max_attempts_per_day": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 1000
+          "maximum": 255
         },
         "program_id": {
           "type": "integer",

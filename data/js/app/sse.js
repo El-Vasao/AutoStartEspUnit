@@ -204,10 +204,10 @@
     };
 
     function markStatusKind(kind, payload) {
-      if (kind === 'mode' || ((kind === 'snapshot' || kind === 'status') && payload?.mode)) {
+      if (kind === 'mode' || (kind === 'snapshot' && payload?.mode)) {
         ctx.gotMode = true;
       }
-      if (kind === 'hardware' || kind === 'snapshot' || kind === 'status') {
+      if (kind === 'hardware' || kind === 'snapshot') {
         if (kind === 'hardware' || payload?.relaysById || payload?.inputsById || Array.isArray(payload?.relays)) {
           ctx.gotHardware = true;
         }
@@ -265,7 +265,7 @@
         }
       });
 
-      const sseKinds = ['clocks', 'hardware', 'runtime', 'program', 'flash', 'mode', 'gsm', 'error', 'status'];
+      const sseKinds = ['clocks', 'hardware', 'runtime', 'program', 'flash', 'mode', 'gsm', 'error'];
       for (const k of sseKinds) {
         ctx.source.addEventListener(k, e => {
           try { onStatusPayload(k, e.data); } catch (err) { log?.warn?.('SSE payload parse failed', k, err); }

@@ -3,6 +3,7 @@
 #include <string.h>
 #include "common/Constants.h"
 #include "common/Logger.h"
+#include "modem/AtParam.h"
 
 namespace {
 #if defined(SERIAL_DEBUG)
@@ -18,6 +19,19 @@ void Sim800TcpTransport::clearIpConfigFlags_() {
     _ipConfigDone = false;
     _ipConfigEnqueued = false;
     _ipConfigOkMask = 0;
+}
+
+void Sim800TcpTransport::resetRx_() {
+    _ipd.reset();
+    _ipdDiscardExit = false;
+    _ipdLastByteMs = 0;
+    _rxHead = 0;
+    _rxCount = 0;
+    _rxOverflow = false;
+    _rawLineLen = 0;
+    _promptLeak = 0;
+    _at.uart().setDataMode(false);
+    _at.uart().clearPartialLine();
 }
 
 void Sim800TcpTransport::reset() {
@@ -36,21 +50,13 @@ void Sim800TcpTransport::reset() {
     _lastStackRecoverMs = 0;
     _lastConnectAttemptMs = 0;
     _flushRequested = false;
-    _rawLineLen = 0;
-    _promptLeak = 0;
     _port = 0;
     _host[0] = '\0';
     _cmdStart[0] = '\0';
     _cmdSend[0] = '\0';
-    _rxHead = 0;
-    _rxCount = 0;
-    _rxOverflow = false;
     _txLen = 0;
     _sendLen = 0;
-    _ipd.reset();
-    _ipdDiscardExit = false;
-    // Иначе обрыв посреди длинного +IPD оставляет UART без разбора строк.
-    _at.uart().setDataMode(false);
+    resetRx_();
 }
 
 void Sim800TcpTransport::noteConnectOk_() {
@@ -144,6 +150,10 @@ bool Sim800TcpTransport::connectStart(const char* host, uint16_t port) {
         return false;
     }
 
+    if (!host || !host[0] || !at_param::quotedOk(host)) {
+        logger.log(LogModule::Sim800TcpTransport, "connectStart: bad host\n");
+        return false;
+    }
     strncpy(_host, host, sizeof(_host) - 1);
     _host[sizeof(_host) - 1] = '\0';
     _port = port;
@@ -167,7 +177,7 @@ void Sim800TcpTransport::stop(const char* reason) {
     _connecting = false;
     // Срыв посреди CIPSEND: снять эпоху отправки, чтобы tcpEpochBusy не блокировал переподключение MQTT навсегда.
     endSendEpoch_();
-    _promptLeak = 0;
+    resetRx_();
     // Пауза, чтобы следующий тик MQTT не устроил шторм CIPSTART.
     _lastConnectAttemptMs = nowMs_();
     if (reason && reason[0]) {
@@ -252,6 +262,12 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
     _lastNowMs = nowMs;
     _at.tick(nowMs);
 
+    if ((_ipd.inDiscard() || _ipd.inPayload()) && _ipdLastByteMs != 0 &&
+        (nowMs - _ipdLastByteMs) >= Sim800Tcp::IPD_IDLE_TIMEOUT_MS) {
+        logger.log(LogModule::Sim800TcpTransport, "IPD idle timeout — reset RX\n");
+        resetRx_();
+    }
+
     // Сторожа соединения и отправки (зависание модема / застрявшие флаги).
     if (_connecting && _connectStartMs != 0 &&
         (nowMs - _connectStartMs) >= Sim800Tcp::CONNECT_WATCHDOG_MS) {
@@ -260,6 +276,7 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
         _connected = false;
         _connectStartMs = 0;
         endSendEpoch_();
+        resetRx_();
         forceStackRecover_("connect_wd");
     }
     if (_sendInProgress && _sendWatchMs != 0 &&
@@ -268,6 +285,7 @@ void Sim800TcpTransport::tick(uint32_t nowMs) {
         endSendEpoch_();
         _connected = false;
         _connecting = false;
+        resetRx_();
         forceStackRecover_("send_wd");
     }
 
@@ -377,6 +395,7 @@ void Sim800TcpTransport::onLine(const char* line) {
         _connecting = false;
         _connectStartMs = 0;
         endSendEpoch_(); // новый сокет — выбросить подготовку до соединения
+        resetRx_();      // не тащить хвост прошлого брокера в MQTT
         noteConnectOk_();
         return;
     }
@@ -386,6 +405,7 @@ void Sim800TcpTransport::onLine(const char* line) {
         _connecting = false;
         _connectStartMs = 0;
         endSendEpoch_();
+        resetRx_();
         noteConnectOk_();
         return;
     }
@@ -396,6 +416,7 @@ void Sim800TcpTransport::onLine(const char* line) {
         _connected = false;
         _connecting = false;
         clearTx_();
+        resetRx_();
         // Если отправка ещё идёт, шину держать запертой, чтобы CIPSTART не обогнал конец CIPSHUT.
         if (wasSending) {
             _modemTxLocked = true;
@@ -418,6 +439,7 @@ void Sim800TcpTransport::onLine(const char* line) {
         _connecting = false;
         _connectStartMs = 0;
         endSendEpoch_();
+        resetRx_();
         _lastConnectAttemptMs = now;
         forceStackRecover_("connect_fail");
         return;
@@ -542,22 +564,30 @@ void Sim800TcpTransport::onByte(char c) {
             if (_ipd.length() == 0) {
                 _at.uart().setDataMode(false);
                 _rawLineLen = 0;
+                _ipdLastByteMs = 0;
                 return;
             }
             _at.uart().setDataMode(true);
+            _ipdLastByteMs = nowMs_();
             return;
         case Ev::Payload:
+            _ipdLastByteMs = nowMs_();
             pushRx_((uint8_t)c, true);
             return;
         case Ev::PayloadEnd:
             pushRx_((uint8_t)c, true);
             _at.uart().setDataMode(false);
             _rawLineLen = 0; // выбросить случайный остаток "+IPD,n:" с пути сопоставления
+            _ipdLastByteMs = 0;
             return;
         case Ev::Discard:
             // Иначе UART склеит хвост кадра со следующим OK.
             _at.uart().setDataMode(true);
-            if (!_ipd.inDiscard()) _ipdDiscardExit = true;
+            _ipdLastByteMs = nowMs_();
+            if (!_ipd.inDiscard()) {
+                _ipdDiscardExit = true;
+                _ipdLastByteMs = 0;
+            }
             return;
         case Ev::Raw:
             // Повторить байты, съеденные сорванным заголовком, чтобы URC вроде +CSQ сохранили '+'.

@@ -248,6 +248,8 @@ namespace Ota {
     constexpr size_t FILE_MAX_SIZE = 0x160000;
     /// Нижняя граница свободного места перед потоком: место под самый большой gzip-ассет UI и запас (не весь пакет).
     constexpr size_t STREAM_FS_HEADROOM = 262144;
+    /// Кольцо HTTP→цикл: async только копирует, Update/LittleFS — с loop.
+    constexpr size_t HTTP_RING_SIZE = 4096;
 }
 
 // ============================================================
@@ -717,6 +719,8 @@ namespace Sim800Tcp {
 
     /// После CIPSEND '>' и записи payload: ждать SEND OK / SEND FAIL.
     constexpr uint32_t SEND_WATCHDOG_MS = 15000;
+    /// Простой без байт в Discard/ReadData +IPD — сброс фреймера.
+    constexpr uint32_t IPD_IDLE_TIMEOUT_MS = 2000;
 
     /// Минимальный зазор между попытками CIPSTART (неблокирующие повторы Client::connect на каждом тике MQTT).
     constexpr uint32_t CONNECT_RETRY_COOLDOWN_MS = 3000;

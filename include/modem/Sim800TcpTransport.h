@@ -132,8 +132,11 @@ private:
 
     // Снять утёкшее приглашение CIPSEND '>' (+ необязательные CR/LF), чтобы оно не попало в поток MQTT.
     uint8_t _promptLeak{0}; // 0=нет, 1=видели '>', 2=видели CR после '>'
+    /// Последний байт в Discard/ReadData — для IPD_IDLE_TIMEOUT_MS.
+    uint32_t _ipdLastByteMs{0};
 
     uint32_t nowMs_() const { return _lastNowMs ? _lastNowMs : millis(); }
+    void resetRx_();
     /// `fromIpd`: тело в кадре +IPD — оставлять в эпоху отправки (CONNACK/SUBACK). Сырой путь UART может быть мусором.
     void pushRx_(uint8_t b, bool fromIpd = false);
     /// Выбрасывать байты не из IPD, пока UART занят CIPSEND.

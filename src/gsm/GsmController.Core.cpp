@@ -61,10 +61,11 @@ GsmController::GsmController()
         if (!ctx) return;
         auto* self = static_cast<GsmController*>(ctx);
         self->_lastRxByteMs = millis();
+        // at.onByte до tcp: payload +IPD не должен закрывать CIPSEND по байту '>'.
         if (!self->_stack.uart.isDataMode()) {
             self->appendResponseChar(c);
+            self->_stack.at.onByte(c);
         }
-        self->_stack.at.onByte(c);
         if (self->_state == GsmState::READY || self->_stack.tcp.isConnected() || self->_stack.tcp.isConnecting()) {
             self->_stack.tcp.onByte(c);
         }

@@ -67,22 +67,17 @@ void ThermostatManager::update() {
         // Битый замер не сбрасывает гистерезис — иначе следующий хороший снова фронт.
         return;
     }
-    if (_executor.isInStarterStep()) return;
-
     const float temp = _sensors.getTemperature((uint8_t)idx);
     const float hyst = DS18B20::RELEASE_HYSTERESIS_C;
     // comparison в JSON не задаёт направление: нижний порог всегда «ниже», верхний всегда «выше».
 
+    // Неудачный start не сбрасывает защёлку: иначе битый id крутит allOff каждый проход.
     if (_lowerLatch.update(temp, ts.lower_threshold, trigger_rules::Compare::Below, hyst) && ts.program_id_lower != 0) {
         logger.log(LogModule::ThermostatManager, "lower threshold, program %u start\n", ts.program_id_lower);
-        if (!_executor.start(ts.program_id_lower)) {
-            _lowerLatch.reset();
-        }
+        (void)_executor.start(ts.program_id_lower);
     }
     if (_upperLatch.update(temp, ts.upper_threshold, trigger_rules::Compare::Above, hyst) && ts.program_id_upper != 0) {
         logger.log(LogModule::ThermostatManager, "upper threshold, program %u start\n", ts.program_id_upper);
-        if (!_executor.start(ts.program_id_upper)) {
-            _upperLatch.reset();
-        }
+        (void)_executor.start(ts.program_id_upper);
     }
 }

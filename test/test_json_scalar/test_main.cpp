@@ -39,6 +39,17 @@ static void test_u16_and_u8_saturate_but_reject_negative() {
     TEST_ASSERT_EQUAL_UINT8(1, parseU8("99999999999999999999", 1));
 }
 
+static void test_try_parse_rejects_overflow() {
+    uint16_t u16 = 0;
+    uint8_t u8 = 0;
+    TEST_ASSERT_TRUE(tryParseU16("65535", u16));
+    TEST_ASSERT_EQUAL_UINT16(65535, u16);
+    TEST_ASSERT_FALSE(tryParseU16("65536", u16));
+    TEST_ASSERT_TRUE(tryParseU8("255", u8));
+    TEST_ASSERT_EQUAL_UINT8(255, u8);
+    TEST_ASSERT_FALSE(tryParseU8("256", u8));
+}
+
 static void test_i16() {
     TEST_ASSERT_EQUAL_INT16(-12, parseI16("-12", 0));
     TEST_ASSERT_EQUAL_INT16(32767, parseI16("40000", 0));
@@ -64,6 +75,7 @@ int main(int, char**) {
     RUN_TEST(test_bool_tokens);
     RUN_TEST(test_u32_accepts_only_whole_unsigned_decimals);
     RUN_TEST(test_u16_and_u8_saturate_but_reject_negative);
+    RUN_TEST(test_try_parse_rejects_overflow);
     RUN_TEST(test_i16);
     RUN_TEST(test_float);
     return UNITY_END();

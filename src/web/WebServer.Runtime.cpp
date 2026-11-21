@@ -53,7 +53,10 @@ uint8_t apMaxConnectionsForMode(CoreMode mode) {
 
 void WebServerRuntime::update(WebServer& ws) {
     // Предзагрузка UI и окно app.js — только здесь, не из колбэка async.
-    web_ram::tick();
+    // Во время OTA-потока Update/хвост владеют SPI flash — не открывать LittleFS.
+    if (!core.otaHoldsFlash()) {
+        web_ram::tick();
+    }
     if (ws.apActive) {
         processDNS(ws);
     }

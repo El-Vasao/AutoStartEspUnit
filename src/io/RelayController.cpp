@@ -120,8 +120,7 @@ void RelayController::setRelay(uint8_t relay, bool state) {
 
 bool RelayController::isStarterLockedOut() const {
     if (_backstopTripped) return true;
-    if (!_lockout) return false;
-    return (int32_t)(millis() - _lockoutUntilMs) < 0;
+    return _lockout;
 }
 
 bool RelayController::on(uint8_t relay) {
@@ -159,7 +158,8 @@ void RelayController::startLockout() {
     const uint32_t pauseMs = secToMs(config.getBase().vehicle.starter_retry_pause_sec);
     const uint32_t lockMs = pauseMs > StarterLimits::LOCKOUT_MIN_MS ? pauseMs : StarterLimits::LOCKOUT_MIN_MS;
     _lockout = true;
-    _lockoutUntilMs = millis() + lockMs;
+    _lockoutStartMs = millis();
+    _lockoutDurationMs = lockMs;
     logger.log(LogModule::RelayController, "starter locked for %u ms\n", (unsigned)lockMs);
 }
 
@@ -199,6 +199,9 @@ void RelayController::checkSafety() {
 }
 
 void RelayController::update() {
+    if (_lockout && (millis() - _lockoutStartMs) >= _lockoutDurationMs) {
+        _lockout = false;
+    }
     if (_backstopTripped) {
         if (_starterIdx >= 0) setRelay((uint8_t)_starterIdx, false);
         logger.log(LogModule::RelayController, "⚠️ starter watchdog fired (main loop hung)\n");

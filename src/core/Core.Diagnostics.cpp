@@ -65,7 +65,7 @@ void Core::performPeriodicTasks(uint32_t now) {
     }
 
     if (every(Timing::FS_MAINTENANCE_INTERVAL_MS, impl.lastFsMaintenance)) {
-        if (fileSystem.isInitialized()) {
+        if (fileSystem.isInitialized() && !impl.otaHandler.holdsFlash()) {
             fileSystem.healthCheck();
             fileSystem.printStats();
         }

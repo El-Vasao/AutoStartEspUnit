@@ -82,6 +82,8 @@ private:
     Request _active{};
     uint32_t _deadlineMs{0};
     Result _res{};
+    /// Приглашение `>` только в начале строки (после CR/LF или старта ожидания).
+    bool _promptLineStart{true};
 
     void startNext_(uint32_t nowMs);
     void finish_(bool ok, bool err, bool timeout);

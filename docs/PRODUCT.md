@@ -18,7 +18,7 @@
 - Исходящие шаги программ: `CALL_OWNER`, `SMS_OWNER` → `gsm.owner_phone`.
 - Входящий звонок: CLIP = owner + DTMF-пароль (`gsm.dtmf_password`) → цифры id программы + `#`.
 - На время голоса/SMS MQTT CIP **приостанавливается** (exclusive modem epoch); после эпохи MQTT переподключается. Параллельный CIP+voice не поддерживается.
-- Входящий `ProgramExecutor::start` может прервать текущую программу (как MQTT `run`).
+- Входящий `ProgramExecutor::start` забирает слот у текущей (как MQTT `run`): реле при удачной передаче не гасятся, кроме работающего стартера; при неудаче — `allOff()`.
 
 См. [`modules/gsm.md`](modules/gsm.md), [`modules/program.md`](modules/program.md).
 

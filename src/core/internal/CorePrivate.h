@@ -50,10 +50,11 @@ struct CorePrivate {
     bool pendingHardRestart{false};
     /// POST /upload открыл поток: тяжёлый `switchMode(OTA)` откладываем в `Core::update` после `webServer.update()`.
     bool pendingDeferredOtaFromWebUpload{false};
+    /// Режим до входа в OTA_UPDATE (SETUP_AP / EMERGENCY_AP / NORMAL).
+    CoreMode otaReturnMode{CoreMode::NORMAL};
     BootStage bootStage{BootStage::InitWiFiOff};
     CoreMode bootTargetMode{CoreMode::BOOT};
     bool bootConfigLoaded{false};
-    bool bootHwMapBad{false};
 
     // Подсистемы (создаются первыми).
     SensorsController sensors;

@@ -29,6 +29,10 @@ void OtaHandler::resetStreamState() {
     _nameBuf[0] = '\0';
     _fileSize = 0;
     _fileRemaining = 0;
+    _httpRingHead = 0;
+    _httpRingCount = 0;
+    _httpFinalMarked = false;
+    _streamFinishDone = false;
 }
 
 bool OtaHandler::pinBootToRunningAfterEnd() {
@@ -108,6 +112,56 @@ void OtaHandler::prepareHttpUploadSession() {
     _httpSessionStartMs = millis();
 }
 
+bool OtaHandler::holdsFlash() const {
+    return _phase != Phase::Idle && _phase != Phase::Done && _phase != Phase::Failed;
+}
+
+bool OtaHandler::enqueueHttpBytes(const uint8_t* data, size_t len) {
+    if (_phase == Phase::Failed) return false;
+    if (!data && len > 0) return false;
+    size_t off = 0;
+    while (off < len) {
+        const uint16_t free = httpRingFree_();
+        if (free == 0) {
+            // Отдать квант loopTask, чтобы drainHttpRing_ забрал байты.
+            delay(1);
+            continue;
+        }
+        const size_t n = (len - off) < free ? (len - off) : free;
+        for (size_t i = 0; i < n; i++) {
+            const uint16_t idx =
+                static_cast<uint16_t>((_httpRingHead + _httpRingCount) % Ota::HTTP_RING_SIZE);
+            _httpRing[idx] = data[off + i];
+            _httpRingCount++;
+        }
+        off += n;
+    }
+    return true;
+}
+
+bool OtaHandler::markHttpFinal() {
+    _httpFinalMarked = true;
+    return true;
+}
+
+void OtaHandler::drainHttpRing_() {
+    while (_httpRingCount > 0) {
+        uint8_t chunk[64];
+        const uint16_t n =
+            _httpRingCount < sizeof(chunk) ? _httpRingCount : static_cast<uint16_t>(sizeof(chunk));
+        for (uint16_t i = 0; i < n; i++) {
+            chunk[i] = _httpRing[_httpRingHead];
+            _httpRingHead = static_cast<uint16_t>((_httpRingHead + 1) % Ota::HTTP_RING_SIZE);
+            _httpRingCount--;
+        }
+        if (!streamFeed(chunk, n)) {
+            _httpRingCount = 0;
+            _httpRingHead = 0;
+            return;
+        }
+    }
+}
+
 void OtaHandler::notifyHttpUploadComplete(bool ok) {
     _httpUploadDone = true;
     _httpUploadOk = ok;
@@ -142,6 +196,14 @@ void OtaHandler::update() {
 
     const uint32_t now = millis();
 
+    drainHttpRing_();
+    if (_httpFinalMarked && !_streamFinishDone && _httpRingCount == 0) {
+        _streamFinishDone = true;
+        if (!streamFinish()) {
+            logger.log(LogModule::OtaHandler, "streamFinish failed after HTTP final\n");
+        }
+    }
+
     if (_awaitHttpUploadSession && !_httpUploadDone) {
         if ((uint32_t)(now - _httpSessionStartMs) >= Timing::OTA_HTTP_UPLOAD_IDLE_MS) {
             logger.log(LogModule::OtaHandler, "HTTP download idle timeout (no final in %u ms), exit OTA\n",
@@ -167,6 +229,7 @@ void OtaHandler::update() {
     }
 
     if (_awaitHttpUploadSession && _httpUploadDone && _httpUploadOk) {
+        if (!_streamFinishDone) return;
         if (_streamDoneOk || _phase == Phase::Done) {
             logger.log(LogModule::OtaHandler, "OTA stream ok, rebooting…\n");
             core.logHeapSnapshot("ota_update_success");

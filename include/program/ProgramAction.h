@@ -28,7 +28,7 @@ enum class ActionId : uint8_t {
     THERMOSTAT_ON,
     THERMOSTAT_OFF,
 
-    /// Звонок на config.gsm.owner_phone (голос); ждать `ms`, затем положить трубку.
+    /// Звонок на config.gsm.owner_phone (голос); гудки до ответа или 25 с (`VOICE_DEFAULT_RING_MS`), поле `ms` игнорируется.
     CALL_OWNER,
     /// SMS на owner_phone с текстом шага `message`.
     SMS_OWNER,

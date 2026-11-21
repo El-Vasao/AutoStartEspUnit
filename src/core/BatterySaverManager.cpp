@@ -71,10 +71,13 @@ void BatterySaverManager::update() {
     float abortThreshold = bs.voltage_abort_threshold;
     float hysteresis = bs.hysteresis;
 
-    // Прокрутка сажает батарею — после ENGINE_START не рвать программу по этому замеру.
+    // Прокрутка сажает батарею — после ENGINE_START ждать свежее окно АЦП, не 180 с.
     if (_executor.isInStarterStep()) {
         _holdAbortAfterCrank = true;
-        _abortLowSince = 0;
+        _postCrankWindowResetPending = true;
+    } else if (_postCrankWindowResetPending) {
+        _sensors.resetVoltageWindow();
+        _postCrankWindowResetPending = false;
     }
 
     if (voltage < abortThreshold) {
@@ -84,24 +87,20 @@ void BatterySaverManager::update() {
             // Мотор уже схватился — просадку прокрутки не считать отменой.
             if (core.isEngineRunning()) {
                 _holdAbortAfterCrank = false;
-                _abortLowSince = 0;
                 return;
             }
             if (_holdAbortAfterCrank) {
-                if (_abortLowSince == 0) _abortLowSince = now;
-                if (now - _abortLowSince < secToMs(bs.min_low_voltage_duration_sec)) return;
+                if (!_sensors.isVoltageWindowFull()) return;
             }
             logger.log(LogModule::BatterySaverManager, "program %u abort: voltage %.2f < threshold %.2f\n",
                        bs.program_id, voltage, abortThreshold);
             _holdAbortAfterCrank = false;
-            _abortLowSince = 0;
             _executor.stop();
         }
         return;
     }
 
     _holdAbortAfterCrank = false;
-    _abortLowSince = 0;
 
     // Отсчёт низкого напряжения только в простое: работающая программа (прокрутка, нагрузки) искажает измерение.
     if (_executor.isRunning()) {
@@ -119,12 +118,14 @@ void BatterySaverManager::update() {
 
         if (duration >= required) {
             if (_attemptsToday >= bs.max_attempts_per_day) return;
-            if (now - _lastAttempt < secToMs(bs.min_time_between_attempts_sec)) return;
+            if (_lastAttempt != 0 && now - _lastAttempt < secToMs(bs.min_time_between_attempts_sec)) return;
 
             if (bs.program_id != 0) {
                 logger.log(LogModule::BatterySaverManager, "program %u start due to low voltage\n", bs.program_id);
-                if (_executor.start(bs.program_id)) _attemptsToday++;
-                _lastAttempt = now;
+                if (_executor.start(bs.program_id)) {
+                    _attemptsToday++;
+                    _lastAttempt = now;
+                }
             }
 
             _lowStartTime = 0;

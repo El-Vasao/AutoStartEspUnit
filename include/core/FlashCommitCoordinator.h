@@ -33,10 +33,7 @@ class FlashCommitCoordinator {
 public:
     void deferPostedConfigApply() { deferredPostedConfigApply_ = true; }
 
-    void deferPostedProgramApply() {
-        deferredPostedProgramApply_ = true;
-        deferredPostedProgramIndexPhase_ = false;
-    }
+    void deferPostedProgramApply() { deferredPostedProgramApply_ = true; }
 
     /// Принять тело POST в RAM (без LittleFS). false, если слот ещё не сброшен tick().
     bool armPostedBody(bool isConfig, size_t total);
@@ -64,7 +61,6 @@ public:
 private:
     bool deferredPostedConfigApply_{false};
     bool deferredPostedProgramApply_{false};
-    bool deferredPostedProgramIndexPhase_{false};
 
     PendingFsOp pendingFsOp_{PendingFsOp::NONE};
     uint8_t pendingProgramId_{0};

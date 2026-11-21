@@ -137,6 +137,17 @@ static void test_prompt_completes_cipsend_prelude() {
     TEST_ASSERT_TRUE(g_at.takeResult().gotPrompt);
 }
 
+static void test_prompt_ignores_gt_mid_line() {
+    g_at.enqueue(req("AT+CIPSEND=5", kPrompt));
+    g_at.tick(0);
+    // Байт 0x3E внутри текста/нагрузки — не приглашение.
+    rx("X>");
+    TEST_ASSERT_FALSE(g_at.hasResult());
+    rx("\r\n>");
+    TEST_ASSERT_TRUE(g_at.hasResult());
+    TEST_ASSERT_TRUE(g_at.takeResult().gotPrompt);
+}
+
 static void test_any_line_finishes_on_first_line() {
     g_at.enqueue(req("AT+GSN", kAnyLine));
     g_at.tick(0);
@@ -201,6 +212,7 @@ int main(int, char**) {
     RUN_TEST(test_timeout_is_reported_and_logged);
     RUN_TEST(test_high_priority_queue_goes_first);
     RUN_TEST(test_prompt_completes_cipsend_prelude);
+    RUN_TEST(test_prompt_ignores_gt_mid_line);
     RUN_TEST(test_any_line_finishes_on_first_line);
     RUN_TEST(test_queued_cmd_is_copied_not_aliased);
     RUN_TEST(test_queue_full_is_rejected);
