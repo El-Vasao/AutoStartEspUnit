@@ -7,17 +7,18 @@
  * @file Pins.h
  * @brief Карта выводов ESP-C3-12F, встающего на место платы AutoStart ESP-12.
  *
- * Сверка с Ai-Thinker (номер площадки модуля одинаков у ESP-12F / C3-12F):
+ * Сверка площадок ESP-12F ↔ C3-12F (Ai-Thinker). На модуле/kit у C3 часто
+ * перепутаны IO9 и IO10 относительно ранней шелкографии — для кнопки/1-Wire
+ * используем порядок «как на плате ESP-12»: GPIO0-пад → GPIO10, GPIO2-пад → GPIO9
+ * (обратно к таблице V1.1 pin 17=IO10 / pin 18=IO9).
+ *
  *   ESP8266     → ESP32-C3
  *   TXD/GPIO1   → GPIO21     RXD/GPIO3 → GPIO20
  *   GPIO16 (K5) → GPIO2      GPIO14 (K1) → GPIO3
  *   GPIO12 (IN2)→ GPIO4      GPIO13 (IN1)→ GPIO5
- *   GPIO15 (K4) → GPIO8      GPIO2 (IN3) → GPIO10
- *   GPIO0 (1w)  → GPIO9      GPIO5 (K2)  → GPIO19
+ *   GPIO15 (K4) → GPIO8      GPIO2 (IN3) → GPIO9
+ *   GPIO0 (1w)  → GPIO10     GPIO5 (K2)  → GPIO19
  *   GPIO4 (K3)  → GPIO18     A0          → GPIO1
- *
- * Если K1 (GPIO3) и K2 (GPIO19) живы — левый ряд и правый «верх» карты верны;
- * мёртвые K5/IN3 при этом чаще холодный контакт площадок GPIO16 / GPIO2, а не ошибка таблицы.
  */
 
 namespace Pin {
@@ -26,11 +27,11 @@ namespace Pin {
     constexpr uint8_t GSM_TX = 21;     // площадка TX модуля → SIM800 RXD
     constexpr uint8_t GSM_RX = 20;     // площадка RX модуля ← SIM800 TXD
 
-    // Шина 1-Wire (была площадка ESP8266 GPIO0 → C3 GPIO9; при старте держать HIGH)
-    constexpr uint8_t ONEWIRE = 9;
+    // 1-Wire: площадка ESP8266 GPIO0 → C3 pin18 в V1.1 = IO9, на поле часто сидит как IO10
+    constexpr uint8_t ONEWIRE = 10;
 
-    // Кнопка платы (была площадка GPIO2 → C3 GPIO10)
-    constexpr uint8_t BUTTON = 10;
+    // Кнопка: площадка ESP8266 GPIO2 → соседний пин; IO9/IO10 на C3-12F часто зеркалят
+    constexpr uint8_t BUTTON = 9;
 
     // Порядок = публичный id IN1…INn (ChannelSilk).
     constexpr uint8_t INPUT_PINS[] = {
