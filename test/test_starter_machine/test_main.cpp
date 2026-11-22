@@ -17,9 +17,10 @@ static Params timedParams() {
     return p;
 }
 
-static Sample at(uint32_t ms, float v = 12.4f, bool full = true) {
+static Sample at(uint32_t ms, float v = 12.4f, bool full = true, bool engineRunning = false) {
     Sample s;
     s.nowMs = ms;
+    s.engineRunning = engineRunning;
     s.voltageValid = true;
     s.voltageWindowFull = full;
     s.voltage = v;
@@ -120,11 +121,21 @@ void test_timed_retries_then_failure() {
 void test_timed_already_running_does_not_crank() {
     Machine m;
     m.begin(timedParams(), 0);
-    Tick t = m.tick(at(0, 13.8f));
+    // Флаг «работает» запрещает прокрутку даже в полосе ниже «заведён».
+    Tick t = m.tick(at(0, 13.0f, true, true));
     TEST_ASSERT_EQUAL((int)Outcome::Success, (int)t.outcome);
     TEST_ASSERT_NOT_EQUAL((int)RelayCmd::On, (int)t.relay);
     TEST_ASSERT_EQUAL((int)StopReason::AlreadyRunning, (int)m.last().reason);
     TEST_ASSERT_EQUAL_UINT8(0, m.attempt());
+}
+
+void test_timed_already_running_by_voltage_without_flag() {
+    // Запас: полное окно ≥ «заведён» при флаге false — тоже без прокрутки.
+    Machine m;
+    m.begin(timedParams(), 0);
+    Tick t = m.tick(at(0, 13.8f));
+    TEST_ASSERT_EQUAL((int)Outcome::Success, (int)t.outcome);
+    TEST_ASSERT_EQUAL((int)StopReason::AlreadyRunning, (int)m.last().reason);
 }
 
 void test_timed_idle_waits_for_full_window_before_already_running() {
@@ -144,6 +155,15 @@ void test_timed_idle_waits_for_full_window_before_already_running() {
     TEST_ASSERT_EQUAL((int)Outcome::Success, (int)t.outcome);
     TEST_ASSERT_EQUAL((int)StopReason::AlreadyRunning, (int)m.last().reason);
     TEST_ASSERT_EQUAL_UINT8(0, m.attempt());
+}
+
+void test_timed_flag_running_skips_window_wait() {
+    Machine m;
+    m.begin(timedParams(), 0);
+    Tick t = m.tick(at(0, 13.0f, false, true));
+    TEST_ASSERT_EQUAL((int)Outcome::Success, (int)t.outcome);
+    TEST_ASSERT_EQUAL((int)StopReason::AlreadyRunning, (int)m.last().reason);
+    TEST_ASSERT_NOT_EQUAL((int)RelayCmd::On, (int)t.relay);
 }
 
 void test_timed_idle_voltage_drop_before_window_cranks() {
@@ -362,6 +382,61 @@ void test_timed_crank_ignores_voltage_without_full_window() {
     TEST_ASSERT_EQUAL((int)Phase::Settling, (int)m.phase());
 }
 
+void test_timed_band_below_running_still_cranks() {
+    // Полоса, флаг «стоит» — крутим.
+    Machine m;
+    m.begin(timedParams(), 0);
+    Tick t = m.tick(at(0, 13.0f));
+    TEST_ASSERT_EQUAL((int)RelayCmd::On, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Cranking, (int)m.phase());
+}
+
+void test_timed_band_flag_running_no_crank() {
+    // Полоса, флаг «работает» — не крутим.
+    Machine m;
+    m.begin(timedParams(), 0);
+    Tick t = m.tick(at(0, 13.0f, true, true));
+    TEST_ASSERT_NOT_EQUAL((int)RelayCmd::On, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Outcome::Success, (int)t.outcome);
+    TEST_ASSERT_EQUAL((int)StopReason::AlreadyRunning, (int)m.last().reason);
+}
+
+void test_timed_running_threshold_is_the_boundary() {
+    // Ниже «заведён» крутим; ровно на пороге уже запущен.
+    Machine below;
+    below.begin(timedParams(), 0);
+    Tick t = below.tick(at(0, 13.19f));
+    TEST_ASSERT_EQUAL((int)RelayCmd::On, (int)t.relay);
+
+    Machine on;
+    on.begin(timedParams(), 0);
+    t = on.tick(at(0, 13.2f));
+    TEST_ASSERT_NOT_EQUAL((int)RelayCmd::On, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Outcome::Success, (int)t.outcome);
+}
+
+void test_timed_crank_continues_in_band_below_running() {
+    Machine m;
+    m.begin(timedParams(), 0);
+    m.tick(at(0));
+    Tick t = m.tick(at(600, 13.0f));
+    TEST_ASSERT_EQUAL((int)RelayCmd::None, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Cranking, (int)m.phase());
+}
+
+void test_timed_settle_in_band_is_failure() {
+    Machine m;
+    m.begin(timedParams(), 0);
+    m.tick(at(0));
+    m.tick(at(2000));
+    Tick t = m.tick(at(4999, 12.9f));
+    TEST_ASSERT_EQUAL((int)Outcome::Running, (int)t.outcome);
+    t = m.tick(at(5000, 12.9f));
+    TEST_ASSERT_EQUAL((int)Outcome::Running, (int)t.outcome);
+    TEST_ASSERT_EQUAL((int)StopReason::VoltageLow, (int)m.last().reason);
+    TEST_ASSERT_EQUAL((int)Phase::Resting, (int)m.phase());
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -373,7 +448,9 @@ int main(int, char**) {
     RUN_TEST(test_timed_window_timeout_high_voltage_without_full_window_fails);
     RUN_TEST(test_timed_retries_then_failure);
     RUN_TEST(test_timed_already_running_does_not_crank);
+    RUN_TEST(test_timed_already_running_by_voltage_without_flag);
     RUN_TEST(test_timed_idle_waits_for_full_window_before_already_running);
+    RUN_TEST(test_timed_flag_running_skips_window_wait);
     RUN_TEST(test_timed_idle_voltage_drop_before_window_cranks);
     RUN_TEST(test_timed_idle_invalid_voltage_does_not_crank);
     RUN_TEST(test_engine_caught_during_rest_counts_as_success);
@@ -389,5 +466,10 @@ int main(int, char**) {
     RUN_TEST(test_crank_clamped_to_max_and_gap_tracked);
     RUN_TEST(test_timed_crank_stops_when_engine_caught);
     RUN_TEST(test_timed_crank_ignores_voltage_without_full_window);
+    RUN_TEST(test_timed_band_below_running_still_cranks);
+    RUN_TEST(test_timed_band_flag_running_no_crank);
+    RUN_TEST(test_timed_running_threshold_is_the_boundary);
+    RUN_TEST(test_timed_crank_continues_in_band_below_running);
+    RUN_TEST(test_timed_settle_in_band_is_failure);
     return UNITY_END();
 }

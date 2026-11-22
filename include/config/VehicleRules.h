@@ -12,6 +12,16 @@
  */
 namespace vehicle_rules {
 
+/// Timed-стартер: двигатель схватился при напряжении не ниже порога «заведён».
+inline bool engineCaughtAtVoltage(float v, float runningVoltage) { return v >= runningVoltage; }
+
+/// Флаг двигателя: выше «заведён» — true, не выше «заглушен» — false, полоса — без изменений.
+inline void applyEngineRunningHysteresis(bool& running, float v, float runningVoltage,
+                                         float stoppedVoltage) {
+    if (v >= runningVoltage) running = true;
+    else if (v <= stoppedVoltage) running = false;
+}
+
 const char* startMethodToString(StartMethod m);
 StartMethod startMethodFromString(const char* s, StartMethod def);
 

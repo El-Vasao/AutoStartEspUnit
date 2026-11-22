@@ -1,5 +1,8 @@
 // src/program/ProgramExecutor.Core.cpp
 #include "program/ProgramExecutor.h"
+#ifdef UNIT_TEST
+#include "HostFakes.h"
+#endif
 
 #include "core/Core.h"
 #include "gsm/GsmController.h"
@@ -57,6 +60,16 @@ uint32_t ProgramExecutor::getTimerRemainingMs() const {
 }
 
 bool ProgramExecutor::start(uint8_t programId) {
+#ifdef UNIT_TEST
+    if (ExecutorTestProbe::intercept) {
+        ExecutorTestProbe::starts++;
+        ExecutorTestProbe::lastStartId = programId;
+        if (!ExecutorTestProbe::startOk) return false;
+        _running = true;
+        _programId = programId;
+        return true;
+    }
+#endif
     // Сначала в BSS-буфер: текущие шаги и реле не трогать, пока новая не принята.
     static CompiledStep stageSteps[Limits::MAX_STEPS_PER_PROGRAM];
     static ActionId stageActions[Limits::MAX_STEPS_PER_PROGRAM];
@@ -163,6 +176,14 @@ bool ProgramExecutor::start(uint8_t programId) {
 }
 
 void ProgramExecutor::stop() {
+#ifdef UNIT_TEST
+    if (ExecutorTestProbe::intercept) {
+        ExecutorTestProbe::stops++;
+        _running = false;
+        _programId = 0;
+        return;
+    }
+#endif
     // Прерывание может оборвать CALL_OWNER/SMS_OWNER — отменить эпоху модема, чтобы ATD/CMGS не остались без владельца.
     if (core.getGSM().modemServiceEpochBusy()) {
         core.getGSM().abortModemServiceEpoch();

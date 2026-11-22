@@ -1,5 +1,9 @@
 #include <unity.h>
 
+#include <filesystem>
+#include <fstream>
+#include <string>
+
 #include "program/ProgramValidate.h"
 
 using program_validate::ChannelRef;
@@ -87,6 +91,41 @@ static void test_sms_owner_requires_message() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Issue::None, (uint8_t)ck(ActionId::SMS_OWNER, okMsg));
 }
 
+static int countActions(const std::string& text, int* unknown) {
+    int actions = 0;
+    size_t pos = 0;
+    while ((pos = text.find("\"action\"", pos)) != std::string::npos) {
+        const size_t colon = text.find(':', pos);
+        const size_t q1 = text.find('"', colon + 1);
+        const size_t q2 = text.find('"', q1 + 1);
+        TEST_ASSERT_TRUE(q2 != std::string::npos);
+        const std::string name = text.substr(q1 + 1, q2 - q1 - 1);
+        if (actionIdFromString(name.c_str()) == ActionId::UNKNOWN) (*unknown)++;
+        actions++;
+        pos = q2 + 1;
+    }
+    return actions;
+}
+
+static void test_shared_program_fixtures_match_action_ids() {
+    const std::filesystem::path dir("test/fixtures/programs");
+    TEST_ASSERT_TRUE_MESSAGE(std::filesystem::is_directory(dir), "test/fixtures/programs");
+    int files = 0;
+    for (const auto& ent : std::filesystem::directory_iterator(dir)) {
+        if (!ent.is_regular_file() || ent.path().extension() != ".json") continue;
+        if (ent.path().filename() == "index.json") continue;
+        std::ifstream in(ent.path());
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        int unknown = 0;
+        const int actions = countActions(text, &unknown);
+        TEST_ASSERT_TRUE_MESSAGE(actions > 0, ent.path().filename().string().c_str());
+        const bool expectUnknown = ent.path().filename() == "unknown-action.json";
+        TEST_ASSERT_EQUAL_MESSAGE(expectUnknown ? 1 : 0, unknown, ent.path().filename().string().c_str());
+        files++;
+    }
+    TEST_ASSERT_TRUE(files >= 2);
+}
+
 static void test_issue_names() {
     TEST_ASSERT_EQUAL_STRING("", program_validate::issueToString(Issue::None));
     TEST_ASSERT_EQUAL_STRING("unknown action", program_validate::issueToString(Issue::UnknownAction));
@@ -104,6 +143,7 @@ int main(int, char**) {
     RUN_TEST(test_input_and_trigger_refs);
     RUN_TEST(test_non_relay_actions_ignore_relay_id);
     RUN_TEST(test_sms_owner_requires_message);
+    RUN_TEST(test_shared_program_fixtures_match_action_ids);
     RUN_TEST(test_issue_names);
     return UNITY_END();
 }

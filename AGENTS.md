@@ -14,7 +14,7 @@ ESP32-C3 firmware + Alpine.js SoftAP UI for vehicle remote auto-start (SIM800 MQ
 Windows PlatformIO is often `C:\Users\<you>\.platformio\penv\Scripts\pio.exe`.
 
 ```bash
-python build.py release          # firmware + Version.h
+python build.py release          # firmware + Version.h; VERSION +0.0.1 after success
 python build.py fs               # gzip UI → LittleFS
 pio run -e esp32c3
 pio test -e native

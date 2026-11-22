@@ -26,6 +26,9 @@ public:
     void update();
 
     bool isSynced() const { return _synced; }
+#ifdef UNIT_TEST
+    void testSetSynced(bool on) { _synced = on; }
+#endif
     bool isStale() const;
     time_t epochUtc() const;
     int16_t tzOffsetHours() const;

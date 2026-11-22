@@ -32,11 +32,24 @@ python build.py -m            # монитор
 
 Что делает скрипт:
 
-1. Пишет `include/common/Version.h` (не в git)
+1. Читает semver из [`VERSION`](../VERSION), пишет `include/common/Version.h` (не в git)
 2. `pio run -e esp32c3` (и по желанию `--target upload`)
-3. Копирует `dist/autostart-<ts>-<type>.bin`
-4. Собирает OTA (`dist/*-ota.bin`), если нет `--no-ota`
+3. Копирует `dist/autostart-<semver>-<type>.bin`
+4. Собирает OTA (`dist/*-ota.bin`), если нет `--no-ota`; после успеха двигает `VERSION` на **+0.0.1**
 5. `fs`: собирает `index.html.gz`, `style.css.gz` и `app.js.gz` (и схемы), затем `uploadfs`. Если в `data/` есть `config.json`, он попадает в образ LittleFS. OTA-пакет этот файл не включает.
+
+### Версия прошивки
+
+Файл `VERSION` в корне (сейчас `1.0.0`). В бинарник: `FIRMWARE_VERSION_STR` и упакованный `FIRMWARE_VERSION_NUM` (`1.2.3` → `10203`).
+
+| Когда | Как |
+|-------|-----|
+| Обычная сборка | после успеха **+0.0.1** |
+| Новая фича (конфиг ещё читается) | `python build.py release --bump-minor` |
+| Ломающий конфиг / протокол / пины | `python build.py release --bump-major` |
+| Пересборка той же версии | `--no-bump` |
+
+`patch>99` и `minor>99` перекидываются в следующее поле. Прямой `pio run` не трогает `VERSION` (dev-заголовок из текущего файла).
 
 Прямой PlatformIO тоже работает, если не нужны Version.h, OTA и упаковка gzip:
 

@@ -151,8 +151,7 @@ static bool sseTickMoreEventsSafe(WebServer& ws) {
 #else
     constexpr size_t cap = 12;
 #endif
-    constexpr size_t thr = (cap > 5) ? (cap - 3) : 1;
-    return !WebServerRuntime::sseQueueBackpressureAtLeast(ws, thr);
+    return !WebServerRuntime::sseQueueBackpressureAtLeast(ws, sseSoftQueueThreshold(cap));
 }
 
 static bool sendJsonEvent(WebServer& ws, const char* sseEventName, PayloadPrint& builder, size_t maxQueueDepth) {
@@ -307,7 +306,7 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
         emitHardwarePayload(hp, st);
         if (!hp.truncated() && hp.length() && hp.seal()) {
             const uint32_t h = fnv1a32(reinterpret_cast<const uint8_t*>(gSsePayload), hp.length());
-            if (h != gLastHardwareHash && WebServerRuntime::sseSoftQueueAllowsSend(ws, statusQueueMax)) {
+            if (sseDedupChanged(gLastHardwareHash, h) && WebServerRuntime::sseSoftQueueAllowsSend(ws, statusQueueMax)) {
                 WebServerRuntime::sseSendEvent(ws, gSsePayload, "hardware", millis());
                 gLastHardwareHash = h;
             }
@@ -320,7 +319,7 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
         emitRuntimePayload(rp, st);
         if (!rp.truncated() && rp.length() && rp.seal()) {
             const uint32_t h = fnv1a32(reinterpret_cast<const uint8_t*>(gSsePayload), rp.length());
-            if (h != gLastRuntimeHash && WebServerRuntime::sseSoftQueueAllowsSend(ws, statusQueueMax)) {
+            if (sseDedupChanged(gLastRuntimeHash, h) && WebServerRuntime::sseSoftQueueAllowsSend(ws, statusQueueMax)) {
                 WebServerRuntime::sseSendEvent(ws, gSsePayload, "runtime", millis());
                 gLastRuntimeHash = h;
             }
@@ -333,7 +332,7 @@ static void runSseIncrementalTick(WebServer& ws, uint32_t now) {
         emitProgramPayload(pp, st);
         if (!pp.truncated() && pp.length() && pp.seal()) {
             const uint32_t h = fnv1a32(reinterpret_cast<const uint8_t*>(gSsePayload), pp.length());
-            if (h != gLastProgramHash && WebServerRuntime::sseSoftQueueAllowsSend(ws, statusQueueMax)) {
+            if (sseDedupChanged(gLastProgramHash, h) && WebServerRuntime::sseSoftQueueAllowsSend(ws, statusQueueMax)) {
                 WebServerRuntime::sseSendEvent(ws, gSsePayload, "program", millis());
                 gLastProgramHash = h;
             }

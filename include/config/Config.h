@@ -24,6 +24,9 @@ public:
     Config();
 
     const BaseConfig& getBase() const { return baseCache; }
+#ifdef UNIT_TEST
+    BaseConfig& testBase() { return baseCache; }
+#endif
     /// JSON RAM-кэша тем же emit, что и `/config.json`. ФС не читает.
     void emitBaseJson(Print& out) const;
     uint16_t getCRC() const { return configCRC; }

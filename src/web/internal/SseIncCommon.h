@@ -71,6 +71,14 @@ inline void commaOut(Print& p, bool* needComma) {
     *needComma = true;
 }
 
+/// Порог очереди, после которого тик SSE больше не ставит события (`cap` = SSE_MAX_QUEUED_MESSAGES).
+inline size_t sseSoftQueueThreshold(size_t cap) {
+    return (cap > 5) ? (cap - 3) : 1;
+}
+
+/// Дедуп полезной нагрузки: тот же FNV, что уже ушёл клиенту, повторно не шлётся.
+inline bool sseDedupChanged(uint32_t previous, uint32_t current) { return previous != current; }
+
 
 void emitRelayInputTempVoltageMaps(Print& p, bool* needComma, const SseStatusPort& st);
 void emitActiveErrorsArray(Print& p, const SseStatusPort& st);

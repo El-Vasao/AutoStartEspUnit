@@ -34,6 +34,7 @@ enum class GsmState : uint8_t {
  */
 class GsmController {
     friend struct GsmVoiceTestAccess;
+    friend struct GsmFsmTestAccess;
 
 public:
     enum class VoiceKind : uint8_t { None = 0, OutCall, OutSms, Inbound };

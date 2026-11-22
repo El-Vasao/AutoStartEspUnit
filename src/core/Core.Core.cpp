@@ -5,6 +5,7 @@
 
 #include "config/Config.h"
 #include "config/DefaultConfig.h"
+#include "config/VehicleRules.h"
 #include "common/Logger.h"
 #include "common/Constants.h"
 #include "fs/FsManager.h"
@@ -225,11 +226,10 @@ void Core::updateEngineRunning() {
 
     if (!impl.sensors.isVoltageValid()) return;
     float v = impl.sensors.getVoltage();
-    float runTh = vcfg.engine_running_voltage_threshold;
-    float stopTh = vcfg.engine_stopped_voltage_threshold;
-
-    if (v >= runTh) impl.engineRunning = true;
-    else if (v <= stopTh) impl.engineRunning = false;
+    // Гистерезис: выше «заведён» — работает, не выше «заглушен» — стоит, полоса — без изменений.
+    vehicle_rules::applyEngineRunningHysteresis(impl.engineRunning, v,
+                                                vcfg.engine_running_voltage_threshold,
+                                                vcfg.engine_stopped_voltage_threshold);
 }
 
 void Core::serviceCellularLink() {

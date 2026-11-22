@@ -23,6 +23,9 @@ public:
     void onByte(char c);
 
     bool isConnected() const { return _connected; }
+#ifdef UNIT_TEST
+    void testSetConnected(bool on) { _connected = on; }
+#endif
     bool isConnecting() const { return _connecting; }
     /// Только эпоха TCP/CIP (CIPSTART/CIPSEND/CIPCLOSE/CIPSHUT) — без посторонних AT (CSQ/COPS/CNTP).
     bool isTcpEpochBusy() const {

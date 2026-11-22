@@ -1,16 +1,10 @@
 # Нативные тесты (`pio test -e native`)
 
-Наборы Unity для чистых разборщиков и контрактов (без железа GSM, Web и FS):
+Наборы Unity в `test/test_*`. Часть гоняет настоящие модули на заглушках `test/stubs/`.
 
-| Набор | Что покрыто |
-|-------|-------------|
-| `test_gsm_at_parse` | Разбор строк AT (`GsmAtParse`) |
-| `test_mqtt_command_parser` | JSON команды MQTT (`MqttCommandParser`) |
-| `test_program_action` | Карта строк `ActionId` |
-| `test_mqtt_protocol` | Коды MQTT, застой RX и контракт шлюза подтверждений (зеркальные помощники) |
-| `test_rpm_estimator` | Обороты по периодам фронтов, фильтр шума, нулевой таймаут, подтверждение 100 мс (`RpmEstimator`) |
-| `test_vehicle_rules` | Настройки автомобиля и стартера: нормализация при загрузке, строгая проверка при сохранении (`vehicle_rules`) |
-| `test_starter_machine` | Автомат ENGINE_START: время, обороты, вход, повторы, блокировка (`starter::Machine`) |
+Отдельного набора `test_mqtt_protocol` нет: провод, FSM и команды — это `test_mqtt_wire`, `test_mqtt_fsm`, `test_mqtt_commands`.
+
+Дополнительно к разборщикам: `test_relay_controller`, `test_digital_inputs`, `test_battery_saver`, `test_mqtt_status_builder`, `test_gsm_fsm`, `test_program_executor`, `test_posted_body`, `test_sse_snapshot`.
 
 ```bat
 pio test -e native

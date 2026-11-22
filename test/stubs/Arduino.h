@@ -94,6 +94,41 @@ inline void delay(unsigned long d) {
 }
 inline void yield() {}
 
+// GPIO и прерывания: общее состояние для нативных тестов IO.
+namespace test_gpio {
+inline uint8_t& level(uint8_t pin) {
+    static uint8_t levels[40]{};
+    if (pin >= sizeof(levels)) {
+        static uint8_t sink = 0;
+        return sink;
+    }
+    return levels[pin];
+}
+inline void reset() {
+    for (uint8_t pin = 0; pin < 40; pin++) level(pin) = LOW;
+}
+} // namespace test_gpio
+
+inline void pinMode(uint8_t, uint8_t) {}
+inline void digitalWrite(uint8_t pin, uint8_t val) { test_gpio::level(pin) = val; }
+inline int digitalRead(uint8_t pin) { return test_gpio::level(pin); }
+
+#ifndef CHANGE
+#define CHANGE 3
+#endif
+#ifndef RISING
+#define RISING 2
+#endif
+#ifndef FALLING
+#define FALLING 1
+#endif
+
+inline int digitalPinToInterrupt(uint8_t pin) { return static_cast<int>(pin); }
+inline void attachInterrupt(int, void (*)(), int) {}
+inline void detachInterrupt(int) {}
+inline void noInterrupts() {}
+inline void interrupts() {}
+
 // В MinGW и glibc < 2.38 нет strlcpy/strlcat.
 #if !defined(__APPLE__) && !(defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 38)))
 inline size_t strlcpy(char* dst, const char* src, size_t size) {

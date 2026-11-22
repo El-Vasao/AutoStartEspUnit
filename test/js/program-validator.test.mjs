@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBrowserEnv, readDataJson, readProjectFile } from './helpers/browser-env.mjs';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { createBrowserEnv, projectRoot, readDataJson, readProjectFile } from './helpers/browser-env.mjs';
 
-function createProgramValidator(hwCounts = { relays: 5, inputs: 3, sensors: 3 }) {
+function createProgramValidator(hwCounts = { relays: 5, inputs: 3, sensors: 3 }, starterRelayId = 'K5') {
   const env = createBrowserEnv();
   env.run(readProjectFile('data/js/ajv2020.min.js'), 'ajv2020.min.js');
   env.load('js/app/ns.js');
@@ -12,7 +14,7 @@ function createProgramValidator(hwCounts = { relays: 5, inputs: 3, sensors: 3 })
   env.APP.preloaded.programValidationSchema = readDataJson('validation/program.schema.json');
   env.APP.preloaded.programIndexValidationSchema = readDataJson('validation/programs.index.schema.json');
   env.Alpine.store('deviceStatus', { hwCounts });
-  env.Alpine.store('settings', { vehicle: { starter_relay_id: 'K5' }, input_triggers: [], temperature_triggers: [] });
+  env.Alpine.store('settings', { vehicle: { starter_relay_id: starterRelayId }, input_triggers: [], temperature_triggers: [] });
   env.APP.stores.registerProgramValidatorStore(env.Alpine);
   const pv = env.Alpine.store('programValidator');
   pv.load();
@@ -38,6 +40,22 @@ test('programValidator compiles and accepts WAIT and RELAY_ON silk ids', () => {
   };
   const relayRes = pv.validateProgramDataHard(relay);
   assert.equal(relayRes.ok, true, JSON.stringify(relayRes.errorsByPath));
+});
+
+test('shared program fixtures agree with the schema', () => {
+  const pv = createProgramValidator({ relays: 5, inputs: 3, sensors: 3 }, 'K3');
+  const dir = path.join(projectRoot, 'test', 'fixtures', 'programs');
+  const names = readdirSync(dir).filter((n) => n.endsWith('.json') && n !== 'index.json');
+  assert.ok(names.length >= 2);
+  for (const name of names) {
+    const prog = JSON.parse(readFileSync(path.join(dir, name), 'utf8'));
+    const res = pv.validateProgramDataHard(prog);
+    if (name === 'unknown-action.json') {
+      assert.equal(res.ok, false, name);
+    } else {
+      assert.equal(res.ok, true, `${name} ${JSON.stringify(res.errorsByPath)}`);
+    }
+  }
 });
 
 test('programValidator allows IN4 when hwCounts.inputs is 4', () => {

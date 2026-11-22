@@ -97,6 +97,14 @@ public:
     /// Истина, когда в окне Adc::SAMPLES чтений после последнего сброса.
     bool isVoltageWindowFull() const { return _adcFillCount >= Adc::SAMPLES; }
 
+#ifdef UNIT_TEST
+    void testSetVoltage(float volts, bool valid) {
+        _voltageData.voltage = volts;
+        _voltageData.valid = valid;
+    }
+    void testSetWindowFull(bool full) { _adcFillCount = full ? Adc::SAMPLES : 0; }
+#endif
+
     /// Вывести `adc_voltage_coeff` из показания мультиметра. Берёт только закрытое сырое значение;
     /// false, если фильтр не готов, сырое слишком мало или measuredVolts ≤ 0.
     bool computeAdcVoltageCoeff(float measuredVolts, float& outCoeff) const;

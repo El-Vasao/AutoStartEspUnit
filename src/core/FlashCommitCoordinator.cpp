@@ -1,4 +1,5 @@
 #include "core/FlashCommitCoordinator.h"
+#include "core/PostedBodyBuffer.h"
 
 #include "core/Core.h"
 #include "program/ProgramExecutor.h"
@@ -21,23 +22,18 @@ FlashCommitCoordinator flashCommit;
 namespace {
 
 // Тело POST живёт здесь, пока tick() не запишет tmp. Колбэк async в ФС не заходит.
-uint8_t gPostedBody[Limits::CONFIG_JSON_SIZE];
-size_t gPostedLen = 0;
-size_t gPostedExpect = 0;
-bool gPostedArmed = false;
+PostedBodyBuffer gPosted;
 
 bool flushPostedBody(const char* path) {
-    const size_t n = gPostedLen;
-    const bool okLen = gPostedArmed && n == gPostedExpect && n > 0 && n <= Limits::CONFIG_JSON_SIZE;
-    gPostedArmed = false;
-    gPostedLen = 0;
-    gPostedExpect = 0;
+    const size_t n = gPosted.length();
+    const bool okLen = gPosted.complete();
+    gPosted.drop();
     if (!okLen) return false;
     // tmp пишет цикл; apply ниже переименовывает его в боевой файл.
     if (!fileSystem.ensurePath(path)) return false;
     File f = fileSystem.openDirectWrite(path, n);
     if (!f) return false;
-    const size_t w = f.write(gPostedBody, n);
+    const size_t w = f.write(gPosted.data(), n);
     f.close();
     if (w != n) {
         fileSystem.deleteFile(path);
@@ -50,31 +46,17 @@ bool flushPostedBody(const char* path) {
 
 bool FlashCommitCoordinator::armPostedBody(bool isConfig, size_t total) {
     (void)isConfig;
-    if (gPostedArmed || deferredPostedConfigApply_ || deferredPostedProgramApply_) return false;
-    if (total == 0 || total > Limits::CONFIG_JSON_SIZE) return false;
-    gPostedLen = 0;
-    gPostedExpect = total;
-    gPostedArmed = true;
-    return true;
+    if (deferredPostedConfigApply_ || deferredPostedProgramApply_) return false;
+    return gPosted.arm(total);
 }
 
 bool FlashCommitCoordinator::appendPostedBody(size_t index, const uint8_t* data, size_t len) {
-    if (!gPostedArmed || !data || len == 0) return false;
-    if (index != gPostedLen || len > gPostedExpect - gPostedLen) return false;
-    memcpy(gPostedBody + gPostedLen, data, len);
-    gPostedLen += len;
-    return true;
+    return gPosted.append(index, data, len);
 }
 
-bool FlashCommitCoordinator::postedBodyComplete() const {
-    return gPostedArmed && gPostedExpect > 0 && gPostedLen == gPostedExpect;
-}
+bool FlashCommitCoordinator::postedBodyComplete() const { return gPosted.complete(); }
 
-void FlashCommitCoordinator::dropPostedBody() {
-    gPostedArmed = false;
-    gPostedLen = 0;
-    gPostedExpect = 0;
-}
+void FlashCommitCoordinator::dropPostedBody() { gPosted.drop(); }
 
 void FlashCommitCoordinator::recordFlashCommitSnapshot(FlashCommitOp op, bool ok, bool changed, uint16_t crc) {
     lastFlashOp_ = op;

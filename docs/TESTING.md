@@ -8,9 +8,9 @@ pio test -e native
 
 Наборы Unity в `test/test_*/`. Производственные исходники перечислены в `platformio.ini`, секция `[env:native] build_src_filter`. Заглушки: `test/stubs/`. `test/native_pre.py` обходит пути MinGW; на Linux это пустая операция.
 
-Покрытие: CI задаёт `PLATFORMIO_BUILD_FLAGS=--coverage`, затем `gcovr` по `src/` и `include/`. Локально: `pio test -e native`.
+Покрытие: CI задаёт `PLATFORMIO_BUILD_FLAGS=--coverage`, затем `gcovr --fail-under-line 15` по `src/` и `include/`. Отдельная job `native-asan` с ASan/UBSan. Локально: `pio test -e native`.
 
-Хост дополнительно: `test_fs_atomic` (`closeWriteStream`: цель → `.bak`, затем `.tmp` → цель; `.bak` удаляется на общем пути, а `/programs/*.json` кроме `index.json` его оставляют; если rename `.tmp` не удался, `.bak` возвращается), `test_ota_stream` (белый список хвоста OTA и слот boot вокруг `Update.end` / `streamFinish`).
+Хост дополнительно: `test_fs_atomic` (`closeWriteStream`: цель → `.bak`, затем `.tmp` → цель; `.bak` удаляется на общем пути, а `/programs/*.json` кроме `index.json` его оставляют; если rename `.tmp` не удался, `.bak` возвращается), `test_ota_stream` (белый список хвоста OTA и слот boot вокруг `Update.end` / `streamFinish`), `test_relay_controller`, `test_digital_inputs`, `test_battery_saver`, `test_mqtt_status_builder`, `test_gsm_fsm`, `test_program_executor`, `test_posted_body`, `test_sse_snapshot`.
 
 ## JavaScript
 
@@ -39,7 +39,7 @@ python build.py fs
 - Стоп при уже включённых реле зажигания (UI или MQTT): `stop()` гасит все реле, не только стартер.
 - Входящий DTMF во время `ENGINE_START` в том же тике вызывает `start()`: слот передаётся, стартер снимается, остальные реле остаются.
 - ATH без OK до таймаута сброса срывает голосовую эпоху и не стартует программу по DTMF.
-- ENGINE_START: по времени (двигатель завёлся — стартер снимается раньше конца прокрутки) / rpm / входу; обрыв предохранителя стартера → `RELAY_TIMEOUT`; вход блокировки включён и выключен. Исчерпание попыток: все реле гаснут, `START_FAILED`, в журнале маска реле до выключения (`relays on=0x..`). Между попытками зажигание и обход остаются включёнными.
+- ENGINE_START: по времени (двигатель завёлся — стартер снимается раньше конца прокрутки; напряжение не ниже «заведён» — не крутит) / rpm / входу; обрыв предохранителя стартера → `RELAY_TIMEOUT`; вход блокировки включён и выключен. Исчерпание попыток: все реле гаснут, `START_FAILED`, в журнале маска реле до выключения (`relays on=0x..`). Между попытками зажигание и обход остаются включёнными.
 - Сохранение настроек с полями, скрытыми `showIf` (время прокрутки, параметры импульса, таймаут AP) — значения должны вернуться как были.
 - Параллельные POST и обрыв посередине загрузки; нет LittleFS → FallbackWebPage. Поток OTA на хосте (`test_ota_stream`): белый список хвоста (`/index.html.gz`, `/validation/settings.schema.json`) принимается, `/config.json` и `/programs/1.json` отклоняются.
 - Хвост LittleFS после `Update.end`: запись хвоста идёт при закрытой сессии Update. Ошибка хвоста не вызывает `Update.abort`; boot возвращается на выполняемый образ. Хост (`test_ota_stream`): после `Update.end` и до успешного `streamFinish` boot — выполняемый слот, после успеха — новый; сбой хвоста не зовёт `Update.abort`, boot остаётся на выполняемом. Запись на реальной флеш — на стенде.

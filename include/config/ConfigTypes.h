@@ -307,7 +307,7 @@ struct Program {
 // ====================================================
 struct BaseConfig {
     /// Если true — стартовать в SETUP_AP после заводских значений; с FE обычно не шлётся → false в JSON.
-    bool setup_required;
+    bool setup_required{false};
     WifiConfig wifi;
     GsmConfig gsm;
     MqttConfig mqtt;
@@ -321,9 +321,9 @@ struct BaseConfig {
     RelayConfig relays[HardwareLimits::RELAYS];
 
     TriggerConfig input_triggers[Limits::MAX_TRIGGERS];
-    uint8_t input_triggers_count;
+    uint8_t input_triggers_count{0};
     TempTriggerConfig temperature_triggers[Limits::MAX_TRIGGERS];
-    uint8_t temperature_triggers_count;
+    uint8_t temperature_triggers_count{0};
 
     BaseConfig() = default;
 };

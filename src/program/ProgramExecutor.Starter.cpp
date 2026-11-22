@@ -1,5 +1,8 @@
 // src/program/ProgramExecutor.Starter.cpp
 #include "program/ProgramExecutor.h"
+#ifdef UNIT_TEST
+#include "HostFakes.h"
+#endif
 
 #include "config/Config.h"
 #include "config/VehicleRules.h"
@@ -13,6 +16,9 @@
 #include "common/Utils.h"
 
 bool ProgramExecutor::isInStarterStep() const {
+#ifdef UNIT_TEST
+    if (ProgramExecutorTestFlags::overrideStarter) return ProgramExecutorTestFlags::inStarter;
+#endif
     if (!_running) return false;
     if (!_localActions) return false;
     if (_currentStep >= _localStepCount) return false;
@@ -104,6 +110,7 @@ void ProgramExecutor::updateStarter(uint32_t now) {
     starter::Sample s;
     s.nowMs = now;
     s.blocked = isStartBlocked();
+    s.engineRunning = core.isEngineRunning();
 
     if (method != StartMethod::Timed) {
         if (_startInputIdx < 0 || !inputs.isRuntimeEnabled((uint8_t)_startInputIdx)) {

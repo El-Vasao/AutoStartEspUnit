@@ -8,11 +8,10 @@
 #include "core/ErrorManager.h"
 #include "gsm/GsmController.h"
 #include "mqtt/MqttClient.h"
+#include "io/DigitalInputs.h"
+#include "io/RelayController.h"
+#include "io/SensorsController.h"
 #include "program/ProgramExecutor.h"
-
-namespace {
-bool g_inStarterStep = false;
-}
 
 HardwareSerial Serial;
 Config config;
@@ -44,28 +43,61 @@ ProgramExecutor& Core::getProgramExecutor() {
     return executor;
 }
 
-void Core::applyWallClockEpoch(uint32_t) {}
-
-ProgramExecutor::ProgramExecutor()
-    : _programId(0),
-      _running(false),
-      _currentStep(0),
-      _rt{0, 0},
-      _lastProgramId(0),
-      _localSteps(nullptr),
-      _localActions(nullptr),
-      _localStepCount(0) {
-    _currentProgramName[0] = '\0';
-    _lastProgramName[0] = '\0';
+RelayController& Core::getRelay() {
+    static RelayController relays;
+    return relays;
 }
 
-bool ProgramExecutor::isInStarterStep() const { return g_inStarterStep; }
+DigitalInputs& Core::getInputs() {
+    static DigitalInputs inputs;
+    return inputs;
+}
+
+SensorsController& Core::getSensors() {
+    static SensorsController sensors;
+    return sensors;
+}
+
+GsmController& Core::getGSM() {
+    static GsmController gsm;
+    return gsm;
+}
+
+void Core::setTriggerRuntime(uint8_t, bool) {}
+void Core::setTempTriggerRuntime(uint8_t, bool) {}
+void Core::setBatterySaverRuntime(bool) {}
+void Core::setThermostatRuntime(bool) {}
+
+void Core::applyWallClockEpoch(uint32_t) {}
+
+bool Config::loadProgramCompiled(uint8_t, CompiledStep* outSteps, uint8_t maxSteps, uint8_t* outCount,
+                                 char* outName, size_t outNameSize) {
+    if (!ProgramTestFeed::active || !outSteps || !outCount) return false;
+    if (ProgramTestFeed::count == 0 || ProgramTestFeed::count > maxSteps) return false;
+    memcpy(outSteps, ProgramTestFeed::steps, sizeof(CompiledStep) * ProgramTestFeed::count);
+    *outCount = ProgramTestFeed::count;
+    if (outName && outNameSize) {
+        strncpy(outName, ProgramTestFeed::name, outNameSize - 1);
+        outName[outNameSize - 1] = '\0';
+    }
+    return true;
+}
 
 void ProgramExecutorTestFlags::set(bool running, bool inStarter) {
     ProgramExecutor& executor = core.getProgramExecutor();
     executor._running = running;
-    g_inStarterStep = inStarter;
+    overrideStarter = true;
+    ProgramExecutorTestFlags::inStarter = inStarter;
 }
+
+void ProgramExecutorTestFlags::set(ProgramExecutor& executor, uint8_t id, bool running, bool inStarter) {
+    executor._programId = id;
+    executor._running = running;
+    overrideStarter = true;
+    ProgramExecutorTestFlags::inStarter = inStarter;
+}
+
+bool Core::isEngineRunning() const { return CoreTestProbe::engineRunning; }
 
 MqttClient::MqttClient(Client& client)
     : _netClient(client), _lastStatusPublish(0), _lastReconnectAttempt(0), _fsm(client) {
@@ -102,5 +134,3 @@ void MqttClient::loop() {
 
 void GsmController::drainAtResult_() {}
 void GsmController::timeFailStep_(const char*) {}
-void GsmController::gsmResetSessionAfterStop() {}
-bool GsmController::apnMatchesApplied_() const { return true; }

@@ -1,5 +1,6 @@
 // src/program/StarterMachine.cpp
 #include "program/StarterMachine.h"
+#include "config/VehicleRules.h"
 
 namespace starter {
 
@@ -33,9 +34,11 @@ void Machine::clear() {
 }
 
 bool Machine::alreadyRunning(const Sample& s) const {
+    // Разрешение крутить — по флагу (гистерезис). Запас для timed: полное окно не ниже «заведён».
+    if (s.engineRunning) return true;
     if (p_.method == StartMethod::Timed) {
-        // Один замер выше порога ещё не значит, что мотор жив — нужно полное окно.
-        return s.voltageValid && s.voltageWindowFull && s.voltage >= p_.runningVoltage;
+        return s.voltageValid && s.voltageWindowFull &&
+               vehicle_rules::engineCaughtAtVoltage(s.voltage, p_.runningVoltage);
     }
     return s.condition;
 }
@@ -97,9 +100,9 @@ Tick Machine::tick(const Sample& s) {
                 failOrRest(s, t);
                 return t;
             }
-            if (p_.method == StartMethod::Timed && s.voltageValid && !s.voltageWindowFull &&
-                s.voltage >= p_.runningVoltage) {
-                // Окно ещё не полное, напряжение не просело — рано и крутить, и объявлять успех.
+            if (!s.engineRunning && p_.method == StartMethod::Timed && s.voltageValid && !s.voltageWindowFull &&
+                vehicle_rules::engineCaughtAtVoltage(s.voltage, p_.runningVoltage)) {
+                // Флаг ещё false, окно неполное, а напряжение уже ≥ «заведён» — ждать окно, не крутить.
                 return t;
             }
             if (alreadyRunning(s)) {
@@ -135,8 +138,9 @@ Tick Machine::tick(const Sample& s) {
                 endAttempt(StopReason::Condition, s, t);
                 return t;
             }
-            // Двигатель уже завёлся: полное окно выше порога «работает» — прокрутку не продолжаем.
-            const bool engineCaught = s.voltageValid && s.voltageWindowFull && s.voltage >= p_.runningVoltage;
+            // Двигатель уже завёлся: полное окно не ниже «заведён» — прокрутку не продолжаем.
+            const bool engineCaught = s.voltageValid && s.voltageWindowFull &&
+                                      vehicle_rules::engineCaughtAtVoltage(s.voltage, p_.runningVoltage);
             if (p_.method == StartMethod::Timed && (engineCaught || elapsed >= p_.crankMs)) {
                 t.relay = RelayCmd::Off;
                 crankMs_ = elapsed;
@@ -161,7 +165,7 @@ Tick Machine::tick(const Sample& s) {
             const bool windowReady = s.voltageValid && s.voltageWindowFull;
             const bool timedOut = elapsed >= p_.settleMs + p_.windowExtraMs;
             if (!windowReady && !timedOut) return t;
-            if (windowReady && s.voltage >= p_.runningVoltage) {
+            if (windowReady && vehicle_rules::engineCaughtAtVoltage(s.voltage, p_.runningVoltage)) {
                 phase_ = Phase::Idle;
                 t.outcome = Outcome::Success;
                 endAttempt(StopReason::VoltageOk, s, t);

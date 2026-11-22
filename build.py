@@ -8,7 +8,6 @@ Wraps PlatformIO: Version.h, firmware build/upload, LittleFS (3 gzip assets), OT
 
 import os
 import sys
-import time
 import json
 import shutil
 import subprocess
@@ -20,16 +19,21 @@ import urllib.error
 import re
 from pathlib import Path
 
+# scripts/ on sys.path for firmware_version (same helpers as ensure_version_h.py)
+sys.path.insert(0, str(Path(__file__).resolve().parent / "scripts"))
+import firmware_version as fwver  # noqa: E402
+
 # ====================================================
 # КОНФИГУРАЦИЯ
 # ====================================================
-VERSION = "1.0"
+VERSION = "1.1"  # version of this build.py helper (not firmware)
 PATHS = {
     # Source code includes "common/Version.h"
     "version_h": "include/common/Version.h",
     "build_info": "dist/build-info.json",
     "dist": "dist",
-    "include": "include"
+    "include": "include",
+    "firmware_version": "VERSION",
 }
 PIO_ENVS = {
     "release": "esp32c3",
@@ -580,22 +584,42 @@ OPTIONS:
   -i, --info          Tool versions
   --keep-gz           Keep *.gz leftovers under data/
   --no-ota            Skip OTA package in dist/
+  --bump-minor        This build: +0.1.0 (then next default is +0.0.1)
+  --bump-major        This build: +1.0.0 (then next default is +0.0.1)
+  --no-bump           Stamp VERSION as-is; do not advance VERSION file
   -h, --help          This help
+
+Firmware VERSION file (semver):
+  Default after each successful release/debug: +0.0.1
+  --bump-minor: new feature (config still loads)
+  --bump-major: breaking config / protocol / pin map
+  patch>99 or minor>99 auto-rolls into the next field
 
 EXAMPLES:
   python build.py release -u
   python build.py debug -u
   python build.py fs
   python build.py release --no-ota
+  python build.py release --bump-minor
 """)
 
 # ====================================================
 # ГЕНЕРАЦИЯ ВЕРСИИ
 # ====================================================
 class VersionGen:
-    def __init__(self):
-        self.timestamp = int(time.time())
-        self.version = str(self.timestamp)
+    def __init__(self, bump="patch"):
+        """bump: 'patch' | 'minor' | 'major' | 'none'"""
+        major, minor, patch = fwver.read()
+        if bump == "major":
+            major, minor, patch = fwver.bump_major(major, minor, patch)
+        elif bump == "minor":
+            major, minor, patch = fwver.bump_minor(major, minor, patch)
+        elif bump not in ("patch", "none"):
+            bump = "patch"
+        self.major, self.minor, self.patch = major, minor, patch
+        self.version = fwver.format_ver(major, minor, patch)
+        self.version_num = fwver.to_num(major, minor, patch)
+        self._bump_after = bump != "none"
 
     def save(self, build_type="release"):
         if build_type not in ("release", "debug"):
@@ -609,25 +633,34 @@ class VersionGen:
 
         content = f'''// Сгенерировано автоматически
 #pragma once
-{serial_macro}#define FIRMWARE_VERSION_NUM {self.timestamp}ULL
+{serial_macro}#define FIRMWARE_VERSION_NUM {self.version_num}UL
 #define FIRMWARE_VERSION_STR "{self.version}"
 #define FIRMWARE_BUILD_TYPE "{build_type}"
 '''
 
-        with open(PATHS["version_h"], "w") as f:
+        with open(PATHS["version_h"], "w", encoding="utf-8") as f:
             f.write(content)
 
         os.makedirs(PATHS["dist"], exist_ok=True)
         meta = {
-            "version": self.timestamp,
+            "version": self.version,
+            "version_num": self.version_num,
             "version_str": self.version,
             "build_type": build_type,
             "suffix": build_type,
         }
-        with open(PATHS["build_info"], "w") as f:
+        with open(PATHS["build_info"], "w", encoding="utf-8") as f:
             json.dump(meta, f)
 
-        print(f"  Версия: {self.version} ({build_type})")
+        print(f"  Версия: {self.version} (num={self.version_num}, {build_type})")
+
+    def advance_version_file(self):
+        """After a successful build: next default stamp is +0.0.1."""
+        if not self._bump_after:
+            return
+        nmaj, nmin, npatch = fwver.bump_patch(self.major, self.minor, self.patch)
+        fwver.write(nmaj, nmin, npatch)
+        print(f"  VERSION → {fwver.format_ver(nmaj, nmin, npatch)} (next build)")
 
 # ====================================================
 # ПРОВЕРКА ПИНОВ
@@ -649,12 +682,16 @@ def check_pins():
 # ====================================================
 # СБОРКА
 # ====================================================
-def build(upload=False, skip_ota=False, build_type="release"):
+def build(upload=False, skip_ota=False, build_type="release", bump="patch"):
     if build_type not in ("release", "debug"):
         build_type = "release"
     print(f"\n=== BUILD {build_type.upper()} ===")
 
-    VersionGen().save(build_type)
+    vgen = VersionGen(bump=bump)
+    # Manual major/minor: persist before compile so a failed build still advanced intentionally.
+    if bump in ("major", "minor"):
+        fwver.write(vgen.major, vgen.minor, vgen.patch)
+    vgen.save(build_type)
 
     print_step("Pins (ESP32-C3)")
     check_pins()
@@ -668,7 +705,7 @@ def build(upload=False, skip_ota=False, build_type="release"):
     if not os.path.exists(src):
         print_error("firmware.bin not found")
 
-    with open(PATHS["build_info"]) as f:
+    with open(PATHS["build_info"], encoding="utf-8") as f:
         ver = json.load(f)["version"]
 
     name = f"autostart-{ver}-{build_type}.bin"
@@ -687,6 +724,8 @@ def build(upload=False, skip_ota=False, build_type="release"):
             pack_ota(dst, files_dir, ota_path, gzip_enabled=True)
         else:
             print("  data/ missing — OTA pack skipped")
+
+    vgen.advance_version_file()
 
     if upload:
         run_cmd(pio_cmd(f"run -e {env_name} --target upload"), "Upload")
@@ -751,8 +790,16 @@ def main():
     build_type = "debug" if "debug" in args else "release"
     upload = "-u" in args or "--upload" in args
     skip_ota = "--no-ota" in args
+    if "--no-bump" in args:
+        bump = "none"
+    elif "--bump-major" in args:
+        bump = "major"
+    elif "--bump-minor" in args:
+        bump = "minor"
+    else:
+        bump = "patch"
 
-    build(upload, skip_ota, build_type)
+    build(upload, skip_ota, build_type, bump=bump)
     if not keep_gz:
         cleanup_gz_artifacts(Path("data"))
 
