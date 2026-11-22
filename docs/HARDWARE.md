@@ -8,8 +8,8 @@
 |------|---------------|------------|
 | GSM TX (MCU→SIM800) | 21 | UART0 TX |
 | GSM RX (SIM800→MCU) | 20 | UART0 RX |
-| 1-Wire | 10 | площадка бывш. GPIO0; IO9/IO10 на C3-12F часто зеркальны к V1.1 |
-| Кнопка / IN3 | 9 | площадка бывш. GPIO2; strap GPIO9 — не тянуть в LOW на reset |
+| 1-Wire | 9 | strap: держать HIGH при загрузке |
+| Кнопка / IN3 | 10 | active_state LOW (на GND); в UI не оставлять HIGH |
 | IN1 / IN2 | 5 / 4 | |
 | RELAY1..5 | 3, 19, 18, 8, 2 | GPIO8 — strap, лучше HIGH при загрузке |
 | VBAT ADC | 1 | 1:15 → ~0–1 В; `ADC_0db` |

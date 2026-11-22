@@ -670,8 +670,8 @@ def check_pins():
     pins = {
         "GSM_TX": 21,
         "GSM_RX": 20,
-        "ONEWIRE": 10,
-        "BUTTON": 9,
+        "ONEWIRE": 9,
+        "BUTTON": 10,
         "VBAT_ADC": 1,
     }
     for name, pin in pins.items():
