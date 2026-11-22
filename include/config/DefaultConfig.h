@@ -58,7 +58,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "Ручной тормоз",
+      "name": "Parking brake SW",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -66,24 +66,24 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "Датчик нейтрали",
+      "name": "Neutral SW",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
       "id": "IN3",
       "enabled": true,
       "type": 0,
-      "active_state": true,
-      "name": "Кнопка",
+      "active_state": false,
+      "name": "Button",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     }
   ],
   "relays": [
     { "id": "K1", "name": "ACC" },
-    { "id": "K2", "name": "зажигание" },
-    { "id": "K3", "name": "стартер" },
-    { "id": "K4", "name": "" },
-    { "id": "K5", "name": "обход" }
+    { "id": "K2", "name": "IGN" },
+    { "id": "K3", "name": "STA" },
+    { "id": "K4", "name": "LOCK" },
+    { "id": "K5", "name": "IMMO" }
   ],
   "thermostat": {
     "enabled": false,

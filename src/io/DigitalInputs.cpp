@@ -24,6 +24,8 @@
 #include "common/Logger.h"
 #include "common/Constants.h"
 
+#include <driver/gpio.h>
+
 RpmEstimator DigitalInputs::_rpm[HardwareLimits::INPUTS];
 
 DigitalInputs::DigitalInputs() {
@@ -48,6 +50,7 @@ int8_t DigitalInputs::findIndexById(uint16_t inputId) const {
 void DigitalInputs::begin() {
     logger.log(LogModule::DigitalInputs, "start\n");
     for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
+        gpio_reset_pin(static_cast<gpio_num_t>(inputs[i].pin));
         pinMode(inputs[i].pin, INPUT_PULLUP);
         _runtimeEnabled[i] = config.getBase().inputs[i].enabled;
     }

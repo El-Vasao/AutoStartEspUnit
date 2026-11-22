@@ -22,6 +22,7 @@
 #include "common/Constants.h"
 #include "io/HwMap.h"
 
+#include <driver/gpio.h>
 #include <esp_timer.h>
 
 RelayController::RelayController() : _state(0) {
@@ -31,19 +32,17 @@ RelayController::RelayController() : _state(0) {
 
 void RelayController::begin() {
     logger.log(LogModule::RelayController, "start\n");
+    // C3: GPIO2/8 — strap; после reset не доверять digitalRead(OUTPUT) (часто «залипает» HIGH
+    // на висящем/подтянутом пине и помечает реле включённым, хотя digitalWrite(LOW) уже был).
+    _state = 0;
     for (int i = 0; i < HardwareLimits::RELAYS; i++) {
-        uint8_t pin = pinForRelay(i);
+        const uint8_t pin = pinForRelay(i);
+        _turnOnTime[i] = 0;
+        gpio_reset_pin(static_cast<gpio_num_t>(pin));
         pinMode(pin, OUTPUT);
         digitalWrite(pin, LOW);
     }
-    
-    for (int i = 0; i < HardwareLimits::RELAYS; i++) {
-        if (digitalRead(pinForRelay(i)) == HIGH) {
-            _state |= (1 << i);
-            _turnOnTime[i] = millis();
-        }
-    }
-    
+
     applyStarterConfig();
     logger.log(LogModule::RelayController, "ok\n");
 }

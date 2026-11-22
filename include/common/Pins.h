@@ -7,12 +7,17 @@
  * @file Pins.h
  * @brief Карта выводов ESP-C3-12F, встающего на место платы AutoStart ESP-12.
  *
- * Переназначение площадка→GPIO (те же цепи платы, номера выводов ESP32-C3):
- * - площадки UART TX/RX → GPIO21 / GPIO20 (SIM800 и отладочный Serial делят UART0)
- * - бывшая площадка GPIO16 → GPIO2 (RELAY5)
- * - бывшая площадка GPIO15 → GPIO8 (RELAY4, страп C3: при старте лучше HIGH)
- * - бывшая площадка GPIO0 → GPIO9 (1-Wire, страп C3: LOW = загрузка)
- * - площадка АЦП → GPIO1
+ * Сверка с Ai-Thinker (номер площадки модуля одинаков у ESP-12F / C3-12F):
+ *   ESP8266     → ESP32-C3
+ *   TXD/GPIO1   → GPIO21     RXD/GPIO3 → GPIO20
+ *   GPIO16 (K5) → GPIO2      GPIO14 (K1) → GPIO3
+ *   GPIO12 (IN2)→ GPIO4      GPIO13 (IN1)→ GPIO5
+ *   GPIO15 (K4) → GPIO8      GPIO2 (IN3) → GPIO10
+ *   GPIO0 (1w)  → GPIO9      GPIO5 (K2)  → GPIO19
+ *   GPIO4 (K3)  → GPIO18     A0          → GPIO1
+ *
+ * Если K1 (GPIO3) и K2 (GPIO19) живы — левый ряд и правый «верх» карты верны;
+ * мёртвые K5/IN3 при этом чаще холодный контакт площадок GPIO16 / GPIO2, а не ошибка таблицы.
  */
 
 namespace Pin {
