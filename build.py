@@ -666,17 +666,17 @@ class VersionGen:
 # ПРОВЕРКА ПИНОВ
 # ====================================================
 def check_pins():
-    """Print C3 pad remap used by this firmware (same PCB as ESP-12)."""
+    """Print XH-C3F pad remap used by this firmware (same PCB as ESP-12)."""
     pins = {
         "GSM_TX": 21,
         "GSM_RX": 20,
         "ONEWIRE": 9,
-        "BUTTON": 10,
-        "VBAT_ADC": 1,
+        "BUTTON": 8,
+        "VBAT_ADC": 0,
     }
     for name, pin in pins.items():
-        print(f"  {name}: GPIO{pin}")
-    print("  RELAY1..5: GPIO 3,19,18,8,2")
+        print(f"  {name}: IO{pin}")
+    print("  RELAY1..5: IO 3,19,18,10,1")
     print("  UART0 shared: SIM800 + debug Serial (legacy)")
 
 # ====================================================

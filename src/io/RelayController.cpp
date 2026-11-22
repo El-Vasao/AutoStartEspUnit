@@ -22,7 +22,6 @@
 #include "common/Constants.h"
 #include "io/HwMap.h"
 
-#include <driver/gpio.h>
 #include <esp_timer.h>
 
 RelayController::RelayController() : _state(0) {
@@ -32,24 +31,17 @@ RelayController::RelayController() : _state(0) {
 
 void RelayController::begin() {
     logger.log(LogModule::RelayController, "start\n");
-    // C3: GPIO2/8 — strap. Не читать digitalRead после OUTPUT (ложный HIGH → «реле вкл»).
-    // INPUT_OUTPUT + сброс матрицы: DevKit-вариант раньше вешал NeoPixel на GPIO8 (K4).
-    _state = 0;
     for (int i = 0; i < HardwareLimits::RELAYS; i++) {
         const uint8_t pin = pinForRelay(i);
-        _turnOnTime[i] = 0;
-        const gpio_num_t g = static_cast<gpio_num_t>(pin);
-        gpio_reset_pin(g);
-        gpio_hold_dis(g);
-        gpio_config_t conf = {};
-        conf.pin_bit_mask = 1ULL << pin;
-        conf.mode = GPIO_MODE_INPUT_OUTPUT;
-        conf.pull_up_en = GPIO_PULLUP_DISABLE;
-        conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-        conf.intr_type = GPIO_INTR_DISABLE;
-        gpio_config(&conf);
-        gpio_set_drive_capability(g, GPIO_DRIVE_CAP_3);
-        gpio_set_level(g, 0);
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, LOW);
+    }
+
+    for (int i = 0; i < HardwareLimits::RELAYS; i++) {
+        if (digitalRead(pinForRelay(i)) == HIGH) {
+            _state |= (1 << i);
+            _turnOnTime[i] = millis();
+        }
     }
 
     applyStarterConfig();

@@ -2,19 +2,9 @@
 
 Ветка: `esp32`. Окружение PlatformIO: **`esp32c3`** (`python build.py release|debug|fs`).
 
-## Пины (ESP-C3-12F / DevKit на сетях платы ESP-12)
+## Пины
 
-| Сеть | GPIO ESP32-C3 | Примечание |
-|------|---------------|------------|
-| GSM TX (MCU→SIM800) | 21 | UART0 TX |
-| GSM RX (SIM800→MCU) | 20 | UART0 RX |
-| 1-Wire | 9 | strap: держать HIGH при загрузке |
-| Кнопка / IN3 | 10 | active_state LOW (на GND); в UI не оставлять HIGH |
-| IN1 / IN2 | 5 / 4 | |
-| RELAY1..5 | 3, 19, 18, 8, 2 | GPIO8 — strap, лучше HIGH при загрузке |
-| VBAT ADC | 1 | 1:15 → ~0–1 В; `ADC_0db` |
-
-См. `include/common/Pins.h`.
+Полная карта — только в [`include/common/Pins.h`](../include/common/Pins.h) (XH-C3F на сетях ESP-12; не Ai-Thinker C3-12F).
 
 ## Разделы
 

@@ -2,7 +2,7 @@
 
 Car remote auto-start firmware (SoftAP UI + SIM800 MQTT).
 
-**Target:** ESP32-C3 (ESP-C3-12F / DevKit; same PCB nets as ESP-12E). SoftAP is a trusted network: no API/OTA auth.
+**Target:** ESP32-C3 (**XH-C3F** on ESP-12E PCB nets; not Ai-Thinker C3-12F pinout). SoftAP is a trusted network: no API/OTA auth.
 
 ## Build
 

@@ -5,50 +5,91 @@
 
 /**
  * @file Pins.h
- * @brief Карта выводов ESP-C3-12F, встающего на место платы AutoStart ESP-12.
+ * @brief Исчерпывающая карта выводов платы AutoStart на модуле XH-C3F
+ *        (форм-фактор ESP-12E/F). Единственный источник правды по пинам.
  *
- * Ai-Thinker ESP-12F pad → ESP-C3-12F GPIO (спека V1.1, SoftRF/Electrodragon):
- *   TXD/GPIO1   → GPIO21     RXD/GPIO3 → GPIO20
- *   GPIO16 (K5) → GPIO2      GPIO14 (K1) → GPIO3
- *   GPIO12 (IN2)→ GPIO4      GPIO13 (IN1)→ GPIO5
- *   GPIO15 (K4) → GPIO8      GPIO2 (IN3) → GPIO10
- *   GPIO0 (1w)  → GPIO9      GPIO5 (K2)  → GPIO19
- *   GPIO4 (K3)  → GPIO18     A0          → GPIO1
+ * Не путать с Ai-Thinker ESP-C3-12F — у XH другая раскладка IO на тех же площадках.
  *
- * K1=GPIO3 и K2=GPIO19 на поле подтверждают эту таблицу. Не путать с «оставить
- * те же номера, что у ESP8266» (GPIO2 кнопки ≠ GPIO2 на C3).
+ * ---------------------------------------------------------------------------
+ * Цепи платы (как в исходном списке ESP-8266 → сейчас XH-C3F IO)
+ * ---------------------------------------------------------------------------
+ *
+ *   ESP-32-C3 (XH-C3F)  --> SIM800C (SIM800L)
+ *   TXD (IO21)          --> RXD
+ *   RXD (IO20)          --> TXD
+ *   (UART0 общий с отладочным Serial)
+ *
+ *   1-Wire (DS18B20, DS2413) - IO9     // strap C3: LOW = download
+ *   Button on PCB / IN3       - IO8     // strap C3; active_state LOW (на GND)
+ *   IN1                       - IO5
+ *   IN2                       - IO4
+ *
+ *   распиновка реле (active HIGH → ULN2003):
+ *   K1-  IO3
+ *   K2-  IO19
+ *   K3-  IO18
+ *   K4-  IO10
+ *   K5-  IO1
+ *
+ *   VBAT (делитель 1:15 → ~0–1 В) - IO0 / ADC1_CH0
+ *
+ * ---------------------------------------------------------------------------
+ * Площадки модуля ESP-12 ↔ XH-C3F (левый / правый ряд)
+ * ---------------------------------------------------------------------------
+ *
+ *   Площадка ESP-12     XH-C3F     Цепь на плате AutoStart
+ *   RST                 EN         enable модуля (не GPIO); у XH EN сверху слева
+ *   ADC                 IO0        VBAT
+ *   EN                  IO2        не используется прошивкой (бывш. EN у 12E)
+ *   GPIO16              IO1        K5
+ *   GPIO14              IO3        K1
+ *   GPIO12              IO4        IN2
+ *   GPIO13              IO5        IN1
+ *   VCC                 3V3        питание
+ *   TXD0                IO21       GSM TX (MCU→SIM800)
+ *   RXD0                IO20       GSM RX (SIM800→MCU)
+ *   GPIO5               IO19       K2
+ *   GPIO4               IO18       K3
+ *   GPIO0               IO9        1-Wire
+ *   GPIO2               IO8        Button / IN3
+ *   GPIO15              IO10       K4
+ *   GND                 GND        земля
+ *
  */
 
 namespace Pin {
 
     // GSM на площадках UART0 (общий с отладочным Serial)
-    constexpr uint8_t GSM_TX = 21;     // площадка TX модуля → SIM800 RXD
-    constexpr uint8_t GSM_RX = 20;     // площадка RX модуля ← SIM800 TXD
+    constexpr uint8_t GSM_TX = 21;     // TXD → SIM800 RXD
+    constexpr uint8_t GSM_RX = 20;     // RXD ← SIM800 TXD
 
-    // Шина 1-Wire (площадка ESP8266 GPIO0 → C3 GPIO9; strap: LOW = download)
+    // Шина 1-Wire
     constexpr uint8_t ONEWIRE = 9;
 
-    // Кнопка платы (площадка ESP8266 GPIO2 → C3 GPIO10)
-    constexpr uint8_t BUTTON = 10;
+    // Кнопка платы = IN3
+    constexpr uint8_t BUTTON = 8;
 
     // Порядок = публичный id IN1…INn (ChannelSilk).
     constexpr uint8_t INPUT_PINS[] = {
-        5,       // IN1 (была GPIO13)
-        4,       // IN2 (была GPIO12)
+        5,       // IN1
+        4,       // IN2
         BUTTON   // IN3
     };
 
     // Порядок = публичный id K1…Kn (ChannelSilk). Реле, активный уровень HIGH.
     constexpr uint8_t RELAY_PINS[] = {
-        3,   // K1 (была GPIO14)
-        19,  // K2 (была GPIO5)
-        18,  // K3 (была GPIO4)
-        8,   // K4 (была GPIO15) — strap C3 GPIO8
-        2    // K5 (была GPIO16) — strap C3 GPIO2
+        3,   // K1
+        19,  // K2
+        18,  // K3
+        10,  // K4
+        1    // K5
     };
 
-    // Измерение батареи (был A0 → C3 GPIO1 / ADC1_CH1); внешний делитель 1:15 в ~0–1 В
-    constexpr uint8_t VBAT = 1;
+    // Измерение батареи; внешний делитель 1:15 в ~0–1 В
+    constexpr uint8_t VBAT = 0;
+
+    // Площадка бывшего EN у ESP-12 → IO2 у XH; прошивка не трогает.
+    // constexpr uint8_t UNUSED_PAD_EN = 2;
 
     constexpr uint8_t MAX_SENSORS = 3;
 
