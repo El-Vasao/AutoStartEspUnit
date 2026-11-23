@@ -3,7 +3,7 @@
   "$id": "https://autostart.local/schemas/programs.index.schema.json",
   "title": "AutoStart programs index (frontend validation)",
   "type": "array",
-  "maxItems": 10,
+  "maxItems": 100,
   "items": {
     "type": "object",
     "additionalProperties": false,

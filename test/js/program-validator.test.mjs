@@ -58,6 +58,21 @@ test('shared program fixtures agree with the schema', () => {
   }
 });
 
+test('program index accepts the factory set and rejects past MAX_PROGRAMS', () => {
+  const pv = createProgramValidator();
+  const factory = [];
+  for (let i = 1; i <= 22; i++) factory.push({ id: i, name: `p${i}` });
+  const factoryRes = pv.validateProgramIndex(factory);
+  assert.equal(factoryRes.ok, true, JSON.stringify(factoryRes.errorsByPath));
+
+  const full = [];
+  for (let i = 1; i <= 100; i++) full.push({ id: i, name: 'n' });
+  assert.equal(pv.validateProgramIndex(full).ok, true);
+
+  const over = full.concat([{ id: 101, name: 'n' }]);
+  assert.equal(pv.validateProgramIndex(over).ok, false);
+});
+
 test('programValidator allows IN4 when hwCounts.inputs is 4', () => {
   const pv = createProgramValidator({ relays: 5, inputs: 4, sensors: 3 });
   assert.equal(pv.loaded, true, pv._lastInitError || 'validator not loaded');

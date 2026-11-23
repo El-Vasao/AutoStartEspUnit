@@ -48,9 +48,9 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "engine_input_id": "IN2"
   },
   "sensors": [
-    { "id": "T1", "rom": "", "coeff": 0, "name": "" },
-    { "id": "T2", "rom": "", "coeff": 0, "name": "" },
-    { "id": "T3", "rom": "", "coeff": 0, "name": "" }
+    { "id": "T1", "rom": "", "coeff": 0, "name": "Cabin" },
+    { "id": "T2", "rom": "", "coeff": 0, "name": "Engine" },
+    { "id": "T3", "rom": "", "coeff": 0, "name": "Outside" }
   ],
   "inputs": [
     {
@@ -58,7 +58,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "Parking",
+      "name": "Parking brake SW",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -66,7 +66,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "Neutral",
+      "name": "Neutral SW",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -74,7 +74,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": false,
-      "name": "Кнопка",
+      "name": "Button",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     }
   ],
