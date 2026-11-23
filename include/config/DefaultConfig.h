@@ -19,15 +19,15 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "apn": "internet.yota",
     "apn_user": "",
     "apn_pass": "",
-    "owner_phone": "",
-    "dtmf_password": ""
+    "owner_phone": "+79167393566",
+    "dtmf_password": "4611"
   },
   "mqtt": {
-    "broker": "",
-    "port": 1883,
+    "broker": "m5.wqtt.ru",
+    "port": 10162,
     "client_id": "",
-    "user": "",
-    "pass": "",
+    "user": "test4611",
+    "pass": "test4611",
     "topic_prefix": "",
     "publish_interval_sec": 600
   },
@@ -58,7 +58,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "Parking brake SW",
+      "name": "Parking",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -66,7 +66,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "Neutral SW",
+      "name": "Neutral",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -74,7 +74,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": false,
-      "name": "Button",
+      "name": "Кнопка",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     }
   ],
@@ -110,6 +110,14 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "tz_offset_hours": 3,
     "sync_interval_hours": 6
   },
-  "input_triggers": [],
-  "temperature_triggers": []
+  "input_triggers": [
+    { "id": 1, "enabled": false, "input_id": "IN1", "trigger_level": 1, "program_id": 0 },
+    { "id": 2, "enabled": false, "input_id": "IN2", "trigger_level": 1, "program_id": 0 },
+    { "id": 3, "enabled": false, "input_id": "IN3", "trigger_level": 1, "program_id": 0 }
+  ],
+  "temperature_triggers": [
+    { "id": 1, "enabled": false, "sensor_id": "T1", "comparison": "above", "threshold": 0, "program_id": 0 },
+    { "id": 2, "enabled": false, "sensor_id": "T2", "comparison": "above", "threshold": 0, "program_id": 0 },
+    { "id": 3, "enabled": false, "sensor_id": "T3", "comparison": "above", "threshold": 0, "program_id": 0 }
+  ]
 })";

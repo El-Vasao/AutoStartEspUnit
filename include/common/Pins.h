@@ -88,9 +88,8 @@ namespace Pin {
     // Измерение батареи; внешний делитель 1:15 в ~0–1 В
     constexpr uint8_t VBAT = 0;
 
-    // Площадка бывшего EN у ESP-12 → IO2 у XH; прошивка не трогает.
-    // constexpr uint8_t UNUSED_PAD_EN = 2;
 
-    constexpr uint8_t MAX_SENSORS = 3;
+    constexpr uint8_t MAX_SENSORS =
+     3;
 
 } // namespace Pin

@@ -69,8 +69,23 @@ test('checkProgramsMergeLimit allows overwrite of existing ids', () => {
 
 test('checkProgramsMergeLimit rejects when unique count exceeds max', () => {
   const b = loadBackup();
-  const existing = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-  const bad = b.checkProgramsMergeLimit(existing, [{ id: 10 }, { id: 11 }]);
+  const existing = [];
+  for (let i = 1; i <= b.MAX_PROGRAMS - 1; i++) existing.push(i);
+  const bad = b.checkProgramsMergeLimit(existing, [{ id: b.MAX_PROGRAMS }, { id: b.MAX_PROGRAMS + 1 }]);
   assert.equal(bad.ok, false);
-  assert.match(String(bad.error), /лимит 10/);
+  assert.match(String(bad.error), new RegExp(`лимит ${b.MAX_PROGRAMS}`));
+});
+
+test('nextFreeProgramId skips occupied high ids', () => {
+  const b = loadBackup();
+  assert.equal(b.nextFreeProgramId([1, 2, 230]), 3);
+  assert.equal(b.nextFreeProgramId([]), 1);
+  assert.equal(b.nextFreeProgramId([1]), 2);
+});
+
+test('nextFreeProgramId returns 0 at capacity', () => {
+  const b = loadBackup();
+  const full = [];
+  for (let i = 1; i <= b.MAX_PROGRAMS; i++) full.push(i);
+  assert.equal(b.nextFreeProgramId(full), 0);
 });

@@ -122,6 +122,20 @@ void SensorsController::updateTemperatures() {
     const uint32_t tempInterval =
         _pollIdle ? Timing::TEMPERATURE_READ_INTERVAL_IDLE_MS : Timing::TEMPERATURE_READ_INTERVAL_MS;
 
+    // Поиск только в begin() пропускает датчик, который появился позже (эмулятор на шине).
+    if (_sensorCount == 0) {
+        if (_lastTemperatureRequest != 0 && (now - _lastTemperatureRequest < tempInterval)) return;
+        _lastTemperatureRequest = now;
+        _sensorCount = discoverSensors();
+        if (_sensorCount == 0) return;
+        logger.log(LogModule::SensorsController, "DS18B20 sensors found: %u\n", _sensorCount);
+        printAllAddresses();
+        auto& ow = owBackend();
+        for (uint8_t i = 0; i < _sensorCount; i++) {
+            ow.dallas.setResolution(_foundAddresses[i], DS18B20::RESOLUTION);
+        }
+    }
+
     auto& dallas = owBackend().dallas;
 
     if (!_conversionInProgress &&

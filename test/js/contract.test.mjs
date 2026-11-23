@@ -28,6 +28,27 @@ test('factory DEFAULT_CONFIG_JSON passes settings.schema.json', () => {
   assert.ok(ok, 'schema errors: ' + JSON.stringify(plain(validate.errors), null, 2));
 });
 
+test('factory DEFAULT_CONFIG_JSON seeds disabled triggers on all inputs and sensors', () => {
+  const cfg = defaultConfigJson();
+  assert.equal(cfg.input_triggers.length, 3);
+  assert.equal(cfg.temperature_triggers.length, 3);
+  for (const tr of cfg.input_triggers) {
+    assert.equal(tr.enabled, false);
+    assert.equal(tr.program_id, 0);
+    assert.equal(tr.trigger_level, 1);
+  }
+  assert.deepEqual(cfg.input_triggers.map((t) => t.input_id), ['IN1', 'IN2', 'IN3']);
+  assert.deepEqual(cfg.input_triggers.map((t) => t.id), [1, 2, 3]);
+  for (const tr of cfg.temperature_triggers) {
+    assert.equal(tr.enabled, false);
+    assert.equal(tr.program_id, 0);
+    assert.equal(tr.comparison, 'above');
+    assert.equal(tr.threshold, 0);
+  }
+  assert.deepEqual(cfg.temperature_triggers.map((t) => t.sensor_id), ['T1', 'T2', 'T3']);
+  assert.deepEqual(cfg.temperature_triggers.map((t) => t.id), [1, 2, 3]);
+});
+
 test('program.schema.json and programs.index.schema.json compile in strict mode', () => {
   const ajv = createAjv();
   ajv.compile(readDataJson('validation/program.schema.json'));

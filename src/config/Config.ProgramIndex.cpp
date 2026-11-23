@@ -14,6 +14,10 @@ using namespace config_storage_internal;
 
 namespace {
 
+// Один буфер на ensure/rebuild/emit: два IndexRow[MAX_PROGRAMS] на стеке loopTask
+// (≈3.3 КБ × 2) дают stack overflow при mismatch → rebuild.
+program_json::IndexRow g_indexRows[Limits::MAX_PROGRAMS];
+
 size_t encodeProgramIndexArray(Print& p, void* ctx) {
     struct Ctx {
         const program_json::IndexRow* rows;
@@ -57,15 +61,14 @@ void Config::refreshProgramsRevFromRows_(const void* rows, size_t n) {
 }
 
 bool Config::emitProgramIndexArray(Print& p) const {
-    program_json::IndexRow rows[Limits::MAX_PROGRAMS];
     size_t n = 0;
     File f = fileSystem.openRead("/programs/index.json");
     if (f) {
-        const bool parsed = program_json::parseProgramIndexFile(f, rows, Limits::MAX_PROGRAMS, &n);
+        const bool parsed = program_json::parseProgramIndexFile(f, g_indexRows, Limits::MAX_PROGRAMS, &n);
         f.close();
         if (!parsed) n = 0;
     }
-    program_json::emitProgramIndexArrayPrint(rows, n, p);
+    program_json::emitProgramIndexArrayPrint(g_indexRows, n, p);
     return true;
 }
 
@@ -126,18 +129,17 @@ bool Config::ensureProgramIndex() {
 
     bool mismatch = true;
     size_t indexCount = 0;
-    program_json::IndexRow rows[Limits::MAX_PROGRAMS]{};
 
     {
         size_t n = 0;
-        if (!loadRowsFromIndexFile(rows, Limits::MAX_PROGRAMS, &n)) {
+        if (!loadRowsFromIndexFile(g_indexRows, Limits::MAX_PROGRAMS, &n)) {
             logger.log(LogModule::Config, "ensureProgramIndex: no valid index, rebuilding after JSON pool release\n");
             mismatch = true;
         } else {
             mismatch = false;
             indexCount = n;
             for (size_t i = 0; i < n; i++) {
-                const uint8_t id = rows[i].id;
+                const uint8_t id = g_indexRows[i].id;
                 if (id == 0 || id > 255) {
                     mismatch = true;
                     break;
@@ -165,10 +167,11 @@ bool Config::ensureProgramIndex() {
     if (mismatch) {
         logger.log(LogModule::Config, "ensureProgramIndex: mismatch (files=%u, index=%u), rebuilding...\n",
                    (unsigned)filesCount, (unsigned)indexCount);
+        // rebuild переиспользует g_indexRows; кадр ensure уже не держит свою копию.
         return rebuildProgramIndex();
     }
 
-    refreshProgramsRevFromRows_(rows, indexCount);
+    refreshProgramsRevFromRows_(g_indexRows, indexCount);
     logger.log(LogModule::Config, "ensureProgramIndex: ok (files=%u index=%u)\n",
                (unsigned)filesCount, (unsigned)indexCount);
     return true;
@@ -178,7 +181,6 @@ bool Config::rebuildProgramIndex() {
     logger.log(LogModule::Config, "rebuildProgramIndex: building /programs/index.json\n");
     if (!ensureProgramsDir()) return false;
 
-    program_json::IndexRow items[Limits::MAX_PROGRAMS]{};
     size_t count = 0;
 
     logger.log(LogModule::Config, "rebuildProgramIndex: scanning /programs\n");
@@ -251,8 +253,8 @@ bool Config::rebuildProgramIndex() {
                 logger.log(LogModule::Config, "rebuildProgramIndex: too many programs\n");
                 break;
             }
-            items[count].id = id;
-            strlcpy(items[count].name, name, sizeof items[count].name);
+            g_indexRows[count].id = id;
+            strlcpy(g_indexRows[count].name, name, sizeof g_indexRows[count].name);
             count++;
             entry = root.openNextFile();
         }
@@ -265,10 +267,10 @@ bool Config::rebuildProgramIndex() {
         wdtPort_.feedNow();
         wdtPort_.feedNow();
         for (size_t j = i + 1; j < count; j++) {
-            if (items[j].id < items[i].id) {
-                const program_json::IndexRow tmp = items[i];
-                items[i] = items[j];
-                items[j] = tmp;
+            if (g_indexRows[j].id < g_indexRows[i].id) {
+                const program_json::IndexRow tmp = g_indexRows[i];
+                g_indexRows[i] = g_indexRows[j];
+                g_indexRows[j] = tmp;
             }
         }
     }
@@ -278,11 +280,11 @@ bool Config::rebuildProgramIndex() {
     struct Ctx {
         const program_json::IndexRow* rows;
         size_t n;
-    } ctx{items, count};
+    } ctx{g_indexRows, count};
 
     const bool wrote =
         fileSystem.writeJsonAtomicStream("/programs/index.json", encodeProgramIndexArray, &ctx, Limits::CONFIG_JSON_SIZE);
-    if (wrote) refreshProgramsRevFromRows_(items, count);
+    if (wrote) refreshProgramsRevFromRows_(g_indexRows, count);
     logger.log(LogModule::Config, "rebuildProgramIndex: %s (items: %u)\n", wrote ? "ok" : "failed", (unsigned)count);
     return wrote;
 }

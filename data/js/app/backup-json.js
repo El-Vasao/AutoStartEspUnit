@@ -2,7 +2,7 @@
 (function () {
   const APP = (window.APP = window.APP || {});
 
-  const MAX_PROGRAMS = 10;
+  const MAX_PROGRAMS = 100;
   const MAX_FILE_JSON_BYTES = 5120;
 
   function utf8ByteLength(str) {
@@ -82,11 +82,26 @@
     return { ok: true, mergedCount: ids.size };
   }
 
+  /// Наименьший свободный id 1…255, либо 0 если мест нет или уже MAX_PROGRAMS.
+  function nextFreeProgramId(existingIds) {
+    const used = new Set();
+    for (const id of existingIds || []) {
+      const n = Number(id);
+      if (Number.isInteger(n) && n >= 1 && n <= 255) used.add(n);
+    }
+    if (used.size >= MAX_PROGRAMS) return 0;
+    for (let id = 1; id <= 255; id++) {
+      if (!used.has(id)) return id;
+    }
+    return 0;
+  }
+
   APP.backupJson = {
     MAX_PROGRAMS,
     MAX_FILE_JSON_BYTES,
     parseSettingsBackup,
     parseProgramsBackup,
     checkProgramsMergeLimit,
+    nextFreeProgramId,
   };
 })();

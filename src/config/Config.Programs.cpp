@@ -29,6 +29,14 @@ void fillStep(Step& s, uint8_t n, const char* action, uint8_t relayNumber = 0, u
     if (message) strlcpy(s.message, message, sizeof(s.message));
 }
 
+void fillTriggerStep(Step& s, uint8_t n, const char* action, uint16_t inputTriggerId, uint16_t tempTriggerId) {
+    s = Step{};
+    s.step = n;
+    strlcpy(s.action, action, sizeof(s.action));
+    s.input_trigger_id = inputTriggerId;
+    s.temp_trigger_id = tempTriggerId;
+}
+
 bool writeOneProgram(const Program& prog) {
     char path[BufferBytes::Fs::PROGRAM_PATH];
     program_json::formatProgramPath(path, sizeof(path), prog.id);
@@ -41,42 +49,116 @@ bool writeOneProgram(const Program& prog) {
     return true;
 }
 
+void clearProgram(Program& prog) {
+    prog = Program{};
+}
+
+bool writeNamedAction(Program& prog, uint8_t id, const char* name, const char* action,
+                      uint8_t relayNumber = 0, const char* message = nullptr) {
+    clearProgram(prog);
+    prog.id = id;
+    strlcpy(prog.name, name, sizeof(prog.name));
+    fillStep(prog.steps[0], 1, action, relayNumber, 0, message);
+    prog.step_count = 1;
+    return writeOneProgram(prog);
+}
+
+bool writeAllRelays(Program& prog, uint8_t id, const char* name, const char* action) {
+    // K1 ACC, K2 IGN, K4 LOCK, K5 IMMO — без K3 (стартер).
+    static const uint8_t kRelays[] = {1, 2, 4, 5};
+    clearProgram(prog);
+    prog.id = id;
+    strlcpy(prog.name, name, sizeof(prog.name));
+    for (uint8_t i = 0; i < 4; i++) {
+        fillStep(prog.steps[i], static_cast<uint8_t>(i + 1), action, kRelays[i]);
+    }
+    prog.step_count = 4;
+    return writeOneProgram(prog);
+}
+
+bool writeInputTriggers(Program& prog, uint8_t id, const char* name, const char* action) {
+    clearProgram(prog);
+    prog.id = id;
+    strlcpy(prog.name, name, sizeof(prog.name));
+    for (uint8_t i = 0; i < 3; i++) {
+        fillTriggerStep(prog.steps[i], static_cast<uint8_t>(i + 1), action,
+                        static_cast<uint16_t>(i + 1), 0);
+    }
+    prog.step_count = 3;
+    return writeOneProgram(prog);
+}
+
+bool writeTempTriggers(Program& prog, uint8_t id, const char* name, const char* action) {
+    clearProgram(prog);
+    prog.id = id;
+    strlcpy(prog.name, name, sizeof(prog.name));
+    for (uint8_t i = 0; i < 3; i++) {
+        fillTriggerStep(prog.steps[i], static_cast<uint8_t>(i + 1), action, 0,
+                        static_cast<uint16_t>(i + 1));
+    }
+    prog.step_count = 3;
+    return writeOneProgram(prog);
+}
+
 } // namespace
 
 bool Config::writeFactoryPrograms() {
     logger.log(LogModule::Config, "writing factory programs\n");
     if (!ensureProgramsDir()) return false;
 
-    // K5 bypass, K2 ignition, K1 ACC — номера шёлка 5/2/1.
-    Program start{};
-    start.id = 1;
-    strlcpy(start.name, "Запуск", sizeof(start.name));
-    fillStep(start.steps[0], 1, "RELAY_ON", 5);
-    fillStep(start.steps[1], 2, "WAIT", 0, 500);
-    fillStep(start.steps[2], 3, "RELAY_ON", 2);
-    fillStep(start.steps[3], 4, "WAIT", 0, 5000);
-    fillStep(start.steps[4], 5, "ENGINE_START");
-    fillStep(start.steps[5], 6, "RELAY_ON", 1);
-    fillStep(start.steps[6], 7, "WAIT", 0, 5000);
-    fillStep(start.steps[7], 8, "RELAY_OFF", 5);
-    fillStep(start.steps[8], 9, "SMS_OWNER", 0, 0, "Engine started");
-    start.step_count = 9;
+    Program prog{};
 
-    Program stop{};
-    stop.id = 2;
-    strlcpy(stop.name, "Стоп", sizeof(stop.name));
-    fillStep(stop.steps[0], 1, "RELAY_OFF", 2);
-    fillStep(stop.steps[1], 2, "RELAY_OFF", 1);
-    fillStep(stop.steps[2], 3, "RELAY_OFF", 5);
-    stop.step_count = 3;
+    // K5 bypass, K2 ignition, K1 ACC — номера шёлка 5/2/1. Без SMS.
+    clearProgram(prog);
+    prog.id = 1;
+    strlcpy(prog.name, "Запуск", sizeof(prog.name));
+    fillStep(prog.steps[0], 1, "RELAY_ON", 5);
+    fillStep(prog.steps[1], 2, "WAIT", 0, 500);
+    fillStep(prog.steps[2], 3, "RELAY_ON", 2);
+    fillStep(prog.steps[3], 4, "WAIT", 0, 5000);
+    fillStep(prog.steps[4], 5, "ENGINE_START");
+    fillStep(prog.steps[5], 6, "RELAY_ON", 1);
+    fillStep(prog.steps[6], 7, "WAIT", 0, 5000);
+    fillStep(prog.steps[7], 8, "RELAY_OFF", 5);
+    prog.step_count = 8;
+    if (!writeOneProgram(prog)) return false;
 
-    if (!writeOneProgram(start)) return false;
-    if (!writeOneProgram(stop)) return false;
+    clearProgram(prog);
+    prog.id = 2;
+    strlcpy(prog.name, "Стоп", sizeof(prog.name));
+    fillStep(prog.steps[0], 1, "RELAY_OFF", 2);
+    fillStep(prog.steps[1], 2, "RELAY_OFF", 1);
+    fillStep(prog.steps[2], 3, "RELAY_OFF", 5);
+    prog.step_count = 3;
+    if (!writeOneProgram(prog)) return false;
+
+    // Служебные id 230–249 — внизу списка (сортировка по возрастанию id).
+    if (!writeAllRelays(prog, 230, "Все вкл", "RELAY_ON")) return false;
+    if (!writeAllRelays(prog, 231, "Все выкл", "RELAY_OFF")) return false;
+    if (!writeNamedAction(prog, 232, "K1 вкл", "RELAY_ON", 1)) return false;
+    if (!writeNamedAction(prog, 233, "K1 выкл", "RELAY_OFF", 1)) return false;
+    if (!writeNamedAction(prog, 234, "K2 вкл", "RELAY_ON", 2)) return false;
+    if (!writeNamedAction(prog, 235, "K2 выкл", "RELAY_OFF", 2)) return false;
+    if (!writeNamedAction(prog, 236, "K4 вкл", "RELAY_ON", 4)) return false;
+    if (!writeNamedAction(prog, 237, "K4 выкл", "RELAY_OFF", 4)) return false;
+    if (!writeNamedAction(prog, 238, "K5 вкл", "RELAY_ON", 5)) return false;
+    if (!writeNamedAction(prog, 239, "K5 выкл", "RELAY_OFF", 5)) return false;
+    if (!writeNamedAction(prog, 240, "SMS", "SMS_OWNER", 0, "Test")) return false;
+    if (!writeNamedAction(prog, 241, "Звонок", "CALL_OWNER")) return false;
+    if (!writeNamedAction(prog, 242, "АКБ вкл", "BATTERY_SAVER_ON")) return false;
+    if (!writeNamedAction(prog, 243, "АКБ выкл", "BATTERY_SAVER_OFF")) return false;
+    if (!writeNamedAction(prog, 244, "Термо вкл", "THERMOSTAT_ON")) return false;
+    if (!writeNamedAction(prog, 245, "Термо выкл", "THERMOSTAT_OFF")) return false;
+    if (!writeInputTriggers(prog, 246, "Входы вкл", "INPUT_TRIGGER_ENABLE")) return false;
+    if (!writeInputTriggers(prog, 247, "Входы выкл", "INPUT_TRIGGER_DISABLE")) return false;
+    if (!writeTempTriggers(prog, 248, "Темп вкл", "TEMP_TRIGGER_ENABLE")) return false;
+    if (!writeTempTriggers(prog, 249, "Темп выкл", "TEMP_TRIGGER_DISABLE")) return false;
+
     if (!rebuildProgramIndex()) {
         logger.log(LogModule::Config, "factory programs written, index not rebuilt\n");
         return false;
     }
-    logger.log(LogModule::Config, "factory programs 1 and 2 written\n");
+    logger.log(LogModule::Config, "factory programs 1, 2 and 230-249 written\n");
     return true;
 }
 

@@ -166,9 +166,12 @@
 
       newProgram() {
         if (!this.loadOk) return;
-        let maxId = 0;
-        for (const p of this.items) if (p.id > maxId) maxId = p.id;
-        const nextId = maxId + 1;
+        const ids = this.items.map((p) => p.id);
+        const nextId = APP.backupJson.nextFreeProgramId(ids);
+        if (!nextId) {
+          Alpine.store('uiToast').error('Достигнут лимит программ');
+          return;
+        }
         this.editingMode = 'new';
         this.current = { id: nextId, name: '', steps: [] };
       },
@@ -198,7 +201,7 @@
                 busyTitle: 'Сброс',
                 busyMessage: 'Сброс программ…',
                 expectedLastOp: 'reset_programs',
-                timeoutMsCommit: 10000,
+                timeoutMsCommit: 25000,
                 request: async () => await APP.api.apiJson(programsPostUrl(), {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

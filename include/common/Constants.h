@@ -53,7 +53,7 @@ namespace Limits {
 
     constexpr uint8_t MAX_STEPS_PER_PROGRAM = 15;
     constexpr uint8_t MAX_TRIGGERS = 8;
-    constexpr uint8_t MAX_PROGRAMS = 10;
+    constexpr uint8_t MAX_PROGRAMS = 100;
 
     /// Пароль SoftAP WPA2-PSK: 8..63 символа (здесь фиксируем только максимум).
     constexpr uint8_t MAX_PASSWORD_LEN = 63;
@@ -102,8 +102,8 @@ namespace TextBytes {
     }
 
     namespace Sensors {
-        /// Подпись датчика в UI (кириллица; 15 символов UTF-8 + NUL).
-        constexpr size_t NAME = 32;
+        /// Подпись датчика в UI (до 30 символов; кириллица ≈2 байта + NUL → 64).
+        constexpr size_t NAME = 64;
         /// "AA:BB:CC:DD:EE:FF:11:22" + '\0'
         constexpr size_t ROM = 24;
         /// Тот же формат, что и ROM
@@ -111,15 +111,15 @@ namespace TextBytes {
     }
 
     namespace Inputs {
-        /// Подпись входа в UI (кириллица; 15 символов UTF-8 + NUL).
-        constexpr size_t NAME = 32;
+        /// Подпись входа в UI (до 30 символов; кириллица ≈2 байта + NUL → 64).
+        constexpr size_t NAME = 64;
         /// "IN123" и т.п.
         constexpr size_t FALLBACK_NAME = 8;
     }
 
     namespace Relays {
-        /// Подпись реле в UI (кириллица; 15 символов UTF-8 + NUL).
-        constexpr size_t NAME = 32;
+        /// Подпись реле в UI (до 30 символов; кириллица ≈2 байта + NUL → 64).
+        constexpr size_t NAME = 64;
     }
 
     namespace Triggers {
@@ -409,10 +409,11 @@ namespace JsonBytes {
         /// Лимит тела MQTT PUBLISH (JSON) при длине топика до `TextBytes::Mqtt::TOPIC-1`.
         /// На проводе: payload + 1 (fixed) + ≤4 (RL) + 2 (длина топика) + topicLen ≤ TX_MAX.
         constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 900;
-        /// Тело retained-топика `programs` (только массив).
-        constexpr size_t PROGRAMS_TOPIC_JSON_MAX = 960;
+        /// Тело топика `programs` (только массив). Потолок одного CIPSEND минус запас под топик ≤64.
+        /// `static_assert` с `NetTiming::MQTT_CIPSEND_MAX` — после объявления NetTiming ниже.
+        constexpr size_t PROGRAMS_TOPIC_JSON_MAX = 1480;
         /// Тело retained-топика `hwMap` (реле/входы/датчики).
-        constexpr size_t HWMAP_TOPIC_JSON_MAX = 1500; // silk ids + 32-byte channel names
+        constexpr size_t HWMAP_TOPIC_JSON_MAX = 1500; // silk ids + до 64-байт имён каналов
         /// Тело retained-топика `trigMap` (триггеры входов и температуры).
         constexpr size_t TRIGMAP_TOPIC_JSON_MAX = 1200;
         /// Короткий ответ `{id,code[,seq]}`.
@@ -480,6 +481,8 @@ namespace NetTiming {
     constexpr uint16_t MQTT_FRAME_MAX = 3072;
     /// Жёсткий потолок одного CIPSEND. Кадры больше этого отвергаются до UART.
     constexpr uint16_t MQTT_CIPSEND_MAX = 1600;
+    static_assert(JsonBytes::Mqtt::PROGRAMS_TOPIC_JSON_MAX + TextBytes::Mqtt::TOPIC <= MQTT_CIPSEND_MAX,
+                  "programs topic body + topic must fit one CIPSEND");
     /// Ответ QoS1: ждать PUBACK, затем один DUP, затем освободить слот.
     constexpr uint32_t MQTT_REPLY_PUBACK_TIMEOUT_MS = 5000;
     /// Буфер копии одного незавершённого короткого ответа QoS1 (это не слот очереди TX).

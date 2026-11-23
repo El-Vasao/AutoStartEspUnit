@@ -82,7 +82,7 @@ private:
     bool loadBaseFromFile(const char* path, BaseConfig& target, size_t& outLen, uint16_t* outFileCrc = nullptr);
     bool saveBaseConfig(const BaseConfig& cfg);
     bool validateCross(const BaseConfig& cfg);
-    /// Записывает заводские программы 1 «Запуск» и 2 «Стоп» и пересобирает индекс.
+    /// Записывает заводской набор (1 «Запуск», 2 «Стоп», служебные 230–249) и пересобирает индекс.
     bool writeFactoryPrograms();
 };
 
