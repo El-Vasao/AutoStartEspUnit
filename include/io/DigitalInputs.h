@@ -90,8 +90,14 @@ private:
     RpmConfirm _rpmConfirm[HardwareLimits::INPUTS];   ///< подтверждение порога оборотов
     float _frequencies[HardwareLimits::INPUTS];      ///< рассчитанные обороты (об/мин)
     uint32_t _lastCalcTime[HardwareLimits::INPUTS];  ///< время последнего расчёта оборотов
+    bool _haveLoggedActive[HardwareLimits::INPUTS];  ///< логическое состояние уже было в журнале
+    bool _loggedActive[HardwareLimits::INPUTS];      ///< последнее записанное логическое состояние
+    bool _haveLoggedRpm[HardwareLimits::INPUTS];     ///< оценка оборотов уже была в журнале
+    float _loggedRpm[HardwareLimits::INPUTS];        ///< последние записанные обороты
 
     void resetRpm(uint8_t index);
+    void noteDigital_(uint8_t index, bool active);
+    void noteRpm_(uint8_t index, float rpm);
 
     // Обработчики прерываний (по одному на вход)
     static void IRAM_ATTR handleInterrupt0();

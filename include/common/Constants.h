@@ -23,6 +23,8 @@ namespace DS18B20 {
     /// Важно: держим константу локально, чтобы `Constants.h` не тянул тяжёлые заголовки Dallas/OneWire
     /// по всему проекту (разрастание компиляции и лишняя связанность).
     constexpr float DISCONNECTED = -127.0f; ///< значение “датчик отсутствует”
+    /// Журнал температуры: первая оценка и каждое отклонение не меньше этого (°C).
+    constexpr float LOG_BAND_C = 0.5f;
     constexpr uint8_t RESOLUTION = 9;                     ///< 9..12 бит; 9 = быстрее и стабильнее по времени
     constexpr uint16_t CONVERSION_TIMEOUT_MS = 1000;      ///< таймаут конвертации (мс)
     constexpr uint32_t READ_INTERVAL_MS = 5000;           ///< период опроса (мс)
@@ -262,9 +264,14 @@ namespace Adc {
     /// АЦП ESP32-C3: напряжение = raw × adc_voltage_coeff (калибровка в поле).
     constexpr uint8_t RESOLUTION_BITS = 12;
     constexpr uint16_t MAX_RAW = (1u << RESOLUTION_BITS) - 1u; ///< 12-битный АЦП (0..4095)
-    constexpr uint8_t SAMPLES = 10;      ///< окно усреднения
+    /// Пачка чтений за один тик: гасит остаточный ШИМ/шум до попадания в окно.
+    constexpr uint8_t OVERSAMPLES = 16;
+    /// Окно медианы (нечётное — один центральный отсчёт).
+    constexpr uint8_t SAMPLES = 11;
     /// Грубая оценка стартера (~12 В при raw≈3000); калибровка по измеренному напряжению при сохранении.
     constexpr float DEFAULT_COEFF = 0.004f;
+    /// Журнал напряжения: первая оценка и каждое отклонение не меньше этого (В).
+    constexpr float LOG_BAND_V = 0.1f;
 }
 
 /// Эскалация отказов DS18B20 / АЦП (SensorsController).
@@ -298,7 +305,8 @@ namespace StarterLimits {
     constexpr float STOPPED_VOLTAGE_DEFAULT = 12.8f;
 
     /// Дополнительное ожидание полного окна АЦП после `wait_after_start_sec`.
-    constexpr uint32_t VOLTAGE_WINDOW_EXTRA_MS = 2000UL;
+    /// Полное окно АЦП: Adc::SAMPLES × Timing::VOLTAGE_READ_INTERVAL_MS (+ небольшой запас).
+    constexpr uint32_t VOLTAGE_WINDOW_EXTRA_MS = 2200UL;
     /// Минимальная блокировка стартера после срабатывания защиты.
     constexpr uint32_t LOCKOUT_MIN_MS = 5000UL;
     /// Страховка esp_timer срабатывает на столько позже `starter_max_time_sec`.
@@ -319,6 +327,8 @@ namespace Rpm {
     constexpr uint8_t MAX_SUSPECT_STREAK = 3;
     /// Как часто DigitalInputs::update() пересчитывает RPM.
     constexpr uint32_t UPDATE_MS = 10;
+    /// Журнал оборотов: первая оценка и каждое отклонение не меньше этого.
+    constexpr float LOG_BAND = 50.f;
 }
 
 /// Проверка вменяемости мягких часов (отклонять UTC раньше ~2023-11).

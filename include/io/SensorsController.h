@@ -35,7 +35,7 @@ struct TemperatureSensorData {
  *   когда конверсия завершена (`isConversionComplete`) или по таймауту.
  *
  * Напряжение:
- * - чтение АЦП с фильтрацией (скользящее среднее) для подавления шумов.
+ * - чтение АЦП: пачка oversample + медиана окна (остаточный ШИМ/шум).
  * - `voltage = raw × vehicle.adc_voltage_coeff` (калибровка по измеренному напряжению).
  */
 class SensorsController {
@@ -120,12 +120,19 @@ private:
     bool _pollIdle{false};                           ///< растянутые интервалы опроса
     uint8_t _owTimeoutStreak{0};                     ///< подряд таймауты конверсии DS18B20
     uint8_t _adcSatStreak{0};                        ///< подряд насыщенные или нулевые выборки АЦП
+    bool _tempHave[HardwareLimits::SENSORS]{};      ///< температура датчика уже была в журнале
+    float _loggedTemp[HardwareLimits::SENSORS]{};   ///< последняя записанная температура
+    bool _voltageHave{false};                       ///< напряжение уже было в журнале
+    float _loggedVoltage{0.f};                      ///< последнее записанное напряжение
 
     // Обновление температуры (опрос датчиков)
     void updateTemperatures();
 
-    // Поиск датчиков на шине
+    // ROM из конфига (предпочтительнее SEARCH) или поиск на шине
+    uint8_t seedConfiguredRoms();
     uint8_t discoverSensors();
+    uint8_t bindSensors();
+    void forgetSensors_();
 
     // Напряжение
     struct VoltageData {
@@ -134,13 +141,14 @@ private:
         bool valid;             ///< флаг валидности
     } _voltageData;
 
-    uint16_t _voltageBuffer[Adc::SAMPLES];  ///< буфер для скользящего среднего
+    uint16_t _voltageBuffer[Adc::SAMPLES];  ///< буфер для медианы окна
     uint8_t _voltageIndex;                   ///< текущий индекс в буфере
     uint32_t _lastVoltageRead;                ///< время последнего чтения АЦП (мс)
     uint8_t _adcFillCount{0};                 ///< выборки, набранные к полному окну фильтра
-    uint16_t _lastAdcAvg{0};                  ///< последнее усреднённое сырое значение для калибровки
+    uint16_t _lastAdcAvg{0};                  ///< последнее отфильтрованное сырое для калибровки
+    uint8_t _owInvalidStreak{0};              ///< подряд циклы, где ни один DS18B20 не ответил
 
-    // Обновление напряжения (чтение АЦП, скользящее среднее)
+    // Обновление напряжения (чтение АЦП, медиана окна)
     void updateVoltage();
 
     // Расчёт напряжения из сырого значения АЦП
@@ -149,4 +157,8 @@ private:
     void noteOneWireBusError_();
     void noteAdcReadFail_();
     void clearSensorErrorIf_(ErrorCode code);
+    void noteTemperature_(uint8_t index, float celsius);
+    void noteTemperatureLost_(uint8_t index);
+    void noteVoltage_(float volts);
+    void noteVoltageLost_();
 };

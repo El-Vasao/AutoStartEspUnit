@@ -1,5 +1,7 @@
+#include <cstring>
 #include <unity.h>
 
+#include "LogSink.h"
 #include "common/Constants.h"
 #include "common/Pins.h"
 #include "config/Config.h"
@@ -85,6 +87,46 @@ static void test_disabled_input_stays_inactive() {
     TEST_ASSERT_FALSE(inputs.getState(0));
 }
 
+static int countLog(const char* needle) {
+    int n = 0;
+    for (size_t i = 0; i < test_log::count(); ++i) {
+        if (strstr(test_log::line(i), needle)) n++;
+    }
+    return n;
+}
+
+static void test_digital_state_is_logged_after_debounce() {
+    DigitalInputs inputs;
+    inputs.begin();
+    test_log::clear();
+
+    digitalWrite(pin0(), HIGH);
+    inputs.update();
+    test_clock::advance(Timing::DEBOUNCE_DELAY_MS);
+    inputs.update();
+
+    TEST_ASSERT_TRUE(test_log::contains("input 1 active"));
+    test_log::clear();
+    inputs.update();
+    TEST_ASSERT_FALSE(test_log::contains("input 1 active"));
+}
+
+static void test_pulse_rpm_logs_on_50_rpm_steps() {
+    config.testBase().inputs[0].type = InputType::PULSE_COUNTER;
+    config.testBase().inputs[0].pulse.threshold_rpm = 800;
+    DigitalInputs inputs;
+    inputs.begin();
+    test_log::clear();
+
+    test_clock::advance(Rpm::UPDATE_MS);
+    inputs.update();
+    TEST_ASSERT_EQUAL_INT(1, countLog("input 1 rpm 0"));
+
+    test_clock::advance(Rpm::UPDATE_MS);
+    inputs.update();
+    TEST_ASSERT_EQUAL_INT(1, countLog("input 1 rpm 0"));
+}
+
 static void test_runtime_disable_forces_inactive_while_pin_is_active() {
     DigitalInputs inputs;
     inputs.begin();
@@ -108,5 +150,7 @@ int main(int, char**) {
     RUN_TEST(test_debounce_survives_millis_wrap);
     RUN_TEST(test_disabled_input_stays_inactive);
     RUN_TEST(test_runtime_disable_forces_inactive_while_pin_is_active);
+    RUN_TEST(test_digital_state_is_logged_after_debounce);
+    RUN_TEST(test_pulse_rpm_logs_on_50_rpm_steps);
     return UNITY_END();
 }

@@ -126,6 +126,17 @@ void test_confirm_resets_on_drop() {
     TEST_ASSERT_TRUE(c.update(220, 900.0f, 800));
 }
 
+void test_value_log_due_uses_band() {
+    TEST_ASSERT_TRUE(valueLogDue(0.f, 0.f, Rpm::LOG_BAND, false));
+    TEST_ASSERT_FALSE(valueLogDue(0.f, 49.f, Rpm::LOG_BAND, true));
+    TEST_ASSERT_TRUE(valueLogDue(0.f, 50.f, Rpm::LOG_BAND, true));
+    TEST_ASSERT_TRUE(valueLogDue(200.f, 140.f, Rpm::LOG_BAND, true));
+    TEST_ASSERT_FALSE(valueLogDue(20.0f, 20.4f, DS18B20::LOG_BAND_C, true));
+    TEST_ASSERT_TRUE(valueLogDue(20.0f, 20.5f, DS18B20::LOG_BAND_C, true));
+    TEST_ASSERT_FALSE(valueLogDue(12.60f, 12.69f, Adc::LOG_BAND_V, true));
+    TEST_ASSERT_TRUE(valueLogDue(12.60f, 12.70f, Adc::LOG_BAND_V, true));
+}
+
 void test_confirm_zero_threshold_never() {
     RpmConfirm c;
     for (uint32_t t = 0; t < 1000; t += 10) TEST_ASSERT_FALSE(c.update(t, 5000.0f, 0));
@@ -148,5 +159,6 @@ int main(int, char**) {
     RUN_TEST(test_confirm_requires_hold);
     RUN_TEST(test_confirm_resets_on_drop);
     RUN_TEST(test_confirm_zero_threshold_never);
+    RUN_TEST(test_value_log_due_uses_band);
     return UNITY_END();
 }

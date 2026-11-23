@@ -7,6 +7,7 @@
 // Должен проходить `data/validation/settings.schema.json` (проверяет test/js/contract.test.mjs),
 // иначе устройство уйдёт в EMERGENCY_AP.
 // Публичные id каналов — шёлк K/IN/T с единицы; подписи входов и реле заданы.
+// ROM T1–T3 — фиксированные DS18B20 эмулятора стенда (CarEmu), не случайные адреса шины.
 static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
   "setup_required": true,
   "wifi": {
@@ -48,9 +49,9 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "engine_input_id": "IN2"
   },
   "sensors": [
-    { "id": "T1", "rom": "", "coeff": 0, "name": "Cabin" },
-    { "id": "T2", "rom": "", "coeff": 0, "name": "Engine" },
-    { "id": "T3", "rom": "", "coeff": 0, "name": "Outside" }
+    { "id": "T1", "rom": "28:CE:01:00:00:00:00:5F", "coeff": 0, "name": "Cabin" },
+    { "id": "T2", "rom": "28:CE:02:00:00:00:00:11", "coeff": 0, "name": "Engine" },
+    { "id": "T3", "rom": "28:CE:03:00:00:00:00:DC", "coeff": 0, "name": "Outside" }
   ],
   "inputs": [
     {

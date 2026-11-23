@@ -79,3 +79,12 @@ private:
     bool confirmed_{false};
     uint32_t aboveSinceMs_{0};
 };
+
+/// Первая оценка и каждое следующее отклонение не меньше `band`. Иначе одна и та же величина писалась бы каждый опрос.
+/// Малый допуск: 12.70−12.60 во float чуть меньше 0.1, и ровный шаг полосы иначе теряется.
+inline bool valueLogDue(float last, float now, float band, bool haveLast) {
+    if (!haveLast) return true;
+    float delta = now - last;
+    if (delta < 0.f) delta = -delta;
+    return delta + 0.0001f >= band;
+}

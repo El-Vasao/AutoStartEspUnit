@@ -37,9 +37,27 @@ DigitalInputs::DigitalInputs() {
         inputs[i].stable = true;
         prevStates[i] = HIGH;
         _runtimeEnabled[i] = true; // по умолчанию включено, позже синхронизируем с конфигом
+        _haveLoggedActive[i] = false;
+        _loggedActive[i] = false;
+        _haveLoggedRpm[i] = false;
+        _loggedRpm[i] = 0.f;
     }
     memset(_frequencies, 0, sizeof(_frequencies));
     memset(_lastCalcTime, 0, sizeof(_lastCalcTime));
+}
+
+void DigitalInputs::noteDigital_(uint8_t index, bool active) {
+    if (_haveLoggedActive[index] && _loggedActive[index] == active) return;
+    _haveLoggedActive[index] = true;
+    _loggedActive[index] = active;
+    logger.log(LogModule::DigitalInputs, "input %u %s\n", (unsigned)(index + 1), active ? "active" : "inactive");
+}
+
+void DigitalInputs::noteRpm_(uint8_t index, float rpm) {
+    if (!valueLogDue(_loggedRpm[index], rpm, Rpm::LOG_BAND, _haveLoggedRpm[index])) return;
+    _haveLoggedRpm[index] = true;
+    _loggedRpm[index] = rpm;
+    logger.log(LogModule::DigitalInputs, "input %u rpm %.0f\n", (unsigned)(index + 1), rpm);
 }
 
 int8_t DigitalInputs::findIndexById(uint16_t inputId) const {
@@ -85,6 +103,8 @@ void DigitalInputs::applyConfig() {
             prevStates[i] = raw;
             _frequencies[i] = 0;
             _rpmConfirm[i].reset();
+            _haveLoggedRpm[i] = false;
+            if (_runtimeEnabled[i]) noteDigital_(i, raw == cfg.active_state);
         }
     }
     logger.log(LogModule::DigitalInputs, "config applied\n");
@@ -123,6 +143,7 @@ void DigitalInputs::resetRpm(uint8_t index) {
     _rpmConfirm[index].reset();
     _frequencies[index] = 0;
     _lastCalcTime[index] = millis();
+    _haveLoggedRpm[index] = false;
 }
 
 void DigitalInputs::update() {
@@ -133,6 +154,8 @@ void DigitalInputs::update() {
             inputs[i].currentState = !cfg.active_state;
             inputs[i].lastRawState = inputs[i].currentState;
             inputs[i].stable = true;
+            if (cfg.type == InputType::PULSE_COUNTER) _haveLoggedRpm[i] = false;
+            else noteDigital_(i, false);
             continue;
         }
 
@@ -147,6 +170,7 @@ void DigitalInputs::update() {
                 _frequencies[i] = snap.rpm(nowUs);
                 _rpmConfirm[i].update(now, _frequencies[i], cfg.pulse.threshold_rpm);
                 _lastCalcTime[i] = now;
+                noteRpm_(i, _frequencies[i]);
             }
         } else {
             prevStates[i] = inputs[i].currentState;
@@ -160,6 +184,7 @@ void DigitalInputs::update() {
                 inputs[i].currentState = raw;
                 inputs[i].stable = true;
             }
+            if (inputs[i].stable) noteDigital_(i, inputs[i].currentState == cfg.active_state);
         }
     }
 }
@@ -230,6 +255,7 @@ void DigitalInputs::setRuntimeEnabled(uint8_t index, bool en) {
         inputs[index].currentState = !cfg.active_state;
         inputs[index].lastRawState = inputs[index].currentState;
         inputs[index].stable = true;
+        noteDigital_(index, false);
     }
     logger.log(LogModule::DigitalInputs, "input %d runtime %s\n", index+1, en ? "on" : "off");
 }

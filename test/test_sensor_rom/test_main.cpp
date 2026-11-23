@@ -40,11 +40,28 @@ static void test_resolve_skips_unmapped_and_zero_ids() {
     TEST_ASSERT_EQUAL_UINT8(0, resolveSensorConfigId(nullptr, cfg));
 }
 
+static void test_parse_rom_ok() {
+    uint8_t out[8]{};
+    TEST_ASSERT_TRUE(parseSensorRomString("28:FF:4A:01:02:03:04:B7", out));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(kRom, out, 8);
+}
+
+static void test_parse_rom_rejects_junk() {
+    uint8_t out[8]{};
+    TEST_ASSERT_FALSE(parseSensorRomString(nullptr, out));
+    TEST_ASSERT_FALSE(parseSensorRomString("", out));
+    TEST_ASSERT_FALSE(parseSensorRomString("28:FF:4A", out));
+    TEST_ASSERT_FALSE(parseSensorRomString("28:FF:4A:01:02:03:04:B7:00", out));
+    TEST_ASSERT_FALSE(parseSensorRomString("28:FF:4A:01:02:03:04:B7 ", out));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_format_rom);
     RUN_TEST(test_format_rom_null_and_small_buffer);
     RUN_TEST(test_resolve_matches_configured_rom);
     RUN_TEST(test_resolve_skips_unmapped_and_zero_ids);
+    RUN_TEST(test_parse_rom_ok);
+    RUN_TEST(test_parse_rom_rejects_junk);
     return UNITY_END();
 }

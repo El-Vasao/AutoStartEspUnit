@@ -18,6 +18,7 @@
 #include "core/ErrorManager.h"
 #include "common/Logger.h"
 #include "common/Constants.h"
+#include "io/RpmEstimator.h"
 #include "common/ErrorCodes.h"
 
 #include <OneWire.h>
@@ -35,6 +36,23 @@ struct SensorsOwBackend {
 SensorsOwBackend& owBackend() {
     static SensorsOwBackend ow;
     return ow;
+}
+
+/// Медиана первых n элементов (n ≥ 1). Копия на стеке — Adc::SAMPLES мало.
+uint16_t medianU16_(const uint16_t* src, uint8_t n) {
+    uint16_t tmp[Adc::SAMPLES];
+    if (n == 0 || n > Adc::SAMPLES) return 0;
+    memcpy(tmp, src, sizeof(uint16_t) * n);
+    for (uint8_t i = 1; i < n; i++) {
+        const uint16_t key = tmp[i];
+        int8_t j = static_cast<int8_t>(i) - 1;
+        while (j >= 0 && tmp[j] > key) {
+            tmp[j + 1] = tmp[j];
+            j--;
+        }
+        tmp[j + 1] = key;
+    }
+    return tmp[n / 2];
 }
 
 } // namespace
@@ -71,9 +89,75 @@ void SensorsController::clearSensorErrorIf_(ErrorCode code) {
     core.getErrorManager().clear(code);
 }
 
+void SensorsController::noteTemperature_(uint8_t index, float celsius) {
+    if (!valueLogDue(_loggedTemp[index], celsius, DS18B20::LOG_BAND_C, _tempHave[index])) return;
+    _tempHave[index] = true;
+    _loggedTemp[index] = celsius;
+    logger.log(LogModule::SensorsController, "sensor %u %.1f C\n", (unsigned)index, celsius);
+}
+
+void SensorsController::noteTemperatureLost_(uint8_t index) {
+    if (!_tempHave[index]) return;
+    _tempHave[index] = false;
+    logger.log(LogModule::SensorsController, "sensor %u invalid\n", (unsigned)index);
+}
+
+void SensorsController::noteVoltage_(float volts) {
+    if (!valueLogDue(_loggedVoltage, volts, Adc::LOG_BAND_V, _voltageHave)) return;
+    _voltageHave = true;
+    _loggedVoltage = volts;
+    logger.log(LogModule::SensorsController, "voltage %.2f V\n", volts);
+}
+
+void SensorsController::noteVoltageLost_() {
+    if (!_voltageHave) return;
+    _voltageHave = false;
+    logger.log(LogModule::SensorsController, "voltage invalid\n");
+}
+
+void SensorsController::forgetSensors_() {
+    _sensorCount = 0;
+    _conversionInProgress = false;
+    _owInvalidStreak = 0;
+    _owTimeoutStreak = 0;
+    for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
+        _sensorData[i].valid = false;
+        _sensorData[i].temperature = DS18B20::DISCONNECTED;
+        _tempHave[i] = false;
+        memset(_foundAddresses[i], 0, 8);
+        memset(_sensorData[i].address, 0, 8);
+    }
+}
+
+uint8_t SensorsController::seedConfiguredRoms() {
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
+        const char* rom = config.getBase().sensors[i].rom;
+        uint8_t addr[8];
+        if (!parseSensorRomString(rom, addr)) continue;
+        if (OneWire::crc8(addr, 7) != addr[7]) {
+            logger.log(LogModule::SensorsController, "config ROM CRC bad slot %u\n", (unsigned)i);
+            continue;
+        }
+        memcpy(_foundAddresses[count], addr, 8);
+        memcpy(_sensorData[count].address, addr, 8);
+        count++;
+    }
+    return count;
+}
+
+uint8_t SensorsController::bindSensors() {
+    // Живые DS18B20 — только SEARCH. ROM в конфиге: имена/коэфф и запасной MATCH,
+    // если поиск пуст (типичный сбой OneWireHub на стенде).
+    uint8_t count = discoverSensors();
+    if (count == 0) count = seedConfiguredRoms();
+    return count;
+}
+
 void SensorsController::begin() {
     logger.log(LogModule::SensorsController, "start\n");
-    pinMode(Pin::ONEWIRE, INPUT);
+    // Подтяжка на стороне мастера: у эмулятора свой pull-up слабый (GPIO0).
+    pinMode(Pin::ONEWIRE, INPUT_PULLUP);
 
     // Делитель АКБ даёт на АЦП ~0–1 В; ослабление 0 дБ ≈ полная шкала 0–1.1 В на ESP32-C3.
     analogSetAttenuation(ADC_0db);
@@ -81,9 +165,9 @@ void SensorsController::begin() {
 
     auto& ow = owBackend();
     ow.dallas.begin();
-    _sensorCount = discoverSensors();
+    _sensorCount = bindSensors();
 
-    logger.log(LogModule::SensorsController, "DS18B20 sensors found: %u\n", _sensorCount);
+    logger.log(LogModule::SensorsController, "DS18B20 sensors bound: %u\n", _sensorCount);
     printAllAddresses();
 
     for (uint8_t i = 0; i < _sensorCount; i++) {
@@ -94,9 +178,6 @@ void SensorsController::begin() {
 
     logger.log(LogModule::SensorsController, "VoltageMonitor ok\n");
     updateVoltage();
-    if (_voltageData.valid) {
-        logger.log(LogModule::SensorsController, "initial voltage: %.2f V\n", _voltageData.voltage);
-    }
 
     // Выводим конфиг датчиков (ROM+имя) из конфига
     for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
@@ -122,13 +203,14 @@ void SensorsController::updateTemperatures() {
     const uint32_t tempInterval =
         _pollIdle ? Timing::TEMPERATURE_READ_INTERVAL_IDLE_MS : Timing::TEMPERATURE_READ_INTERVAL_MS;
 
-    // Поиск только в begin() пропускает датчик, который появился позже (эмулятор на шине).
+    // Повторная привязка, если датчиков ещё нет (эмулятор подняли позже) или шина «умерла».
     if (_sensorCount == 0) {
         if (_lastTemperatureRequest != 0 && (now - _lastTemperatureRequest < tempInterval)) return;
         _lastTemperatureRequest = now;
-        _sensorCount = discoverSensors();
+        _sensorCount = bindSensors();
         if (_sensorCount == 0) return;
-        logger.log(LogModule::SensorsController, "DS18B20 sensors found: %u\n", _sensorCount);
+        for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) _tempHave[i] = false;
+        logger.log(LogModule::SensorsController, "DS18B20 sensors bound: %u\n", _sensorCount);
         printAllAddresses();
         auto& ow = owBackend();
         for (uint8_t i = 0; i < _sensorCount; i++) {
@@ -146,9 +228,11 @@ void SensorsController::updateTemperatures() {
     }
 
     if (_conversionInProgress && dallas.isConversionComplete()) {
+        uint8_t ok = 0;
         for (uint8_t i = 0; i < _sensorCount; i++) {
             float temp = dallas.getTempC(_foundAddresses[i]);
             if (temp != DS18B20::DISCONNECTED) {
+                ok++;
                 // Калибровка датчика по совпадению ROM (не по индексу слота).
                 float coeff = 0.0f;
                 char romStr[TextBytes::Sensors::ADDR_STRING];
@@ -163,16 +247,29 @@ void SensorsController::updateTemperatures() {
                 }
                 _sensorData[i].temperature = temp + coeff;
                 _sensorData[i].valid = true;
+                noteTemperature_(i, _sensorData[i].temperature);
             } else {
                 _sensorData[i].valid = false;
+                noteTemperatureLost_(i);
             }
             _sensorData[i].lastReadTime = now;
             // Короткая уступка между датчиками, чтобы SoftAP/lwIP оставались отзывчивыми.
             yield();
         }
         _conversionInProgress = false;
-        _owTimeoutStreak = 0;
-        clearSensorErrorIf_(ErrorCode::ONEWIRE_BUS_ERR);
+        if (ok > 0) {
+            _owTimeoutStreak = 0;
+            _owInvalidStreak = 0;
+            clearSensorErrorIf_(ErrorCode::ONEWIRE_BUS_ERR);
+        } else {
+            if (_owInvalidStreak < 255) _owInvalidStreak++;
+            // Несколько пустых циклов подряд → сброс и повторная привязка (часто после сбоя SEARCH).
+            if (_owInvalidStreak >= Sensors::OW_TIMEOUT_FAIL_STREAK) {
+                logger.log(LogModule::SensorsController, "DS18B20 all invalid, rebind\n");
+                core.getErrorManager().set(ErrorCode::ONEWIRE_BUS_ERR);
+                forgetSensors_();
+            }
+        }
     }
 
     if (_conversionInProgress && (now - _conversionStartTime > DS18B20::CONVERSION_TIMEOUT_MS)) {
@@ -180,9 +277,14 @@ void SensorsController::updateTemperatures() {
         _conversionInProgress = false;
         for (uint8_t i = 0; i < _sensorCount; i++) {
             _sensorData[i].valid = false;
+            noteTemperatureLost_(i);
         }
         if (_sensorCount > 0) {
             noteOneWireBusError_();
+            if (_owTimeoutStreak >= Sensors::OW_TIMEOUT_FAIL_STREAK) {
+                logger.log(LogModule::SensorsController, "DS18B20 bus timeout, rebind\n");
+                forgetSensors_();
+            }
         }
     }
 }
@@ -255,28 +357,39 @@ void SensorsController::updateVoltage() {
     if (now - _lastVoltageRead < interval) return;
     _lastVoltageRead = now;
 
-    uint16_t raw = analogRead(Pin::VBAT);
+    // Пачка чтений за тик: остаточная пульсация ШИМ эмулятора / наводка на IO0.
+    uint32_t burstSum = 0;
+    for (uint8_t i = 0; i < Adc::OVERSAMPLES; i++) {
+        burstSum += analogRead(Pin::VBAT);
+    }
+    const uint16_t raw = static_cast<uint16_t>(burstSum / Adc::OVERSAMPLES);
 
     _voltageBuffer[_voltageIndex] = raw;
     _voltageIndex = (_voltageIndex + 1) % Adc::SAMPLES;
     if (_adcFillCount < Adc::SAMPLES) _adcFillCount++;
 
-    // Усреднять только заполненные выборки — деление редкого буфера на SAMPLES
-    // занижает сырое и раздувает калибровку (coeff = V / raw).
-    uint32_t sum = 0;
+    // Медиана заполненной части окна — выбросы не тянут среднее.
     const uint8_t n = _adcFillCount;
+    uint16_t window[Adc::SAMPLES];
     if (n >= Adc::SAMPLES) {
-        for (uint8_t i = 0; i < Adc::SAMPLES; i++) sum += _voltageBuffer[i];
+        memcpy(window, _voltageBuffer, sizeof(_voltageBuffer));
     } else {
-        for (uint8_t i = 0; i < n; i++) sum += _voltageBuffer[i];
+        // Ещё не полный круг: первые n записей с индекса 0…n-1 после сброса,
+        // либо компактно собрать последние n из кольца.
+        for (uint8_t i = 0; i < n; i++) {
+            const uint8_t idx = static_cast<uint8_t>((_voltageIndex + Adc::SAMPLES - n + i) % Adc::SAMPLES);
+            window[i] = _voltageBuffer[idx];
+        }
     }
-    const uint16_t avg = (n > 0) ? static_cast<uint16_t>(sum / n) : 0;
+    const uint16_t filtered = (n > 0) ? medianU16_(window, n) : 0;
 
-    _lastAdcAvg = avg;
-    _voltageData.voltage = calculateVoltage(avg);
-    const bool rail = (avg == 0) || (avg >= (uint16_t)Adc::MAX_RAW);
+    _lastAdcAvg = filtered;
+    _voltageData.voltage = calculateVoltage(filtered);
+    const bool rail = (filtered == 0) || (filtered >= (uint16_t)Adc::MAX_RAW);
     _voltageData.valid = (n > 0) && !rail;
     _voltageData.lastReadTime = now;
+    if (_voltageData.valid) noteVoltage_(_voltageData.voltage);
+    else if (n > 0) noteVoltageLost_();
 
     // Устойчивый упор/обрыв АЦП после полного окна фильтра — только липкая диагностика.
     if (_adcFillCount >= Adc::SAMPLES) {
