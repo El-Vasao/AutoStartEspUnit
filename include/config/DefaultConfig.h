@@ -27,9 +27,9 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "broker": "m5.wqtt.ru",
     "port": 10162,
     "client_id": "",
-    "user": "test4611",
-    "pass": "test4611",
-    "topic_prefix": "",
+    "user": "testUser",
+    "pass": "testPass",
+    "topic_prefix": "car/emulator",
     "publish_interval_sec": 600
   },
   "vehicle": {

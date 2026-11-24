@@ -4,7 +4,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "common/Pins.h"
+
 #if !defined(UNIT_TEST)
+#include "common/Version.h"
+#include "driver/gpio.h"
+#include "driver/uart.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #endif
@@ -22,6 +27,7 @@ struct RingLock {};
 #else
 TaskHandle_t s_loopTask = nullptr;
 portMUX_TYPE s_ringMux = portMUX_INITIALIZER_UNLOCKED;
+bool s_logUartReady = false;
 
 bool isrContext() { return xPortInIsrContext(); }
 // До begin() всё выполняется в setup() в задаче цикла.
@@ -37,11 +43,61 @@ char s_ring[Logging::DEFERRED_SLOTS][Logging::MAX_MESSAGE_LENGTH];
 size_t s_ringHead = 0;   // следующий слот для чтения
 size_t s_ringCount = 0;
 
+void uartPrint(const char* line) {
+#if !defined(UNIT_TEST)
+    if (!s_logUartReady || !line) return;
+    const size_t n = strlen(line);
+    if (n == 0) return;
+    (void)uart_write_bytes(UART_NUM_1, line, n);
+#else
+    (void)line;
+#endif
+}
+
+#if !defined(UNIT_TEST)
+/// Идемпотентно: UART1 TX-only на Pin::LOG_TX. Вызывается из initVariant() до setup().
+bool ensureLogUart_() {
+    if (s_logUartReady) return true;
+
+    // Не через Serial1: Arduino begin(rx=-1, tx=…) на C3 ненадёжен.
+    Serial1.end();
+    gpio_reset_pin(static_cast<gpio_num_t>(Pin::LOG_TX));
+
+    uart_config_t cfg{};
+    cfg.baud_rate = static_cast<int>(Logging::UART_BAUD);
+    cfg.data_bits = UART_DATA_8_BITS;
+    cfg.parity = UART_PARITY_DISABLE;
+    cfg.stop_bits = UART_STOP_BITS_1;
+    cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+    cfg.source_clk = UART_SCLK_XTAL;
+    cfg.rx_flow_ctrl_thresh = 0;
+
+    esp_err_t err = ESP_OK;
+    if (uart_is_driver_installed(UART_NUM_1)) {
+        err = uart_driver_delete(UART_NUM_1);
+    }
+    // rx_buffer_size=0 → RX off; tx ring 256.
+    if (err == ESP_OK) {
+        err = uart_driver_install(UART_NUM_1, 0, 256, 0, nullptr, 0);
+    }
+    if (err == ESP_OK) {
+        err = uart_param_config(UART_NUM_1, &cfg);
+    }
+    if (err == ESP_OK) {
+        err = uart_set_pin(UART_NUM_1, Pin::LOG_TX, UART_PIN_NO_CHANGE,
+                           UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    }
+    s_logUartReady = (err == ESP_OK);
+    if (s_logUartReady) {
+        (void)uart_wait_tx_done(UART_NUM_1, pdMS_TO_TICKS(20));
+    }
+    return s_logUartReady;
+}
+#endif
+
 void emit(const char* line) {
     sseBroadcastLog(line);
-#if defined(SERIAL_DEBUG) && !defined(UNIT_TEST)
-    Serial.print(line);
-#endif
+    uartPrint(line);
 }
 
 } // namespace
@@ -70,8 +126,8 @@ size_t logFormatLine(char* out, size_t cap, uint32_t ms, LogModule module, const
 }
 
 void Logger::begin() {
-#if defined(SERIAL_DEBUG) && !defined(UNIT_TEST)
-    Serial.begin(Gsm::UART_BAUD);
+#if !defined(UNIT_TEST)
+    (void)ensureLogUart_();
 #endif
     rememberLoopTask();
 }
@@ -132,17 +188,40 @@ void Logger::flushDeferred() {
 }
 
 void Logger::logSerialOnly(LogModule module, const char* format, ...) {
-#if defined(SERIAL_DEBUG) && !defined(UNIT_TEST)
+#if !defined(UNIT_TEST)
     char buffer[Logging::MAX_MESSAGE_LENGTH];
     va_list args;
     va_start(args, format);
     logFormatLine(buffer, sizeof(buffer), (uint32_t)millis(), module, format, args);
     va_end(args);
-    Serial.print(buffer);
+    uartPrint(buffer);
 #else
     (void)module;
     (void)format;
 #endif
 }
 
+void Logger::flushUart() {
+#if !defined(UNIT_TEST)
+    if (s_logUartReady) {
+        (void)uart_wait_tx_done(UART_NUM_1, pdMS_TO_TICKS(200));
+    }
+#endif
+}
+
 Logger logger;
+
+#if !defined(UNIT_TEST)
+/// Раньше setup()/loopTask: Arduino вызывает из initArduino() до создания loopTask.
+extern "C" void initVariant() {
+    if (!ensureLogUart_()) return;
+    // Прямой TX до rememberLoopTask — чтобы баннер не ждал setup().
+    char banner[96];
+    snprintf(banner, sizeof(banner),
+             "\n[log] UART1 TX GPIO%u %lu 8N1 fw %s\n",
+             (unsigned)Pin::LOG_TX, (unsigned long)Logging::UART_BAUD, FIRMWARE_VERSION_STR);
+    uartPrint(banner);
+    (void)uart_wait_tx_done(UART_NUM_1, pdMS_TO_TICKS(50));
+    logger.log(LogModule::Logger, "early init (before setup)\n");
+}
+#endif

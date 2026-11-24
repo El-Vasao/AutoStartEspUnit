@@ -37,7 +37,6 @@ PATHS = {
 }
 PIO_ENVS = {
     "release": "esp32c3",
-    "debug": "esp32c3"
 }
 
 # ====================================================
@@ -573,8 +572,7 @@ USAGE:
   python build.py [COMMAND] [OPTIONS]
 
 COMMANDS:
-  release             Build firmware (SSE/web logs only; no SERIAL_DEBUG)
-  debug               Build with SERIAL_DEBUG (UART shared with GSM — legacy)
+  release             Build firmware (SSE + UART1 log TX on IO2)
   fs                  Build 3-gzip UI tree and upload LittleFS (uploadfs)
 
 OPTIONS:
@@ -590,14 +588,13 @@ OPTIONS:
   -h, --help          This help
 
 Firmware VERSION file (semver):
-  Default after each successful release/debug: +0.0.1
+  Default after each successful release: +0.0.1
   --bump-minor: new feature (config still loads)
   --bump-major: breaking config / protocol / pin map
   patch>99 or minor>99 auto-rolls into the next field
 
 EXAMPLES:
   python build.py release -u
-  python build.py debug -u
   python build.py fs
   python build.py release --no-ota
   python build.py release --bump-minor
@@ -622,18 +619,14 @@ class VersionGen:
         self._bump_after = bump != "none"
 
     def save(self, build_type="release"):
-        if build_type not in ("release", "debug"):
+        if build_type != "release":
             build_type = "release"
         os.makedirs(PATHS["include"], exist_ok=True)
         os.makedirs(os.path.dirname(PATHS["version_h"]), exist_ok=True)
 
-        serial_macro = ""
-        if build_type == "debug":
-            serial_macro = "#define SERIAL_DEBUG 1\n"
-
         content = f'''// Сгенерировано автоматически
 #pragma once
-{serial_macro}#define FIRMWARE_VERSION_NUM {self.version_num}UL
+#define FIRMWARE_VERSION_NUM {self.version_num}UL
 #define FIRMWARE_VERSION_STR "{self.version}"
 #define FIRMWARE_BUILD_TYPE "{build_type}"
 '''
@@ -670,6 +663,7 @@ def check_pins():
     pins = {
         "GSM_TX": 21,
         "GSM_RX": 20,
+        "LOG_TX": 2,
         "ONEWIRE": 9,
         "BUTTON": 8,
         "VBAT_ADC": 0,
@@ -677,13 +671,13 @@ def check_pins():
     for name, pin in pins.items():
         print(f"  {name}: IO{pin}")
     print("  RELAY1..5: IO 3,19,18,10,1")
-    print("  UART0 shared: SIM800 + debug Serial (legacy)")
+    print("  UART0: SIM800 only; UART1 TX logs on LOG_TX")
 
 # ====================================================
 # СБОРКА
 # ====================================================
 def build(upload=False, skip_ota=False, build_type="release", bump="patch"):
-    if build_type not in ("release", "debug"):
+    if build_type != "release":
         build_type = "release"
     print(f"\n=== BUILD {build_type.upper()} ===")
 
@@ -787,7 +781,10 @@ def main():
         upload_filesystem("data", gzip_enabled=True, cleanup_gz=(not keep_gz))
         return
 
-    build_type = "debug" if "debug" in args else "release"
+    if "debug" in args:
+        print_error("build.py debug removed: logs always go to UART1 TX on IO2 (and SSE)")
+
+    build_type = "release"
     upload = "-u" in args or "--upload" in args
     skip_ota = "--no-ota" in args
     if "--no-bump" in args:

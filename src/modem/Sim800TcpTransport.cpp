@@ -6,14 +6,10 @@
 #include "modem/AtParam.h"
 
 namespace {
-#if defined(SERIAL_DEBUG)
-constexpr bool kTcpWantVerbose = true;
-#else
 constexpr bool kTcpWantVerbose = Sim800Tcp::TCP_VERBOSE_LOG;
-#endif
 } // namespace
 
-// Строки хода TCP пишутся всегда; болтовня +IPD/CIPSTART — только при SERIAL_DEBUG или Sim800Tcp::TCP_VERBOSE_LOG.
+// Строки хода TCP пишутся всегда; болтовня +IPD/CIPSTART — только при Sim800Tcp::TCP_VERBOSE_LOG.
 
 void Sim800TcpTransport::clearIpConfigFlags_() {
     _ipConfigDone = false;

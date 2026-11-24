@@ -5,7 +5,6 @@
 #include <stdarg.h>
 #include "common/Constants.h"
 #include "common/LogModule.h"
-#include "common/Version.h"
 
 /**
  * @brief Журнал прошивки.
@@ -16,30 +15,34 @@
  * Доставка:
  * - SSE-поток `log` (`/events`): только при активной UI-сессии, подписчике и свободной очереди
  *   (решает WebServer::broadcastLog);
- * - UART: только в debug-сборке (`SERIAL_DEBUG` в генерируемом `common/Version.h`), UART0 общий с модемом.
+ * - UART1 TX на `Pin::LOG_TX` (IO2): всегда, для внешнего USB-UART; UART0 модема не трогает.
  * История на устройстве не хранится. Прямой `Serial.print`/`printf` в прикладном коде запрещён
  * (исключение — байтовый обмен с модемом в ModemUart, это не журнал).
  *
  * Задачи: log() вызывается из основного цикла и из других задач FreeRTOS (async_tcp веб-сервера,
  * esp_timer). Строка из другой задачи кладётся в кольцо на `Logging::DEFERRED_SLOTS` мест и уходит
- * в SSE из основного цикла (flushDeferred). При переполнении строка отбрасывается, число потерь
+ * в SSE/UART из основного цикла (flushDeferred). При переполнении строка отбрасывается, число потерь
  * сообщается следующей строкой модуля `Logger`. Из обработчика прерывания вызов игнорируется.
  */
 class Logger {
 public:
     Logger() = default;
 
-    /// Запоминает задачу основного цикла. Вызывать первым в setup().
+    /// Запоминает задачу основного цикла. UART1 TX уже открыт в `initVariant()` (до setup).
+    /// Вызывать первым в setup(); повторно открывать порт не нужно.
     void begin();
 
     /// printf-форматирование; строка оканчивается переводом строки в формате вызывающего.
     void log(LogModule module, const char* format, ...) __attribute__((format(printf, 3, 4)));
 
-    /// Только UART при `SERIAL_DEBUG` (шумные трассировки); в SSE не уходит, в release — пустая операция.
+    /// Только диагностический UART (шумные трассировки); в SSE не уходит.
     void logSerialOnly(LogModule module, const char* format, ...) __attribute__((format(printf, 3, 4)));
 
     /// Отправляет строки, отложенные другими задачами. Вызывать из основного цикла каждый проход.
     void flushDeferred();
+
+    /// Дождаться опустошения TX UART журнала (перед hard-restart).
+    void flushUart();
 
     /// Сколько отложенных строк потеряно из-за переполнения кольца с момента старта.
     uint32_t deferredDropped() const { return _deferredDropped; }

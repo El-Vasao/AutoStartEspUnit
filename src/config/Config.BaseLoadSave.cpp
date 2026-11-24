@@ -45,9 +45,7 @@ bool Config::loadBaseFromFile(const char* path, BaseConfig& target, size_t& outL
         lastLoadError_ = ErrorCode::CONFIG_CRC_FAIL;
         return false;
     }
-#ifdef SERIAL_DEBUG
     logger.log(LogModule::Config, "file read, len %u\n", (unsigned)len);
-#endif
     outLen = len;
 
     if (outFileCrc) {

@@ -410,6 +410,8 @@ namespace Logging {
     constexpr size_t MAX_MESSAGE_LENGTH = 256;   ///< включая '\0'
     /// Строки из задач вне основного цикла (async_tcp, esp_timer), ждущие отправки в SSE.
     constexpr size_t DEFERRED_SLOTS = 4;
+    /// UART1 TX (Pin::LOG_TX) для журнала; отделён от UART0 модема.
+    constexpr uint32_t UART_BAUD = 115200;
 }
 
 // ============================================================
@@ -733,7 +735,7 @@ namespace Gsm {
 // SIM800 TCP transport (URC-first): таймбюджеты/лимиты
 // ============================================================
 namespace Sim800Tcp {
-    /// Дополнительные строки TCP (+IPD, часть URC) в лог; без `SERIAL_DEBUG` по умолчанию выкл.
+    /// Дополнительные строки TCP (+IPD, часть URC) в лог; по умолчанию выкл.
     constexpr bool TCP_VERBOSE_LOG = false;
 
     // Бюджет ожидания TCP CONNECT OK (URC) после CIPSTART.

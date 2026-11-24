@@ -17,7 +17,7 @@
  *   ESP-32-C3 (XH-C3F)  --> SIM800C (SIM800L)
  *   TXD (IO21)          --> RXD
  *   RXD (IO20)          --> TXD
- *   (UART0 общий с отладочным Serial)
+ *   (UART0 только модем; журнал — UART1 TX на IO2)
  *
  *   1-Wire (DS18B20, DS2413) - IO9     // strap C3: LOW = download
  *   Button on PCB / IN3       - IO8     // strap C3; active_state LOW (на GND)
@@ -32,6 +32,7 @@
  *   K5-  IO1
  *
  *   VBAT (делитель 1:15 → ~0–1 В) - IO0 / ADC1_CH0
+ *   Log UART1 TX                  - IO2   // strap C3; только TX к USB-UART RX
  *
  * ---------------------------------------------------------------------------
  * Площадки модуля ESP-12 ↔ XH-C3F (левый / правый ряд)
@@ -40,7 +41,7 @@
  *   Площадка ESP-12     XH-C3F     Цепь на плате AutoStart
  *   RST                 EN         enable модуля (не GPIO); у XH EN сверху слева
  *   ADC                 IO0        VBAT
- *   EN                  IO2        не используется прошивкой (бывш. EN у 12E)
+ *   EN                  IO2        журнал UART1 TX (бывш. EN у 12E)
  *   GPIO16              IO1        K5
  *   GPIO14              IO3        K1
  *   GPIO12              IO4        IN2
@@ -59,9 +60,12 @@
 
 namespace Pin {
 
-    // GSM на площадках UART0 (общий с отладочным Serial)
+    // GSM на площадках UART0 (только модем; журнал не пишет сюда)
     constexpr uint8_t GSM_TX = 21;     // TXD → SIM800 RXD
     constexpr uint8_t GSM_RX = 20;     // RXD ← SIM800 TXD
+
+    // Диагностический UART1 TX (MCU→USB-UART RX). RX не используется.
+    constexpr uint8_t LOG_TX = 2;
 
     // Шина 1-Wire
     constexpr uint8_t ONEWIRE = 9;

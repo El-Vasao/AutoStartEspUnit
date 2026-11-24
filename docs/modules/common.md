@@ -4,7 +4,7 @@
 
 Подробности журнала — в [../CONVENTIONS.md](../CONVENTIONS.md).
 
-- Логи идут в UI через SSE. При `SERIAL_DEBUG` та же строка печатается в UART.
+- Логи идут в UI через SSE и всегда на UART1 TX (`Pin::LOG_TX` / IO2).
 - Дроп при перегрузке — мягкая очередь SSE в `WebServer` (`SSE_SOFT_QUEUE_MAX` 20). Отдельного OTA-гейта и token-bucket в `Logger` нет.
 - Вызов с чужой задачи кладётся в кольцо из `Logging::DEFERRED_SLOTS` (4) слота.
 

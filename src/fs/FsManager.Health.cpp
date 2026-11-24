@@ -82,7 +82,6 @@ size_t FsManager::getFreeSpace() {
 }
 
 void FsManager::printStats() {
-#ifdef SERIAL_DEBUG
     fsInfo.totalBytes = LittleFS.totalBytes();
     fsInfo.usedBytes = LittleFS.usedBytes();
     logger.log(LogModule::FsManager, "=== stats ===\n");
@@ -95,5 +94,4 @@ void FsManager::printStats() {
     logger.log(LogModule::FsManager, "errors: %u\n", errorCount);
     logger.log(LogModule::FsManager, "recoveries: %u\n", recoveryCount);
     logger.log(LogModule::FsManager, "=== end stats ===\n");
-#endif
 }

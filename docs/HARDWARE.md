@@ -1,6 +1,6 @@
 # Заметки по порту ESP32-C3
 
-Ветка: `esp32`. Окружение PlatformIO: **`esp32c3`** (`python build.py release|debug|fs`).
+Ветка: `esp32`. Окружение PlatformIO: **`esp32c3`** (`python build.py release|fs`).
 
 ## Пины
 
@@ -10,9 +10,10 @@
 
 [`partitions.csv`](../partitions.csv) — два слота OTA (`app0`/`app1`) и ФС с меткой `spiffs` (её монтирует Arduino LittleFS). ФС около 1,4 МБ.
 
-## UART0 (SIM800 и отладка)
+## UART
 
-SIM800 и отладочный Serial делят UART0 (GPIO20/21).
+- **UART0 (GPIO20/21)** — только SIM800.
+- **UART1 TX (GPIO2 / `Pin::LOG_TX`)** — диагностический журнал (`logger`). RX на MCU не открывается. Подключение: IO2 → RX USB-UART, общий GND, 115200 8N1. Отдельной обвязки не требуется; IO2 — strap C3, не тянуть линию вниз на reset. На XH-C3F это площадка **EN** (бывш. EN у ESP-12), не TXD0. Порт прошивки (UART0) журнал больше не показывает. Порт поднимается в `initVariant()` (ещё до `setup()`), чтобы был виден весь прикладной boot.
 
 ## UI SoftAP — 3 gzip-ассета
 
@@ -27,7 +28,6 @@ SIM800 и отладочный Serial делят UART0 (GPIO20/21).
 ```bash
 python build.py release -u   # прошивка
 python build.py fs           # UI в LittleFS
-python build.py debug -u     # SERIAL_DEBUG на общем UART
 ```
 
 `include/common/Version.h` генерируется и не попадает в git.

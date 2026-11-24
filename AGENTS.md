@@ -27,7 +27,7 @@ CI: `.github/workflows/ci.yml`.
 
 - Logger: `logger.log(LogModule::X, "...\n", ...)`. No `Serial.print` in app code.
 - No heap `String` on hot paths. Time via `millis()` differences. JSON and static HTTP handlers must not touch LittleFS. OTA abort still closes the upload stream from the HTTP task.
-- UART0 is shared by SIM800 and debug Serial.
+- UART0 is SIM800 only; diagnostic logs go to UART1 TX on IO2 (and SSE).
 - Unknown JSON keys are ignored. A lenient truncated `/config.json` is not rewritten. A hard parse failure replaces `/config.json` with factory defaults and hard-restarts. `FallbackWebPage` stays.
 - Names: `docs/CONVENTIONS.md`.
 

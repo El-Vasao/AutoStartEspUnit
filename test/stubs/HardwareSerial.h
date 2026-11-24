@@ -15,6 +15,8 @@ class HardwareSerial : public Stream {
 public:
     static constexpr size_t kCap = 2048;
 
+    explicit HardwareSerial(int = 0) {}
+
     void begin(unsigned long baud, uint32_t = SERIAL_8N1, int8_t = -1, int8_t = -1) { baud_ = baud; }
     void end() {}
     unsigned long baud() const { return baud_; }

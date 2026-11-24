@@ -1,6 +1,6 @@
 # PlatformIO pre-script: create include/common/Version.h when it is missing.
 #
-# build.py regenerates Version.h for every release/debug build and advances VERSION.
+# build.py regenerates Version.h for every release build and advances VERSION.
 # A plain `pio run` / `pio test` (CI, agents, IDE) has no build.py step, so this
 # script writes a "dev" header from the VERSION file without bumping it.
 # An existing Version.h is never touched.

@@ -1,14 +1,13 @@
 #include "core/CoreHardRestart.h"
 #include "common/EspHal.h"
 #include "common/Constants.h"
+#include "common/Logger.h"
 
 #include <WiFi.h>
 
 [[noreturn]] __attribute__((noinline)) void coreHardRestartNow() {
     espHalFeedWdt();
-#ifdef SERIAL_DEBUG
-    Serial.flush();
-#endif
+    logger.flushUart();
     // После тяжёлого FS/JSON стека даём SDK один проход перед system_restart().
     yield();
     espHalFeedWdt();

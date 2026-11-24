@@ -152,6 +152,6 @@ ESP32-C3 Arduino: AsyncTCP/ESPAsyncWebServer callbacks могут выполня
 2. Параллельно: `POST /config/save` (большой JSON) пока идёт программа — должен уйти в deferred, UI видит busy.
 3. `POST /upload` stream OTA при активном SSE — cellular suspend после deferred mode switch; feed не блокирует loop на весь файл.
 4. Двойной `/bootstrap` — 429 `BOOTSTRAP_BUSY`. Второй `/upload` — 409 Busy.
-5. Шторм логов (SERIAL_DEBUG) при SSE — soft queue, без WDT.
+5. Шторм логов при SSE — soft queue, без WDT.
 
 Код править при нарушении контракта (flash apply из async, mode switch из upload handler без deferred flag). Запись `Update` и хвоста LittleFS живёт в цикле, не в обработчике загрузки. `abort` загрузки — исключение: он закрывает поток с задачи HTTP.

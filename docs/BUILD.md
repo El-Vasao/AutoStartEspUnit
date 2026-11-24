@@ -23,12 +23,12 @@ flowchart TD
 python build.py --help
 
 python build.py release -u    # прошивка и загрузка
-python build.py debug -u      # SERIAL_DEBUG (делит UART с GSM)
 python build.py fs            # UI из трёх gzip → LittleFS uploadfs
 python build.py release --no-ota
 python build.py -c            # очистка
-python build.py -m            # монитор
+python build.py -m            # монитор (порт загрузки; журнал — UART1/IO2)
 ```
+
 
 Что делает скрипт:
 
@@ -80,4 +80,4 @@ python -m platformio device monitor
 
 - Разделы: [`partitions.csv`](../partitions.csv)
 - Пины и запуск: [`HARDWARE.md`](HARDWARE.md)
-- Отладочный UART делит SIM800 на GPIO20/21
+- Журнал: UART1 TX на GPIO2 (+ SSE); UART0 только SIM800

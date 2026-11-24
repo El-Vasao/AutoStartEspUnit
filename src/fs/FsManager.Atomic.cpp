@@ -19,9 +19,6 @@ void noteFsUnknown_() {
 } // namespace
 
 bool FsManager::readFile(const char* path, char* buffer, size_t& len, size_t maxLen) {
-#ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "readFile(%s)\n", path);
-#endif
 
     if (!initialized) {
         logger.log(LogModule::FsManager, "  FS not initialized\n");
@@ -67,9 +64,6 @@ bool FsManager::readFile(const char* path, char* buffer, size_t& len, size_t max
 }
 
 bool FsManager::atomicWrite(const char* path, const char* data, size_t len) {
-#ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "atomicWrite(%s, %u bytes)\n", path, len);
-#endif
 
     auto meta = getMetadata(path);
     if (meta) {
@@ -272,9 +266,7 @@ File FsManager::openWriteStream(const char* path, size_t expectedSize) {
     }
 
     size_t freeSpace = getFreeSpace();
-#ifdef SERIAL_DEBUG
     logger.log(LogModule::FsManager, "openWriteStream: free=%u, expected=%u\n", (unsigned)freeSpace, (unsigned)expectedSize);
-#endif
     if (freeSpace < expectedSize + FsSpace::STREAM_SPACE_MARGIN) {
         logger.log(LogModule::FsManager, "low space, freeing orphans…\n");
         gc();
@@ -304,9 +296,7 @@ File FsManager::openWriteStream(const char* path, size_t expectedSize) {
         return File();
     }
 
-#ifdef SERIAL_DEBUG
     logger.log(LogModule::FsManager, "openWriteStream: created %s\n", pathBuffer);
-#endif
     return f;
 }
 
@@ -371,9 +361,7 @@ bool FsManager::closeWriteStream(File& f, const char* originalPath, bool commit)
 
     if (!commit) {
         bool removed = LittleFS.remove(tempPath);
-#ifdef SERIAL_DEBUG
         logger.log(LogModule::FsManager, "closeWriteStream: tmp %s removed: %d\n", tempPath, (int)removed);
-#endif
         return removed;
     }
 
@@ -384,9 +372,7 @@ bool FsManager::closeWriteStream(File& f, const char* originalPath, bool commit)
         return false;
     }
 
-#ifdef SERIAL_DEBUG
     logger.log(LogModule::FsManager, "closeWriteStream: tmp=%s, target=%s\n", tempPath, originalPath);
-#endif
 
     // Сначала .bak, потом rename: если rename не удался, цель не остаётся дырой.
     char bakPath[BufferBytes::Fs::TEMP_PATH];
@@ -420,9 +406,7 @@ bool FsManager::closeWriteStream(File& f, const char* originalPath, bool commit)
     if (hadBackup && !keepBak) LittleFS.remove(bakPath);
 
     espHalFeedWdt();
-#ifdef SERIAL_DEBUG
     logger.log(LogModule::FsManager, "closeWriteStream: rename ok\n");
-#endif
     writeCount++;
     return true;
 }

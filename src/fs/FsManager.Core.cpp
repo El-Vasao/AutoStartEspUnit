@@ -72,22 +72,16 @@ bool FsManager::begin() {
                    fsInfo.totalBytes / 1024, fsInfo.usedBytes / 1024);
         if (!exists("/programs")) {
             LittleFS.mkdir("/programs");
-#ifdef SERIAL_DEBUG
             logger.log(LogModule::FsManager, "dir /programs created\n");
-#endif
         }
         // Создаём папки для библиотек, если их ещё нет (на всякий случай)
         if (!exists("/js")) {
             LittleFS.mkdir("/js");
-#ifdef SERIAL_DEBUG
             logger.log(LogModule::FsManager, "dir /js created\n");
-#endif
         }
         if (!exists("/css")) {
             LittleFS.mkdir("/css");
-#ifdef SERIAL_DEBUG
             logger.log(LogModule::FsManager, "dir /css created\n");
-#endif
         }
         logger.log(LogModule::FsManager, "ok\n");
         return true;
@@ -197,13 +191,9 @@ bool FsManager::ensurePath(const char* path) {
     if (!ensurePath(parent)) return false;
 
     bool created = LittleFS.mkdir(parent);
-#ifdef SERIAL_DEBUG
-    logger.log(LogModule::FsManager, "%s dir: %s\n", created ? "created" : "not created", parent);
-#else
     if (!created) {
         logger.log(LogModule::FsManager, "failed to create dir: %s\n", parent);
     }
-#endif
     return created;
 }
 
