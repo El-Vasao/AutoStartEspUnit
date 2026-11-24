@@ -7,6 +7,7 @@
 | [mqtt-audit-report.md](mqtt-audit-report.md) | Compliance, трафик, latency, решения |
 | [mqtt-audit-hw-gap.md](mqtt-audit-hw-gap.md) | Host-тесты vs только железо |
 | [mqtt-audit-analysis.json](mqtt-audit-analysis.json) | Сырые метрики analyze_jsonl по S1–S4 |
+| [func-results.md](func-results.md) | Функциональный стенд A–F (pass/fail) |
 
 Скрипты и jsonl-захваты живут в соседнем проекте **CarEmu**:
 
