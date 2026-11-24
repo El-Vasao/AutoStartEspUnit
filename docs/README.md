@@ -9,6 +9,7 @@
 - Архитектура: [ARCHITECTURE.md](ARCHITECTURE.md)
 - Фронтенд: [FRONTEND.md](FRONTEND.md)
 - Тесты: [TESTING.md](TESTING.md)
+- Стенд MQTT-аудит: [bench/](bench/README.md)
 - Продуктовые инварианты: [PRODUCT.md](PRODUCT.md)
 - Чем руководствуется прошивка: [BEHAVIOR.md](BEHAVIOR.md)
 - Сценарии использования: [USAGE.md](USAGE.md)
