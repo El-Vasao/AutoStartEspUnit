@@ -35,11 +35,11 @@ Harness note: `bench.py` cmd `id` must be unique across sessions (fixed: time-pr
 | C4 | block IN2 | **pass** | `Engine start blocked by interlock`, 500, no starter |
 | C5 | already running (V≥13.2) | **pass** | `stop=already_running`, no crank |
 | C6 | freeze `vbat 12.0` | **pass** | crank tried, run → 500 |
-| C7 | engine stop after success | **pending retest** | CarEmu: `e engine stop` after C1-like success (no auto `stall_ms`) |
+| C7 | engine stop after success | **pass** | maxV~14.1 engine=true → `e engine stop` → V~12.4 engine=false; ACC/IGN remain |
 
 ## D–E. RPM / input start
 
-**Deferred** — `start_method` only via SoftAP/`config`, not MQTT `set`.
+**Отложено** — смена `start_method` только через SoftAP/`config`; на стенде SoftAP рвёт интернет/MQTT у ПК. Вернуться отдельно (ноутбук на AP или офлайн-скрипт).
 
 ## F. MQTT contract (live)
 
