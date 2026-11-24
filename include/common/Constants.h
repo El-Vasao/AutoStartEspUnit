@@ -271,21 +271,21 @@ namespace Adc {
     constexpr uint8_t SAMPLES = 5;
     /// EMA «мнения» по медиане тика. Deadband/commit смотрят на неё, не на один шумный отсчёт.
     constexpr float EVIDENCE_ALPHA = 0.50f;
-    /// Отсекает остаток ШИМ стенда (~±0,2 В); раньше 0,35 В — слишком глушило шаги 1 В.
-    constexpr float DEADBAND_V = 0.20f;
-    /// Стойкое отклонение evidence от выхода — реальное событие (нагрузка / зарядка / vbat).
-    constexpr float COMMIT_V = 0.30f;
-    /// Скачок ≥ этого (стартер / шаг ≥~1 В) — commit за один тик.
-    constexpr float FAST_TRACK_V = 0.70f;
+    /// Ниже шага MQTT-графика (0,1 В): глушит шум АЦП/ШИМ, не глотает десятки вольт.
+    constexpr float DEADBAND_V = 0.05f;
+    /// Ступенька 0,1 В — commit (график / нагрузка / зарядка).
+    constexpr float COMMIT_V = 0.10f;
+    /// Скачок ≥ этого (стартер) — commit за один тик.
+    constexpr float FAST_TRACK_V = 0.50f;
     /// Сколько тиков подряд |Δ|≥COMMIT, прежде чем следовать (fast-track — один тик).
     constexpr uint8_t COMMIT_TICKS = 2;
-    /// Следование после commit: вниз быстро (стартер), вверх быстрее прежних 4 В/с (стенд + генератор).
+    /// Следование после commit: вниз быстро (стартер), вверх умеренно (генератор / стенд).
     constexpr float SLEW_FALL_V_PER_S = 20.f;
     constexpr float SLEW_RISE_V_PER_S = 10.f;
     /// Грубая оценка стартера (~12 В при raw≈3000); калибровка по измеренному напряжению при сохранении.
     constexpr float DEFAULT_COEFF = 0.004f;
-    /// Журнал: совпадает с мёртвой зоной.
-    constexpr float LOG_BAND_V = 0.20f;
+    /// Журнал UART: шаг как у MQTT-графика.
+    constexpr float LOG_BAND_V = 0.10f;
 }
 
 /// Эскалация отказов DS18B20 / АЦП (SensorsController).
@@ -442,8 +442,8 @@ namespace JsonBytes {
         constexpr size_t TRIGMAP_TOPIC_JSON_MAX = 1200;
         /// Короткий ответ `{id,code[,seq]}`.
         constexpr size_t THIN_REPLY_JSON_MAX = 96;
-        /// Изменение напряжения меньше этого не считается значимым для периодической выборки.
-        constexpr float STATUS_VOLTAGE_EPS = 0.05f;
+        /// Шаг MQTT status / график: 0,1 В (согласован с Adc::COMMIT_V / LOG_BAND_V).
+        constexpr float STATUS_VOLTAGE_EPS = 0.10f;
         /// Изменение температуры меньше этого не считается значимым для периодической выборки.
         constexpr float STATUS_TEMP_EPS = 0.1f;
         /// Публикация по фронту: напряжение должно сдвинуться хотя бы на столько.

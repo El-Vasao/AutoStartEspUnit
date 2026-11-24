@@ -133,8 +133,8 @@ void test_value_log_due_uses_band() {
     TEST_ASSERT_TRUE(valueLogDue(200.f, 140.f, Rpm::LOG_BAND, true));
     TEST_ASSERT_FALSE(valueLogDue(20.0f, 20.4f, DS18B20::LOG_BAND_C, true));
     TEST_ASSERT_TRUE(valueLogDue(20.0f, 20.5f, DS18B20::LOG_BAND_C, true));
-    TEST_ASSERT_FALSE(valueLogDue(12.60f, 12.79f, Adc::LOG_BAND_V, true));
-    TEST_ASSERT_TRUE(valueLogDue(12.60f, 12.80f, Adc::LOG_BAND_V, true));
+    TEST_ASSERT_FALSE(valueLogDue(12.60f, 12.69f, Adc::LOG_BAND_V, true));
+    TEST_ASSERT_TRUE(valueLogDue(12.60f, 12.70f, Adc::LOG_BAND_V, true));
 }
 
 void test_confirm_zero_threshold_never() {
