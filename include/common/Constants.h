@@ -182,7 +182,8 @@ namespace Timing {
     constexpr uint32_t TRIGGER_CHECK_INTERVAL_MS = 50;
     constexpr uint32_t TRIGGER_CHECK_INTERVAL_IDLE_MS = 200;
     constexpr uint32_t VOLTAGE_READ_INTERVAL_MS = 200;
-    constexpr uint32_t VOLTAGE_READ_INTERVAL_IDLE_MS = 1000;
+    /// Раньше 1 с — на стенде SoftAP UI отставал от `vbat`; 400 мс достаточно для покоя.
+    constexpr uint32_t VOLTAGE_READ_INTERVAL_IDLE_MS = 400;
     constexpr uint32_t TEMPERATURE_READ_INTERVAL_MS = DS18B20::READ_INTERVAL_MS;
     constexpr uint32_t TEMPERATURE_READ_INTERVAL_IDLE_MS = 15000;
     constexpr uint32_t DEBOUNCE_DELAY_MS = 50;
@@ -264,14 +265,27 @@ namespace Adc {
     /// АЦП ESP32-C3: напряжение = raw × adc_voltage_coeff (калибровка в поле).
     constexpr uint8_t RESOLUTION_BITS = 12;
     constexpr uint16_t MAX_RAW = (1u << RESOLUTION_BITS) - 1u; ///< 12-битный АЦП (0..4095)
-    /// Пачка чтений за один тик: гасит остаточный ШИМ/шум до попадания в окно.
-    constexpr uint8_t OVERSAMPLES = 16;
-    /// Окно медианы (нечётное — один центральный отсчёт).
-    constexpr uint8_t SAMPLES = 11;
+    /// Пачка чтений за тик: убивает ШИМ/ЭМП внутри одного опроса (~мс).
+    constexpr uint8_t OVERSAMPLES = 32;
+    /// Короткое окно медианы: только иголки АЦП.
+    constexpr uint8_t SAMPLES = 5;
+    /// EMA «мнения» по медиане тика. Deadband/commit смотрят на неё, не на один шумный отсчёт.
+    constexpr float EVIDENCE_ALPHA = 0.50f;
+    /// Отсекает остаток ШИМ стенда (~±0,2 В); раньше 0,35 В — слишком глушило шаги 1 В.
+    constexpr float DEADBAND_V = 0.20f;
+    /// Стойкое отклонение evidence от выхода — реальное событие (нагрузка / зарядка / vbat).
+    constexpr float COMMIT_V = 0.30f;
+    /// Скачок ≥ этого (стартер / шаг ≥~1 В) — commit за один тик.
+    constexpr float FAST_TRACK_V = 0.70f;
+    /// Сколько тиков подряд |Δ|≥COMMIT, прежде чем следовать (fast-track — один тик).
+    constexpr uint8_t COMMIT_TICKS = 2;
+    /// Следование после commit: вниз быстро (стартер), вверх быстрее прежних 4 В/с (стенд + генератор).
+    constexpr float SLEW_FALL_V_PER_S = 20.f;
+    constexpr float SLEW_RISE_V_PER_S = 10.f;
     /// Грубая оценка стартера (~12 В при raw≈3000); калибровка по измеренному напряжению при сохранении.
     constexpr float DEFAULT_COEFF = 0.004f;
-    /// Журнал напряжения: первая оценка и каждое отклонение не меньше этого (В).
-    constexpr float LOG_BAND_V = 0.1f;
+    /// Журнал: совпадает с мёртвой зоной.
+    constexpr float LOG_BAND_V = 0.20f;
 }
 
 /// Эскалация отказов DS18B20 / АЦП (SensorsController).
@@ -306,7 +320,7 @@ namespace StarterLimits {
 
     /// Дополнительное ожидание полного окна АЦП после `wait_after_start_sec`.
     /// Полное окно АЦП: Adc::SAMPLES × Timing::VOLTAGE_READ_INTERVAL_MS (+ небольшой запас).
-    constexpr uint32_t VOLTAGE_WINDOW_EXTRA_MS = 2200UL;
+    constexpr uint32_t VOLTAGE_WINDOW_EXTRA_MS = 1200UL;
     /// Минимальная блокировка стартера после срабатывания защиты.
     constexpr uint32_t LOCKOUT_MIN_MS = 5000UL;
     /// Страховка esp_timer срабатывает на столько позже `starter_max_time_sec`.

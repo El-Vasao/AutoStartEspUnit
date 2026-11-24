@@ -35,7 +35,7 @@ struct TemperatureSensorData {
  *   когда конверсия завершена (`isConversionComplete`) или по таймауту.
  *
  * Напряжение:
- * - чтение АЦП: пачка oversample + медиана окна (остаточный ШИМ/шум).
+ * - oversample + медиана + EMA evidence, затем deadband/commit и асимметричный slew.
  * - `voltage = raw × vehicle.adc_voltage_coeff` (калибровка по измеренному напряжению).
  */
 class SensorsController {
@@ -128,7 +128,7 @@ private:
     // Обновление температуры (опрос датчиков)
     void updateTemperatures();
 
-    // ROM из конфига (предпочтительнее SEARCH) или поиск на шине
+    /// Сначала MATCH по ROM из конфига (только живые), затем SEARCH на оставшиеся слоты.
     uint8_t seedConfiguredRoms();
     uint8_t discoverSensors();
     uint8_t bindSensors();
@@ -141,14 +141,18 @@ private:
         bool valid;             ///< флаг валидности
     } _voltageData;
 
-    uint16_t _voltageBuffer[Adc::SAMPLES];  ///< буфер для медианы окна
+    uint16_t _voltageBuffer[Adc::SAMPLES];  ///< буфер короткой медианы
     uint8_t _voltageIndex;                   ///< текущий индекс в буфере
     uint32_t _lastVoltageRead;                ///< время последнего чтения АЦП (мс)
     uint8_t _adcFillCount{0};                 ///< выборки, набранные к полному окну фильтра
     uint16_t _lastAdcAvg{0};                  ///< последнее отфильтрованное сырое для калибровки
+    float _evidence{0.f};                     ///< EMA медианы (вход deadband/commit)
+    float _filtVolts{0.f};                    ///< стабилизированное напряжение (deadband + slew)
+    bool _filtHave{false};
+    uint8_t _voltCommitStreak{0};             ///< тики с |Δ| ≥ COMMIT_V (или 1 при fast-track)
     uint8_t _owInvalidStreak{0};              ///< подряд циклы, где ни один DS18B20 не ответил
 
-    // Обновление напряжения (чтение АЦП, медиана окна)
+    // Обновление напряжения (oversample → медиана → evidence → deadband/slew)
     void updateVoltage();
 
     // Расчёт напряжения из сырого значения АЦП

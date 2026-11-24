@@ -129,8 +129,20 @@ void SensorsController::forgetSensors_() {
     }
 }
 
+/// MATCH + READ SCRATCHPAD: ROM из конфига считается живым только если CRC scratchpad ок.
+bool probeRomPresent_(OneWire& bus, const uint8_t addr[8]) {
+    if (!bus.reset()) return false;
+    bus.select(addr);
+    bus.write(0xBE);
+    uint8_t sp[9];
+    for (uint8_t i = 0; i < 9; i++) sp[i] = bus.read();
+    return OneWire::crc8(sp, 8) == sp[8];
+}
+
 uint8_t SensorsController::seedConfiguredRoms() {
+    // Только ROM, которые реально отвечают на шине (не «слепая» подстановка из JSON).
     uint8_t count = 0;
+    auto& bus = owBackend().bus;
     for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
         const char* rom = config.getBase().sensors[i].rom;
         uint8_t addr[8];
@@ -139,18 +151,38 @@ uint8_t SensorsController::seedConfiguredRoms() {
             logger.log(LogModule::SensorsController, "config ROM CRC bad slot %u\n", (unsigned)i);
             continue;
         }
+        if (!probeRomPresent_(bus, addr)) continue;
         memcpy(_foundAddresses[count], addr, 8);
         memcpy(_sensorData[count].address, addr, 8);
         count++;
+        core.feedWatchdog();
+        core.cooperate();
     }
     return count;
 }
 
 uint8_t SensorsController::bindSensors() {
-    // Живые DS18B20 — только SEARCH. ROM в конфиге: имена/коэфф и запасной MATCH,
-    // если поиск пуст (типичный сбой OneWireHub на стенде).
-    uint8_t count = discoverSensors();
-    if (count == 0) count = seedConfiguredRoms();
+    // 1) ROM из конфига, если мэтчатся на шине.
+    // 2) Иначе (и для незанятых слотов) — SEARCH.
+    uint8_t count = seedConfiguredRoms();
+    if (count >= HardwareLimits::SENSORS) return count;
+
+    DeviceAddress addr;
+    auto& ow = owBackend();
+    ow.bus.reset_search();
+    while (count < HardwareLimits::SENSORS && ow.bus.search(addr)) {
+        core.feedWatchdog();
+        core.cooperate();
+        if (OneWire::crc8(addr, 7) != addr[7]) continue;
+        bool have = false;
+        for (uint8_t j = 0; j < count; j++) {
+            if (memcmp(_foundAddresses[j], addr, 8) == 0) { have = true; break; }
+        }
+        if (have) continue;
+        memcpy(_foundAddresses[count], addr, 8);
+        memcpy(_sensorData[count].address, addr, 8);
+        count++;
+    }
     return count;
 }
 
@@ -253,9 +285,9 @@ void SensorsController::updateTemperatures() {
                 noteTemperatureLost_(i);
             }
             _sensorData[i].lastReadTime = now;
-            // Короткая уступка между датчиками, чтобы SoftAP/lwIP оставались отзывчивыми.
-            yield();
         }
+        // Уступка после полного прохода 1-Wire — не между MATCH/READ.
+        yield();
         _conversionInProgress = false;
         if (ok > 0) {
             _owTimeoutStreak = 0;
@@ -381,12 +413,48 @@ void SensorsController::updateVoltage() {
             window[i] = _voltageBuffer[idx];
         }
     }
-    const uint16_t filtered = (n > 0) ? medianU16_(window, n) : 0;
+    const uint16_t med = (n > 0) ? medianU16_(window, n) : 0;
+    const bool rail = (n == 0) || (med == 0) || (med >= (uint16_t)Adc::MAX_RAW);
+    float instant = calculateVoltage(med);
 
-    _lastAdcAvg = filtered;
-    _voltageData.voltage = calculateVoltage(filtered);
-    const bool rail = (filtered == 0) || (filtered >= (uint16_t)Adc::MAX_RAW);
-    _voltageData.valid = (n > 0) && !rail;
+    // Evidence-EMA сглаживает медиану; deadband/commit смотрят на неё, не на один тик.
+    // |Δ| ≥ FAST_TRACK_V — сразу (стартер / шаг vbat); иначе COMMIT_TICKS при |Δ| ≥ COMMIT_V.
+    if (!rail) {
+        if (!_filtHave) {
+            _evidence = instant;
+            _filtVolts = instant;
+            _filtHave = true;
+            _voltCommitStreak = 0;
+        } else {
+            _evidence += Adc::EVIDENCE_ALPHA * (instant - _evidence);
+            const float d = _evidence - _filtVolts;
+            const float ad = (d >= 0.f) ? d : -d;
+            const bool fast = ad >= Adc::FAST_TRACK_V;
+            if (ad < Adc::DEADBAND_V) {
+                _voltCommitStreak = 0;
+            } else if (fast || ad >= Adc::COMMIT_V) {
+                if (_voltCommitStreak < 255) _voltCommitStreak++;
+                const uint8_t need = fast ? 1 : Adc::COMMIT_TICKS;
+                if (_voltCommitStreak >= need) {
+                    const float dtSec = static_cast<float>(interval) * 0.001f;
+                    const float maxStep =
+                        (d > 0.f) ? (Adc::SLEW_RISE_V_PER_S * dtSec) : (Adc::SLEW_FALL_V_PER_S * dtSec);
+                    if (ad <= maxStep) _filtVolts = _evidence;
+                    else _filtVolts += (d > 0.f) ? maxStep : -maxStep;
+                }
+            } else {
+                _voltCommitStreak = 0;
+            }
+        }
+    }
+
+    const uint16_t filteredRaw =
+        (!rail && _filtHave && config.getBase().vehicle.adc_voltage_coeff > 0.f)
+            ? static_cast<uint16_t>(_filtVolts / config.getBase().vehicle.adc_voltage_coeff + 0.5f)
+            : med;
+    _lastAdcAvg = filteredRaw;
+    _voltageData.voltage = _filtHave ? _filtVolts : instant;
+    _voltageData.valid = !rail && _filtHave;
     _voltageData.lastReadTime = now;
     if (_voltageData.valid) noteVoltage_(_voltageData.voltage);
     else if (n > 0) noteVoltageLost_();
@@ -406,6 +474,7 @@ void SensorsController::updateVoltage() {
 void SensorsController::resetVoltageWindow() {
     _voltageIndex = 0;
     _adcFillCount = 0;
+    // Slew не сбрасываем: после прокрутки напряжение уже «здесь», копим только окно доверия.
     // Принудить выборку на следующем update(), чтобы новое окно начало заполняться сразу.
     _lastVoltageRead = millis() - Timing::VOLTAGE_READ_INTERVAL_IDLE_MS;
 }

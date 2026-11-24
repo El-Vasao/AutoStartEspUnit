@@ -90,7 +90,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "enabled": false,
     "sensor_id": "T1",
     "comparison": "above",
-    "lower_threshold": 5.0,
+    "lower_threshold": -25.0,
     "upper_threshold": 10.0,
     "program_id_lower": 0,
     "program_id_upper": 0
