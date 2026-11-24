@@ -78,7 +78,7 @@ static size_t encodeHashHex(Print& p, void* ctx) {
 
 } // namespace
 
-void MqttClient::captureStatusSnapshot_(StatusSnapshot& s) const {
+void MqttClient::captureStatusSnapshot_(StatusSnapshot& s, bool fullErrHistory) const {
     s = StatusSnapshot{};
     s.uptimeSec = core.getUptime();
     strlcpy(s.modeName, core.getModeName(), sizeof(s.modeName));
@@ -146,14 +146,15 @@ void MqttClient::captureStatusSnapshot_(StatusSnapshot& s) const {
         s.csqBer = gsm.getSignalBer();
     }
 
-    ErrorSnapshotEntry undeliv[ErrorHistory::CAPACITY]{};
-    const uint8_t n = err.copyUndelivered(undeliv, ErrorHistory::CAPACITY);
+    ErrorSnapshotEntry rows[ErrorHistory::CAPACITY]{};
+    const uint8_t n = fullErrHistory ? err.copyRecent(rows, ErrorHistory::CAPACITY)
+                                     : err.copyUndelivered(rows, ErrorHistory::CAPACITY);
     s.lastErrCount = n;
     for (uint8_t i = 0; i < n; i++) {
-        s.lastErr[i].code = undeliv[i].code;
-        s.lastErr[i].active = undeliv[i].active;
-        s.lastErr[i].uptimeSec = undeliv[i].uptimeSec;
-        strlcpy(s.lastErr[i].msg, undeliv[i].msg, sizeof(s.lastErr[i].msg));
+        s.lastErr[i].code = rows[i].code;
+        s.lastErr[i].active = rows[i].active;
+        s.lastErr[i].uptimeSec = rows[i].uptimeSec;
+        strlcpy(s.lastErr[i].msg, rows[i].msg, sizeof(s.lastErr[i].msg));
     }
 }
 
@@ -680,6 +681,15 @@ void MqttClient::disconnect() {
     resetSessionLocal_();
 }
 
+void MqttClient::abortSessionHard(const char* reason) {
+    setReconnectEnabled(false);
+    abandonLastErrDelivery_();
+    clearInbound_();
+    clearPending_();
+    _fsm.abortLocal(reason ? reason : "hard_drop");
+    resetSessionLocal_();
+}
+
 bool MqttClient::needsDisconnectDrain() const {
     return _fsm.isDisconnectPending() || _fsm.hasOutbound();
 }
@@ -712,25 +722,24 @@ void MqttClient::connect() {
 bool MqttClient::publishStatus(bool forceFull) {
     if (!_topicState[0]) return false;
 
+    const bool needFull = forceFull || !_havePublishedBaseline;
     StatusSnapshot snapshot{};
-    captureStatusSnapshot_(snapshot);
+    captureStatusSnapshot_(snapshot, needFull);
 
-    const uint8_t errN = snapshot.lastErrCount;
-    if (_lastErrAwaitConfirm) {
+    // markDelivered только по undelivered; full history не должна повторно ждать confirm.
+    ErrorSnapshotEntry undeliv[ErrorHistory::CAPACITY]{};
+    const uint8_t undelivN = core.getErrorManager().copyUndelivered(undeliv, ErrorHistory::CAPACITY);
+
+    if (_lastErrAwaitConfirm && !needFull) {
         snapshot.lastErrCount = 0;
     }
 
-    const bool needFull = forceFull || !_havePublishedBaseline;
     if (!needFull) {
         // Путь фронта идёт через tryPublishEdgeStatus_, проверка уже была; пропуск оставлен для надёжности.
         if (snapshot.lastErrCount == 0 &&
             !mqttStatusHasSignificantChanges(snapshot, _lastPublished, config.getBase())) {
             return false;
         }
-    }
-
-    if (!_lastErrAwaitConfirm && errN > 0) {
-        snapshot.lastErrCount = errN;
     }
 
     // Назначить seq: при замене неотправленного Tele взять seq из очереди, иначе выдать следующий.
@@ -773,13 +782,13 @@ bool MqttClient::publishStatus(bool forceFull) {
     _queuedEncoded = snapshot;
     _haveQueuedEncoded = true;
 
-    if (!_lastErrAwaitConfirm && errN > 0) {
-        _lastErrPendingCount = errN;
-        for (uint8_t i = 0; i < errN && i < ErrorHistory::CAPACITY; i++) {
-            _lastErrPending[i].code = snapshot.lastErr[i].code;
-            _lastErrPending[i].active = snapshot.lastErr[i].active;
-            _lastErrPending[i].uptimeSec = snapshot.lastErr[i].uptimeSec;
-            strlcpy(_lastErrPending[i].msg, snapshot.lastErr[i].msg, sizeof(_lastErrPending[i].msg));
+    if (!_lastErrAwaitConfirm && undelivN > 0) {
+        _lastErrPendingCount = undelivN;
+        for (uint8_t i = 0; i < undelivN && i < ErrorHistory::CAPACITY; i++) {
+            _lastErrPending[i].code = undeliv[i].code;
+            _lastErrPending[i].active = undeliv[i].active;
+            _lastErrPending[i].uptimeSec = undeliv[i].uptimeSec;
+            strlcpy(_lastErrPending[i].msg, undeliv[i].msg, sizeof(_lastErrPending[i].msg));
         }
         _lastErrAwaitConfirm = true;
     }
@@ -794,7 +803,7 @@ bool MqttClient::tryPublishEdgeStatus_() {
     if (!_topicState[0] || !_havePublishedBaseline) return false;
     if (_fsm.hasFullTeleOutbound()) return false;
     StatusSnapshot snapshot{};
-    captureStatusSnapshot_(snapshot);
+    captureStatusSnapshot_(snapshot, false);
     if (_lastErrAwaitConfirm) snapshot.lastErrCount = 0;
 
     if (snapshot.lastErrCount == 0 &&

@@ -10,6 +10,7 @@
 #include "config/internal/ProgramJsonIo.h"
 #include "core/Core.h"
 #include "fs/FsManager.h"
+#include "gsm/GsmController.h"
 #include "io/DigitalInputs.h"
 #include "io/RelayController.h"
 #include "io/SensorsController.h"
@@ -23,6 +24,19 @@
 MqttDebugSession mqttDebugSession;
 
 namespace {
+
+/// После flash-записи SIM800 RX часто копится (SoftAP+TX) → rx_incomplete на следующем cmd.
+/// Короткая прокачка UART/TCP до финального reply.
+void settleModemRxAfterFlash_() {
+    auto& gsm = core.getGSM();
+    const uint32_t t0 = millis();
+    while ((uint32_t)(millis() - t0) < 200u) {
+        gsm.pollModemRx();
+        core.feedWatchdog();
+        core.cooperate();
+        yield();
+    }
+}
 
 class BufPrint : public Print {
 public:
@@ -272,6 +286,7 @@ uint16_t MqttDebugSession::commit_(SensorsController& sensors) {
         }
     }
     abort();
+    if (ok) settleModemRxAfterFlash_();
     return ok ? MqttCmd::CODE_OK : MqttCmd::CODE_UNPROCESSABLE;
 }
 
@@ -324,6 +339,7 @@ uint16_t MqttDebugSession::doSet_(const MqttCommand& cmd) {
     core.setRebootRequired(true);
     core.getRelay().applyStarterConfig();
     core.getInputs().applyConfig();
+    settleModemRxAfterFlash_();
     return MqttCmd::CODE_OK;
 }
 
@@ -334,10 +350,13 @@ uint16_t MqttDebugSession::doReset_(const MqttCommand& cmd) {
         core.setRebootRequired(true);
         core.getRelay().applyStarterConfig();
         core.getInputs().applyConfig();
+        settleModemRxAfterFlash_();
         return MqttCmd::CODE_OK;
     }
     if (cmd.kind == MqttCommandKind::Prg) {
-        return config.resetPrograms() ? MqttCmd::CODE_OK : MqttCmd::CODE_INTERNAL;
+        if (!config.resetPrograms()) return MqttCmd::CODE_INTERNAL;
+        settleModemRxAfterFlash_();
+        return MqttCmd::CODE_OK;
     }
     return MqttCmd::CODE_BAD_REQUEST;
 }
@@ -345,7 +364,9 @@ uint16_t MqttDebugSession::doReset_(const MqttCommand& cmd) {
 uint16_t MqttDebugSession::doDelete_(const MqttCommand& cmd) {
     if (state_ != State::Idle) return MqttCmd::CODE_UNAVAILABLE;
     if (cmd.kind != MqttCommandKind::Prg || cmd.programId == 0) return MqttCmd::CODE_BAD_REQUEST;
-    return config.deleteProgram(cmd.programId) ? MqttCmd::CODE_OK : MqttCmd::CODE_NOT_FOUND;
+    if (!config.deleteProgram(cmd.programId)) return MqttCmd::CODE_NOT_FOUND;
+    settleModemRxAfterFlash_();
+    return MqttCmd::CODE_OK;
 }
 
 uint16_t MqttDebugSession::doGet_(const MqttCommand& cmd, MqttClient& mqtt) {
@@ -392,6 +413,13 @@ uint16_t MqttDebugSession::handle(const MqttCommand& cmd, MqttClient& mqtt, Sens
 
     const bool uploadStep = (cmd.debugOp == MqttDebugOp::Put || cmd.debugOp == MqttDebugOp::Commit ||
                              cmd.debugOp == MqttDebugOp::Abort);
+    // New begin/get/set aborts an in-flight downlink so SoftAP-style mutate can start.
+    if (state_ == State::Sending &&
+        (cmd.debugOp == MqttDebugOp::Begin || cmd.debugOp == MqttDebugOp::Get ||
+         cmd.debugOp == MqttDebugOp::Set || cmd.debugOp == MqttDebugOp::Reset ||
+         cmd.debugOp == MqttDebugOp::Delete || cmd.debugOp == MqttDebugOp::Abort)) {
+        abort();
+    }
     if (busy() && !uploadStep) return MqttCmd::CODE_UNAVAILABLE;
 
     switch (cmd.debugOp) {

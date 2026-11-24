@@ -146,7 +146,7 @@ MQTT-публикация статуса и подписка на команды
 | `prg` | `get` | Серия publish на `/prg` (`program` id) |
 | `prg` | `delete` | Удалить программу по id |
 | `prg` | `reset` | Заводской набор программ |
-| `modem_reboot` | — | SoftAP `POST /modem/reboot` → `requestModemReboot()`; тонкий `202`, финальный `200` не гарантирован |
+| `modem_reboot` | — | SoftAP `POST /modem/reboot` → `requestModemReboot()`; тонкий `202`; MQTT hard-drop + CFUN; финальный `200` не гарантирован |
 
 **Upload (stop-and-wait на каждый `put`, inbound FIFO 8):**
 
@@ -158,9 +158,10 @@ MQTT-публикация статуса и подписка на команды
 ```
 
 - `begin`: ожидаемый raw size ≤ 6144 и IEEE CRC32 hex (8 н.р. символов) всего тела.
-- `put`: всегда чанки (`n≥1`); `i` строго 0..n-1 по порядку; `data` = base64 куска. `CMD_JSON_MAX=512`.
+- `put`: всегда чанки (`n≥1`); `i` строго 0..n-1 по порядку; `data` = base64 куска. `CMD_JSON_MAX=512`. На SIM800 bench держит **raw≈120 B/чанк**, паузу между `put` и settle после `commit`/`delete` (иначе RX `rx_incomplete`, особенно при активном SoftAP).
 - Один upload-слот; во время put остальные debug mutate → `503`.
-- `commit`: CRC + SoftAP-путь (cfg → tmp + `applyPostedConfigJsonFile` + `rebootRequired`; prg → tmp + `commitPostedProgramFile`). Полный hot-apply без reboot не делается — как UI, чистый старт после `reboot`.
+- `commit`: CRC + SoftAP-путь (cfg → tmp + `applyPostedConfigJsonFile` + `rebootRequired`; prg → tmp + `commitPostedProgramFile`). После flash — короткая прокачка UART RX. Полный hot-apply без reboot не делается — как UI, чистый старт после `reboot`.
+- `modem_reboot`: тонкий `202`, затем hard-drop MQTT (без `online=false` CIPSEND) + `CFUN=1,1`; birth после возврата в READY. Финальный `200` не гарантирован.
 
 **Download** (`get`): серия кадров на `/cfg` или `/prg`, TX pacing; CRC32 hex только в `i=0`:
 
@@ -174,6 +175,8 @@ MQTT-публикация статуса и подписка на команды
 ### Снимок `state`
 
 Корень full: `full:true`, `seq`, `uptime`, `mode`, `time` (`epoch`,`synced`,`stale`,`tz`), `io` (`voltage`,`engine`,`inputs`,`relays`,`temps` с `t`/`ok`), `csq` (число 0..31 / 99), `program`, `runtime`, `err` (omit если пуст).
+
+`err` в **full** (`birth` / period / `cmd=status`): кольцо истории (в т.ч. уже delivered и `active:false`), чтобы после `run`→500 клиент всё ещё видел причину. В **edge**-дельте — только ещё недоставленные; `markDelivered` после SEND без изменений.
 
 Дельта: `full:false`, `seq` + изменившиеся ключи.
 

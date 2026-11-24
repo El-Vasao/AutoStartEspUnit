@@ -15,8 +15,14 @@ void GsmController::handleReady() {
     }
 
     if (_userRebootRequested) {
-        // Управляемая перезагрузка из UI: закрыть bearer (по возможности), затем CFUN=1,1 и тихая пауза.
+        // Управляемая перезагрузка из UI/MQTT: сначала стоп TCP (иначе CIPSEND online=false
+        // после CFUN залипает и INIT/MQTT не поднимаются), затем SAPBR↓, CFUN=1,1.
         if (_rebootStep == 0) {
+            _mqttHardDropPending = true;
+            if (_stack.tcp.isConnected() || _stack.tcp.isConnecting() || _stack.tcp.isBusBusy()) {
+                _stack.tcp.stop("modem_reboot");
+                return;
+            }
             _rebootStep = 1;
             logger.log(LogModule::GsmController, "user requested modem reboot\n");
             if (!sendAt("AT+SAPBR=0,1", "SAPBR", AwaitKind::OK, Gsm::SAPBR_DEACT_TIMEOUT_MS)) {

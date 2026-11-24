@@ -148,6 +148,25 @@ void CellularCore::service() {
     }
 
     if (_gsm->isReady()) {
+        // modem_reboot: TCP стопается ещё на READY — оборвать MQTT до SAPBR/CFUN и не
+        // поднимать сессию снова, пока флаг не снимется на следующем READY после INIT.
+        if (_gsm->mqttHardDropPending()) {
+            if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain()) || _mqtt->isSessionConnected()) {
+                if (!_loggedMqttFlush) {
+                    _loggedMqttFlush = true;
+                    logger.log(LogModule::CellularCore, "MQTT hard-drop before modem soft-reboot\n");
+                }
+                _mqtt->abortSessionHard("modem_soft_reboot");
+                _mqttStarted = false;
+                _mqttStableNoted = false;
+                _lastLoggedFailStreak = 0;
+                _loggedMqttFlush = false;
+            } else {
+                _mqtt->setReconnectEnabled(false);
+            }
+            return;
+        }
+
         if (_gsm->modemServiceEpochBusy()) {
             // Держать MQTT выключенным всю эпоху голоса/SMS.
             // Пока CIP-слив не добит (потолок эпохи мог уйти из NeedMqttDrain) — качать loop,
@@ -234,8 +253,25 @@ void CellularCore::service() {
             _lastLoggedFailStreak = failStreak;
         }
     } else if (_mqttStarted || (_mqtt && _mqtt->needsDisconnectDrain())) {
+        // Soft-reboot модема (CFUN): CIPSEND online=false уже бессмысленен и блокирует INIT.
+        if (_gsm->mqttHardDropPending()) {
+            if (!_loggedMqttFlush) {
+                _loggedMqttFlush = true;
+                logger.log(LogModule::CellularCore, "GSM left READY — hard-drop MQTT\n");
+            }
+            _mqtt->abortSessionHard("modem_soft_reboot");
+            _gsm->clearMqttHardDropPending();
+            _mqttStarted = false;
+            _mqttStableNoted = false;
+            _lastLoggedFailStreak = 0;
+            _loggedMqttFlush = false;
+            return;
+        }
         // Выход из READY (повторное присоединение/ERROR): слить offline+DISCONNECT, как suspend (C1).
-        logger.log(LogModule::CellularCore, "GSM left READY — flushing MQTT\n");
+        if (!_loggedMqttFlush) {
+            _loggedMqttFlush = true;
+            logger.log(LogModule::CellularCore, "GSM left READY — flushing MQTT\n");
+        }
         (void)drainMqttDisconnect_();
     }
 }

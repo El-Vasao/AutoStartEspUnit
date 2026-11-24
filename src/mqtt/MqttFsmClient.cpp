@@ -109,6 +109,16 @@ void MqttFsmClient::forceError(const char* reason) {
     setError_(reason ? reason : "force");
 }
 
+void MqttFsmClient::abortLocal(const char* reason) {
+    _lastErrorReason = reason ? reason : "abort";
+    logger.log(LogModule::MqttFsmClient, "abort local: %s\n", _lastErrorReason);
+    _net.stop();
+    resetSession_();
+    _state = State::Idle;
+    _disconnectRequested = false;
+    _connectRequested = false;
+}
+
 void MqttFsmClient::clearTxQueue_() {
     _txQHead = 0;
     _txQTail = 0;

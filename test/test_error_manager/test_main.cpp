@@ -78,6 +78,20 @@ static void test_undelivered_until_marked_by_fingerprint() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)ErrorCode::START_FAILED, out[0].code);
 }
 
+static void test_copy_recent_keeps_delivered_and_inactive() {
+    ErrorManager em = fresh();
+    em.set(ErrorCode::START_FAILED);
+    ErrorSnapshotEntry out[ErrorHistory::CAPACITY];
+    TEST_ASSERT_EQUAL_UINT8(1, em.copyUndelivered(out, ErrorHistory::CAPACITY));
+    em.markDelivered(out, 1);
+    em.clear(ErrorCode::START_FAILED);
+    TEST_ASSERT_EQUAL_UINT8(0, em.copyUndelivered(out, ErrorHistory::CAPACITY));
+    TEST_ASSERT_EQUAL_UINT8(0, em.copyActive(out, ErrorHistory::CAPACITY));
+    TEST_ASSERT_EQUAL_UINT8(1, em.copyRecent(out, ErrorHistory::CAPACITY));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ErrorCode::START_FAILED, out[0].code);
+    TEST_ASSERT_FALSE(out[0].active);
+}
+
 static void test_rtc_round_trip_restores_actives_and_redelivers() {
     ErrorManager a = fresh();
     a.set(ErrorCode::GSM_NO_RESPONSE);
@@ -132,6 +146,7 @@ int main(int, char**) {
     RUN_TEST(test_repeated_set_refreshes_and_moves_to_front);
     RUN_TEST(test_ring_evicts_oldest);
     RUN_TEST(test_undelivered_until_marked_by_fingerprint);
+    RUN_TEST(test_copy_recent_keeps_delivered_and_inactive);
     RUN_TEST(test_rtc_round_trip_restores_actives_and_redelivers);
     RUN_TEST(test_cleared_rtc_is_not_loaded);
     RUN_TEST(test_boot_reset_is_active_only_without_other_actives);

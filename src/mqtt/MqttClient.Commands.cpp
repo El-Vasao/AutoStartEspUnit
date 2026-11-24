@@ -462,9 +462,12 @@ void MqttClient::tryAckIngress_(const uint8_t* payload, uint16_t length) {
             if (noSlot) {
                 (void)stageAck(cmd.id, MqttCmd::CODE_UNAVAILABLE);
             } else if (inFlight) {
+                logger.log(LogModule::MqttClient, "id-ring replay id=%s inFlight\n", cmd.id);
                 (void)stageAck(cmd.id, MqttCmd::CODE_ACCEPTED);
             } else {
-                (void)stageAck(cmd.id, existingCode ? existingCode : MqttCmd::CODE_OK);
+                const uint16_t code = existingCode ? existingCode : MqttCmd::CODE_OK;
+                logger.log(LogModule::MqttClient, "id-ring replay id=%s code=%u\n", cmd.id, (unsigned)code);
+                (void)stageAck(cmd.id, code);
             }
             return;
         }

@@ -5,6 +5,8 @@ Firmware tip: AutoStart **1.0.31** (`debug` build for D/E). Prefix `car/emulator
 Captures: `CarEmu/tools/bench/audit-captures/func-*.jsonl`  
 Harness note: `bench.py` cmd `id` must be unique across sessions (fixed: time-prefixed); otherwise device id-ring returns cached `200` and **does not run**.
 
+Verdicts: thin `/reply` = HTTP-like `code` only; **reason** is in `/state` → `err` (`[{code,msg,active},…]`). After fail cases use `status` / `Bench.wait_status()` and read `last_err`, not reply alone.
+
 ## A. Prep
 
 | Check | Result |
@@ -39,17 +41,25 @@ Harness note: `bench.py` cmd `id` must be unique across sessions (fixed: time-pr
 
 ## D–E. RPM / input start
 
-**Путь:** `python build.py debug -u` + MQTT `cfg set` / `cfg put` (без SoftAP). После set/put — `rebootRequired` как SoftAP; для чистого старта менеджеров — `reboot`.
+**Путь:** debug FW + `cfg get` → patch (IN1 type/`threshold_rpm`) → `cfg_put_bytes` → MQTT `reboot` (не один `cfg set`). Скрипт: `CarEmu/tools/bench/run_func_de.py`. Capture: `audit-captures/func-DE-live3.txt`.
+
+`reboot_required` **не** гасит MQTT/GSM — только отображаемое имя режима ([BEHAVIOR.md](../BEHAVIOR.md)); после `cfg put` нужен реальный `reboot`, иначе менеджеры/`enabled` не перечитываются с boot.
 
 | # | Case | Result | Notes |
 |---|------|--------|-------|
-| D0 | flash debug FW | **blocked** | `pio upload` COM5/COM3: no serial data (нужен boot/USB flash вручную) |
-| D1 | `cfg set vehicle.start_method rpm` + reboot | pending | bench: `cfg set vehicle.start_method rpm` |
-| D2 | RPM start success | pending | after D1 |
-| E1 | `cfg set vehicle.start_method input` + reboot | pending | |
-| E2 | input start | pending | |
+| D0 | flash debug FW | **pass** | manual |
+| D0b | MQTT debug smoke | **pass** | set/get/put/prg get/404 |
+| D1 | rpm success | **pass** | put+reboot; `run 1` → 200, last=1, K1+K2, err none |
+| D2 | rpm fail nofire | **pass*** | reply **500**; `state.err` часто уже inactive к `status` |
+| E1 | input success | **pass** | mid-crank `in1 h` → 200 |
+| E2 | input fail | **fail→fixed** | с `follow` после прокрутки V-settle → 200; в скрипте теперь `nofire`+`in1 l` (ретест после оживления MQTT) |
+| C1-reg | timed after restore | **pass** | put timed+reboot; V≈13.96, K1+K2 |
+| prg get/put 200 | | **pass** | scratch id 200 |
+| prg delete 200 | | **fail** | reply timeout после put (retry в скрипте) |
+| cfg set 404 | | **pass** | |
+| modem_reboot | | **partial** | ack 202; recover status timed out (~3 min) |
 
-Helpers: `Bench.cfg_put_bytes` / `cfg set` / `cfg get` + `collect_chunks("cfg")` in CarEmu `tools/bench/bench.py`. Release FW → `400` + hint.
+Helpers: `cfg_put_bytes` raw≈120 B; `wait_reply` skips 202; settle after commit before `reboot` (иначе SIM800 `rx_incomplete`).
 
 ## F. MQTT contract (live)
 
@@ -64,3 +74,4 @@ Helpers: `Bench.cfg_put_bytes` / `cfg set` / `cfg get` + `collect_chunks("cfg")`
 1. Idle `stop` after success — documented in BEHAVIOR / TESTING / USAGE (not a harness bug).
 2. Bench cmd ids must not reuse `b0001…` across processes (fixed: time-prefixed).
 3. Between cases reset with `run 231` (Все выкл) + `e vbat auto` to avoid `already_running` contamination.
+4. FW (2026-11-24 scope): `modem_reboot` hard-drop MQTT before CFUN; full `state.err` keeps history; debug commit/delete settle RX; id-ring replay log.

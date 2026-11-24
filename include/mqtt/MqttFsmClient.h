@@ -107,7 +107,9 @@ public:
 
     /// Принудительно состояние Error (например, переполнение RX транспорта) → путь переподключения.
     void forceError(const char* reason);
-    /// Последняя причина `setError_` / `forceError` (стабильная C-строка; "" если нет).
+    /// Жёсткий сброс в Idle без Error/streak (CFUN / soft-reboot модема — CIPSEND уже бессмысленен).
+    void abortLocal(const char* reason);
+    /// Последняя причина `setError_` / `forceError` / `abortLocal` (стабильная C-строка; "" если нет).
     const char* lastErrorReason() const { return _lastErrorReason; }
 
     // Подписка QoS1. В состоянии Connected сразу; иначе ставится в очередь.

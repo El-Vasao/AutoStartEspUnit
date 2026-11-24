@@ -205,6 +205,20 @@ uint8_t ErrorManager::copyActive(ErrorSnapshotEntry* out, uint8_t cap) const {
     return n;
 }
 
+uint8_t ErrorManager::copyRecent(ErrorSnapshotEntry* out, uint8_t cap) const {
+    if (!out || cap == 0) return 0;
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < _count && n < cap; i++) {
+        if (_ring[i].code == ErrorCode::NONE) continue;
+        out[n].code = static_cast<uint8_t>(_ring[i].code);
+        out[n].active = _ring[i].active;
+        out[n].uptimeSec = _ring[i].uptimeSec;
+        strlcpy(out[n].msg, errorCodeToString(_ring[i].code), sizeof(out[n].msg));
+        n++;
+    }
+    return n;
+}
+
 void ErrorManager::markDelivered(const ErrorSnapshotEntry* sent, uint8_t n) {
     if (!sent || n == 0) return;
     for (uint8_t s = 0; s < n; s++) {

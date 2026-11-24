@@ -49,6 +49,9 @@ void GsmController::gsmNoteModemSoftReboot(bool cfunAlreadyDone) {
     _baudCooldownUntilMs = 0;
     _didIprNvProbeThisCycle = false;
     _didPreBaudSearchCfun = cfunAlreadyDone;
+    // Bearer/IP после CFUN невалидны — не считать warm SAPBR; MQTT только hard-drop.
+    clearAppliedApn_();
+    _mqttHardDropPending = true;
 }
 
 void GsmController::gsmOpenUart(uint32_t baud) {

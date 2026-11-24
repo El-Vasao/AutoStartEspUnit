@@ -60,8 +60,9 @@ stateDiagram-v2
 
 Дополнительно:
 
-- Успешное подтверждение **липнет** до `stop()` (`_verifiedModemContactSinceStop`). После soft-reboot модема (PreCfun / UI / ERROR L4) sticky verify снимается (`gsmNoteModemSoftReboot`), чтобы PreCfun/search снова были возможны.
-- Рутиновый CFUN после каждого успешного канала **не** выполняется; CFUN — PreCfun (один раз за цикл) и тяжёлый recovery L4 / UI reboot.
+- Успешное подтверждение **липнет** до `stop()` (`_verifiedModemContactSinceStop`). После soft-reboot модема (PreCfun / UI / ERROR L4) sticky verify снимается (`gsmNoteModemSoftReboot`), чтобы PreCfun/search снова были возможны; также сбрасывается applied APN и ставится `mqttHardDropPending` (CellularCore рвёт MQTT без `online=false` CIPSEND).
+- Рутиновый CFUN после каждого успешного канала **не** выполняется; CFUN — PreCfun (один раз за цикл) и тяжёлый recovery L4 / UI/`modem_reboot`.
+- **UI / MQTT `modem_reboot`:** на READY сначала `tcp.stop`, hard-drop MQTT, затем `SAPBR=0,1` → `CFUN=1,1` → INIT + `POST_CFUN_QUIET_MS`. Не слать graceful DISCONNECT поверх умирающего модема.
 
 ### 3) SIM800 TCP (URC-first)
 

@@ -73,6 +73,9 @@ public:
     /// Сейчас активные ошибки, сначала самые новые (для UI/SSE). Возвращает число записанных.
     uint8_t copyActive(ErrorSnapshotEntry* out, uint8_t cap) const;
 
+    /// Кольцо истории (в т.ч. delivered/inactive), сначала самые новые — для full MQTT `state`.
+    uint8_t copyRecent(ErrorSnapshotEntry* out, uint8_t cap) const;
+
     /// Пометить совпавшие записи доставленными после успешной стадии PUBLISH статуса.
     void markDelivered(const ErrorSnapshotEntry* sent, uint8_t n);
 

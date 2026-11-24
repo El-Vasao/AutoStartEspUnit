@@ -44,6 +44,8 @@ public:
     void onTransportRxOverflow();
     bool publishStatus(bool forceFull = false);
     void disconnect();
+    /// Сброс сессии без online=false/DISCONNECT (модем soft-reboot / CFUN).
+    void abortSessionHard(const char* reason);
     bool needsDisconnectDrain() const;
     uint8_t getConsecutiveConnectFails() const;
     bool isSessionConnected() const { return _fsm.isConnected(); }
@@ -194,7 +196,8 @@ private:
     bool ctrlPlaneBlocked_() const;
     bool publishThinReply_(const char* id, uint16_t code, uint32_t statusSeq = 0);
     bool tryPublishEdgeStatus_();
-    void captureStatusSnapshot_(StatusSnapshot& out) const;
+    /// `fullErrHistory`: full/birth/status — кольцо истории; иначе только undelivered (edge).
+    void captureStatusSnapshot_(StatusSnapshot& out, bool fullErrHistory) const;
 
     bool publishProgramsHash_();
     bool publishHwMapHash_();

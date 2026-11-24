@@ -176,6 +176,8 @@ void GsmController::changeState(GsmState newState) {
         // устойчивой сессии MQTT (clearReattachBackoff) — не здесь — чтобы циклы сбой→reattach отступали.
         _errorRecoveryCycles = 0;
         clearGsmBringupErrors_();
+        // PreCfun/INIT тоже зовут gsmNoteModemSoftReboot — не оставлять липкий hard-drop на reattach.
+        _mqttHardDropPending = false;
         core.logHeapSnapshot("gsm_ready");
     }
     if (newState == GsmState::INIT) {
@@ -288,6 +290,11 @@ ErrorCode GsmController::classifyBearerFail_() const {
 void GsmController::clearReattachBackoff() {
     _reattachBackoffStep = 0;
     _reattachCooldownUntilMs = 0;
+}
+
+void GsmController::pollModemRx() {
+    _stack.uart.pollRx();
+    _stack.tcp.tick(millis());
 }
 
 void GsmController::leaveReadyForReattach_(const char* why) {

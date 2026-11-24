@@ -77,6 +77,13 @@ public:
     /// Сбросить паузу reattach после устойчивой сессии данных MQTT (не при каждом входе в READY).
     void clearReattachBackoff();
 
+    /// Soft-reboot модема (CFUN/UI): MQTT нельзя сливать через CIPSEND — только hard-drop.
+    bool mqttHardDropPending() const { return _mqttHardDropPending; }
+    void clearMqttHardDropPending() { _mqttHardDropPending = false; }
+
+    /// Прокачать UART RX + TCP tick без полного FSM (после flash commit debug-пути).
+    void pollModemRx();
+
     // Проверить, готов ли модем к работе (GPRS подключён)
     bool isReady() const { return _state == GsmState::READY; }
 
@@ -204,6 +211,7 @@ private:
     bool _reattachRequested{false};
     bool _userRebootRequested{false};
     uint8_t _rebootStep{0};
+    bool _mqttHardDropPending{false};
     uint32_t _reattachCooldownUntilMs{0};
     uint8_t _reattachBackoffStep{0};
 
