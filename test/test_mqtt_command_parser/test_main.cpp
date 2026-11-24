@@ -184,6 +184,46 @@ void test_trailing_garbage_rejected() {
     TEST_ASSERT_TRUE(parseMqttCommandJson("  {\"id\":\"a\",\"cmd\":\"stop\"}  ", cmd));
 }
 
+void test_parse_cfg_prg_modem() {
+    MqttCommand cmd;
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"c1\",\"cmd\":\"cfg\",\"op\":\"begin\",\"bytes\":100,\"crc\":\"aabbccdd\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::Cfg, (int)cmd.kind);
+    TEST_ASSERT_EQUAL((int)MqttDebugOp::Begin, (int)cmd.debugOp);
+    TEST_ASSERT_TRUE(cmd.hasDebugBytes);
+    TEST_ASSERT_EQUAL_UINT32(100, cmd.debugBytes);
+    TEST_ASSERT_EQUAL_STRING("aabbccdd", cmd.debugCrcHex);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"c2\",\"cmd\":\"cfg\",\"op\":\"put\",\"i\":0,\"n\":2,\"data\":\"YQ==\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttDebugOp::Put, (int)cmd.debugOp);
+    TEST_ASSERT_TRUE(cmd.hasDebugChunk);
+    TEST_ASSERT_EQUAL_UINT16(0, cmd.debugChunkI);
+    TEST_ASSERT_EQUAL_UINT16(2, cmd.debugChunkN);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"c3\",\"cmd\":\"cfg\",\"op\":\"set\",\"path\":\"vehicle.start_method\",\"value\":\"rpm\"}",
+        cmd));
+    TEST_ASSERT_EQUAL((int)MqttDebugOp::Set, (int)cmd.debugOp);
+    TEST_ASSERT_EQUAL_STRING("vehicle.start_method", cmd.debugPath);
+    TEST_ASSERT_EQUAL_STRING("rpm", cmd.debugValue);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"p1\",\"cmd\":\"prg\",\"op\":\"get\",\"program\":2}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::Prg, (int)cmd.kind);
+    TEST_ASSERT_EQUAL((int)MqttDebugOp::Get, (int)cmd.debugOp);
+    TEST_ASSERT_EQUAL_UINT8(2, cmd.programId);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"m1\",\"cmd\":\"modem_reboot\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::ModemReboot, (int)cmd.kind);
+
+    char b64[64];
+    TEST_ASSERT_TRUE(mqttExtractDebugDataB64(
+        "{\"id\":\"c2\",\"cmd\":\"cfg\",\"op\":\"put\",\"i\":0,\"n\":1,\"data\":\"YWI=\"}", b64,
+        sizeof(b64)));
+    TEST_ASSERT_EQUAL_STRING("YWI=", b64);
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -206,5 +246,6 @@ int main(int, char**) {
     RUN_TEST(test_id_charset);
     RUN_TEST(test_id_length_limit);
     RUN_TEST(test_trailing_garbage_rejected);
+    RUN_TEST(test_parse_cfg_prg_modem);
     return UNITY_END();
 }

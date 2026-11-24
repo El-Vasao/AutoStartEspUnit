@@ -37,6 +37,7 @@ PATHS = {
 }
 PIO_ENVS = {
     "release": "esp32c3",
+    "debug": "esp32c3_debug",
 }
 
 # ====================================================
@@ -572,7 +573,8 @@ USAGE:
   python build.py [COMMAND] [OPTIONS]
 
 COMMANDS:
-  release             Build firmware (SSE + UART1 log TX on IO7)
+  release             Production firmware (no MQTT debug ops)
+  debug               Same + -DAUTOSTART_MQTT_DEBUG (cfg/prg chunks, modem_reboot)
   fs                  Build 3-gzip UI tree and upload LittleFS (uploadfs)
 
 OPTIONS:
@@ -588,13 +590,14 @@ OPTIONS:
   -h, --help          This help
 
 Firmware VERSION file (semver):
-  Default after each successful release: +0.0.1
+  Default after each successful release/debug: +0.0.1
   --bump-minor: new feature (config still loads)
   --bump-major: breaking config / protocol / pin map
   patch>99 or minor>99 auto-rolls into the next field
 
 EXAMPLES:
   python build.py release -u
+  python build.py debug -u
   python build.py fs
   python build.py release --no-ota
   python build.py release --bump-minor
@@ -619,7 +622,7 @@ class VersionGen:
         self._bump_after = bump != "none"
 
     def save(self, build_type="release"):
-        if build_type != "release":
+        if build_type not in ("release", "debug"):
             build_type = "release"
         os.makedirs(PATHS["include"], exist_ok=True)
         os.makedirs(os.path.dirname(PATHS["version_h"]), exist_ok=True)
@@ -677,7 +680,7 @@ def check_pins():
 # СБОРКА
 # ====================================================
 def build(upload=False, skip_ota=False, build_type="release", bump="patch"):
-    if build_type != "release":
+    if build_type not in ("release", "debug"):
         build_type = "release"
     print(f"\n=== BUILD {build_type.upper()} ===")
 
@@ -781,10 +784,15 @@ def main():
         upload_filesystem("data", gzip_enabled=True, cleanup_gz=(not keep_gz))
         return
 
-    if "debug" in args:
-        print_error("build.py debug removed: logs always go to UART1 TX on IO7 (and SSE)")
-
     build_type = "release"
+    if "debug" in args:
+        build_type = "debug"
+    elif "release" in args:
+        build_type = "release"
+    elif "fs" not in args and "uploadfs" not in args:
+        # bare `python build.py` already returned help; unknown tokens → release
+        pass
+
     upload = "-u" in args or "--upload" in args
     skip_ota = "--no-ota" in args
     if "--no-bump" in args:

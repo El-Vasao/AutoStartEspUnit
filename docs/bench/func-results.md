@@ -1,6 +1,6 @@
 # Функциональный стенд — результаты
 
-Firmware tip: AutoStart **1.0.30**. Prefix `car/emulator`. Date: 2026-11-24.
+Firmware tip: AutoStart **1.0.31** (`debug` build for D/E). Prefix `car/emulator`. Date: 2026-11-24.
 
 Captures: `CarEmu/tools/bench/audit-captures/func-*.jsonl`  
 Harness note: `bench.py` cmd `id` must be unique across sessions (fixed: time-prefixed); otherwise device id-ring returns cached `200` and **does not run**.
@@ -39,7 +39,17 @@ Harness note: `bench.py` cmd `id` must be unique across sessions (fixed: time-pr
 
 ## D–E. RPM / input start
 
-**Отложено** — смена `start_method` только через SoftAP/`config`; на стенде SoftAP рвёт интернет/MQTT у ПК. Вернуться отдельно (ноутбук на AP или офлайн-скрипт).
+**Путь:** `python build.py debug -u` + MQTT `cfg set` / `cfg put` (без SoftAP). После set/put — `rebootRequired` как SoftAP; для чистого старта менеджеров — `reboot`.
+
+| # | Case | Result | Notes |
+|---|------|--------|-------|
+| D0 | flash debug FW | **blocked** | `pio upload` COM5/COM3: no serial data (нужен boot/USB flash вручную) |
+| D1 | `cfg set vehicle.start_method rpm` + reboot | pending | bench: `cfg set vehicle.start_method rpm` |
+| D2 | RPM start success | pending | after D1 |
+| E1 | `cfg set vehicle.start_method input` + reboot | pending | |
+| E2 | input start | pending | |
+
+Helpers: `Bench.cfg_put_bytes` / `cfg set` / `cfg get` + `collect_chunks("cfg")` in CarEmu `tools/bench/bench.py`. Release FW → `400` + hint.
 
 ## F. MQTT contract (live)
 

@@ -38,8 +38,10 @@ MQTT-публикация статуса и подписка на команды
 | `/trigMap` | `{prefix}/trigMap` | Retained слот = 8 hex FNV объекта триггеров; тело по `trigmap` с `retain=false` |
 | `/cmd` | `{prefix}/cmd` | Команды → device (subscribe QoS1, не retained) |
 | `/reply` | `{prefix}/reply` | Тонкие ответы ← device (publish QoS1) |
+| `/cfg` | `{prefix}/cfg` | **только `debug` build**: чанки base JSON ← device (`retain=false`) |
+| `/prg` | `{prefix}/prg` | **только `debug` build**: чанки программы ← device (`retain=false`) |
 
-При смене префикса — пустой retain на старых `online`/`state`/`programs`/`hwMap`/`trigMap`.
+При смене префикса — пустой retain на старых `online`/`state`/`programs`/`hwMap`/`trigMap` (и `/cfg`/`/prg` в debug).
 
 **Offline = нет команд:** клиент шлёт `/cmd` только при `online=true`.
 
@@ -65,7 +67,7 @@ MQTT-публикация статуса и подписка на команды
 
 - **Ingress**: parse + место в FIFO → ack `202` или reject. Retained на `/cmd` игнорируется. Если входящий QoS>0 и PUBACK не встал в очередь — команда не исполняется.
 - **Финал**: тонкий `{id,code}`; у `status` ещё `seq`. У `seq` поле `seq` есть, только если из очереди уже что-то ушло; иначе его нет, а `statusSeq` равен 0. Жирных тел в reply нет.
-- **Кольцо id (16)** только для `run`/`stop`/`set`/`set_time`: резерв на ingress до enqueue. Повтор in-flight → `202`; после финала → сохранённый `code`. Чистится при обрыве сессии.
+- **Кольцо id (16)** только для `run`/`stop`/`set`/`set_time`: резерв на ingress до enqueue. Повтор in-flight → `202`; после финала → сохранённый `code`. Чистится при обрыве сессии. Debug-ops (`cfg`/`prg`/`modem_reboot`) **вне** кольца.
 - Исходящий reply QoS1: одна копия ≤128 B, таймаут 5 с, один DUP, затем слот свободен.
 
 ### Очереди
@@ -128,7 +130,46 @@ MQTT-публикация статуса и подписка на команды
 
 - `status` — новый full retained `state`, reply `{id,code:200,seq}` (seq этого кадра).
 - `seq` — **ничего не публикует** в `state`. Reply `{id,code:200}` и поле `seq`, только если из очереди уже что-то ушло. Иначе поля `seq` нет.
-- `reboot` — debug: после `202` вызывает `core.reboot()` (мгновенный hard-restart). Финального `200` нет — устройство уже перезагружается.
+- `reboot` — после `202` вызывает `core.reboot()` (мгновенный hard-restart ESP). Финального `200` нет — устройство уже перезагружается. Не путать с `modem_reboot`.
+
+### Debug MQTT (`python build.py debug`, `-DAUTOSTART_MQTT_DEBUG`)
+
+В **release** `cfg` / `prg` / `modem_reboot` → `400` (unknown). В конфиге runtime-флага нет.
+
+| cmd | op | Смысл |
+|-----|-----|--------|
+| `cfg` | `begin` / `put` / `commit` / `abort` | Полная заливка base JSON чанками (SoftAP `/config/save`) |
+| `cfg` | `get` | Серия publish на `/cfg` |
+| `cfg` | `set` | Точечный ключ (`path` + `value`) → save base |
+| `cfg` | `reset` | Заводской base (`Config::reset`) |
+| `prg` | `begin` / `put` / `commit` / `abort` | Заливка программы чанками (SoftAP program POST) |
+| `prg` | `get` | Серия publish на `/prg` (`program` id) |
+| `prg` | `delete` | Удалить программу по id |
+| `prg` | `reset` | Заводской набор программ |
+| `modem_reboot` | — | SoftAP `POST /modem/reboot` → `requestModemReboot()`; тонкий `202`, финальный `200` не гарантирован |
+
+**Upload (stop-and-wait на каждый `put`, inbound FIFO 8):**
+
+```json
+{"id":"u1","cmd":"cfg","op":"begin","bytes":1200,"crc":"a1b2c3d4"}
+{"id":"u2","cmd":"cfg","op":"put","i":0,"n":4,"data":"<base64>"}
+{"id":"u3","cmd":"cfg","op":"commit"}
+{"id":"u4","cmd":"cfg","op":"abort"}
+```
+
+- `begin`: ожидаемый raw size ≤ 6144 и IEEE CRC32 hex (8 н.р. символов) всего тела.
+- `put`: всегда чанки (`n≥1`); `i` строго 0..n-1 по порядку; `data` = base64 куска. `CMD_JSON_MAX=512`.
+- Один upload-слот; во время put остальные debug mutate → `503`.
+- `commit`: CRC + SoftAP-путь (cfg → tmp + `applyPostedConfigJsonFile` + `rebootRequired`; prg → tmp + `commitPostedProgramFile`). Полный hot-apply без reboot не делается — как UI, чистый старт после `reboot`.
+
+**Download** (`get`): серия кадров на `/cfg` или `/prg`, TX pacing; CRC32 hex только в `i=0`:
+
+```json
+{"t":"cfg","i":0,"n":3,"crc":"a1b2c3d4","data":"<base64>"}
+{"t":"cfg","i":1,"n":3,"data":"<base64>"}
+```
+
+При ошибке сборки bench повторяет `get`. `cfg set` пример: `{"id":"s1","cmd":"cfg","op":"set","path":"vehicle.start_method","value":"rpm"}`.
 
 ### Снимок `state`
 
@@ -158,4 +199,4 @@ MQTT-публикация статуса и подписка на команды
 Полный каскад модема не делит IP с MQTT TCP. Слив: `online=false` + DISCONNECT + CIPCLOSE, затем синхронизация, затем переподключение. См. прежние заметки в `gsm.md` / `TimeSync`.
 
 ### Не входит
-QoS2, TLS на SIM800, очередь сессий команд в прошивке, тело программы по MQTT.
+QoS2, TLS на SIM800, очередь сессий команд в прошивке. Тело cfg/prg по MQTT — только в `debug` build (см. выше).

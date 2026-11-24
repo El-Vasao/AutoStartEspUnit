@@ -4,6 +4,7 @@
 #include "config/Config.h"
 #include "mqtt/HwMapJson.h"
 #include "mqtt/MqttCommandParser.h"
+#include "mqtt/MqttDebug.h"
 #include "mqtt/MqttStatusBuilder.h"
 
 #include "common/Constants.h"
@@ -331,6 +332,41 @@ bool MqttClient::validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const
                 return false;
             }
             return true;
+        case MqttCommandKind::Cfg:
+        case MqttCommandKind::Prg:
+        case MqttCommandKind::ModemReboot:
+#if defined(AUTOSTART_MQTT_DEBUG)
+            if (cmd.kind == MqttCommandKind::ModemReboot) return true;
+            if (cmd.debugOp == MqttDebugOp::None) {
+                errOut = MqttCmdErr::Args;
+                return false;
+            }
+            if (cmd.debugOp == MqttDebugOp::Begin &&
+                (!cmd.hasDebugBytes || cmd.debugCrcHex[0] == '\0')) {
+                errOut = MqttCmdErr::Args;
+                return false;
+            }
+            if (cmd.debugOp == MqttDebugOp::Put && !cmd.hasDebugChunk) {
+                errOut = MqttCmdErr::Args;
+                return false;
+            }
+            if (cmd.debugOp == MqttDebugOp::Set &&
+                (cmd.debugPath[0] == '\0' || cmd.debugValue[0] == '\0')) {
+                errOut = MqttCmdErr::Args;
+                return false;
+            }
+            if (cmd.kind == MqttCommandKind::Prg &&
+                (cmd.debugOp == MqttDebugOp::Get || cmd.debugOp == MqttDebugOp::Delete ||
+                 cmd.debugOp == MqttDebugOp::Begin) &&
+                cmd.programId == 0) {
+                errOut = MqttCmdErr::Args;
+                return false;
+            }
+            return true;
+#else
+            errOut = MqttCmdErr::Unknown;
+            return false;
+#endif
         default:
             errOut = MqttCmdErr::Unknown;
             return false;
@@ -403,6 +439,18 @@ void MqttClient::tryAckIngress_(const uint8_t* payload, uint16_t length) {
         (void)stageAck(cmd.id, mqttErrToHttpCode(argErr));
         return;
     }
+
+#if defined(AUTOSTART_MQTT_DEBUG)
+    // Put payload не хранится в inbound FIFO — держим b64 до dispatch.
+    if ((cmd.kind == MqttCommandKind::Cfg || cmd.kind == MqttCommandKind::Prg) &&
+        cmd.debugOp == MqttDebugOp::Put) {
+        char b64[MqttDebugLimits::CHUNK_B64_MAX + 1]{};
+        if (!mqttExtractDebugDataB64(message, b64, sizeof(b64)) || !mqttDebugSession.holdPutB64(b64)) {
+            (void)stageAck(cmd.id, MqttCmd::CODE_BAD_REQUEST);
+            return;
+        }
+    }
+#endif
 
     const bool idempotentKind = (cmd.kind == MqttCommandKind::Run || cmd.kind == MqttCommandKind::Stop ||
                                  cmd.kind == MqttCommandKind::Set || cmd.kind == MqttCommandKind::SetTime);
@@ -639,6 +687,28 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
             core.reboot();
             return;
         }
+#if defined(AUTOSTART_MQTT_DEBUG)
+        case MqttCommandKind::ModemReboot: {
+            logger.log(LogModule::MqttClient, "modem_reboot id=%s\n", cmd.id);
+            // Как SoftAP POST /modem/reboot: тонкий 202 уже ушёл; финальный 200 не гарантирован.
+            if (_ports && _ports->control.requestModemReboot) {
+                _ports->control.requestModemReboot(_ports->control.ctx);
+            }
+            return;
+        }
+        case MqttCommandKind::Cfg:
+        case MqttCommandKind::Prg: {
+            const uint16_t code = mqttDebugSession.handle(cmd, *this, core.getSensors());
+            PendingReply pr{};
+            pr.kind = PendingKind::Thin;
+            strlcpy(pr.id, cmd.id, sizeof(pr.id));
+            pr.code = code;
+            logger.log(LogModule::MqttClient, "debug %s op final id=%s code=%u\n", mqttCmdKindStr(cmd.kind),
+                       pr.id, (unsigned)pr.code);
+            (void)stageReply_(pr);
+            return;
+        }
+#endif
         default: {
             PendingReply pr{};
             pr.kind = PendingKind::Thin;
@@ -649,3 +719,16 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
         }
     }
 }
+
+#if defined(AUTOSTART_MQTT_DEBUG)
+bool MqttClient::publishDebugChunk(const char* suffix, const char* payload, uint16_t len) {
+    if (!suffix || !payload || len == 0) return false;
+    const char* topic = nullptr;
+    if (strcmp(suffix, MqttTopics::CFG) == 0) topic = _topicCfg;
+    else if (strcmp(suffix, MqttTopics::PRG) == 0) topic = _topicPrg;
+    if (!topic || !topic[0]) return false;
+    if (!_fsm.publish(topic, reinterpret_cast<const uint8_t*>(payload), len, false, true)) return false;
+    logger.log(LogModule::MqttClient, "pub debug %s bytes=%u\n", suffix, (unsigned)len);
+    return true;
+}
+#endif

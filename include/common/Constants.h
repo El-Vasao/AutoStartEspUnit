@@ -152,6 +152,15 @@ namespace MqttTopics {
     constexpr const char* TRIG_MAP = "trigMap";
     constexpr const char* CMD = "cmd";
     constexpr const char* REPLY = "reply";
+    /// Только при AUTOSTART_MQTT_DEBUG: downlink чанков base config / program.
+    constexpr const char* CFG = "cfg";
+    constexpr const char* PRG = "prg";
+}
+
+namespace MqttDebugLimits {
+    constexpr size_t PUT_MAX = 6144;           ///< max raw bytes for cfg/prg upload buffer
+    constexpr size_t CHUNK_B64_MAX = 360;      ///< max base64 chars in one put/get chunk (fits CMD_JSON_MAX)
+    constexpr uint32_t TX_PACE_MS = 80;         ///< gap between downlink chunk publishes
 }
 
 namespace BufferBytes {
@@ -431,7 +440,7 @@ namespace JsonBytes {
     }
 
     namespace Mqtt {
-        constexpr size_t CMD_JSON_MAX = 256; ///< макс. размер входящей JSON-команды (payload) + '\0'
+        constexpr size_t CMD_JSON_MAX = 512; ///< макс. размер входящей JSON-команды (payload) + '\0'
         /// Лимит тела MQTT PUBLISH (JSON) при длине топика до `TextBytes::Mqtt::TOPIC-1`.
         /// На проводе: payload + 1 (fixed) + ≤4 (RL) + 2 (длина топика) + topicLen ≤ TX_MAX.
         constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 900;

@@ -4,6 +4,7 @@
 #include "config/Config.h"
 #include "config/SensorRomResolve.h"
 #include "mqtt/HwMapJson.h"
+#include "mqtt/MqttDebug.h"
 #include "mqtt/MqttStatusBuilder.h"
 
 #include "app/StatusSnapshot.h"
@@ -188,6 +189,10 @@ void MqttClient::rebuildTopics_(const char* prefix) {
     joinTopic_(_topicTrigMap, sizeof(_topicTrigMap), prefix, MqttTopics::TRIG_MAP);
     joinTopic_(_topicCmd, sizeof(_topicCmd), prefix, MqttTopics::CMD);
     joinTopic_(_topicReply, sizeof(_topicReply), prefix, MqttTopics::REPLY);
+#if defined(AUTOSTART_MQTT_DEBUG)
+    joinTopic_(_topicCfg, sizeof(_topicCfg), prefix, MqttTopics::CFG);
+    joinTopic_(_topicPrg, sizeof(_topicPrg), prefix, MqttTopics::PRG);
+#endif
 }
 
 void MqttClient::begin() {
@@ -253,6 +258,9 @@ void MqttClient::onTransportRxOverflow() {
 }
 
 void MqttClient::resetSessionLocal_() {
+#if defined(AUTOSTART_MQTT_DEBUG)
+    mqttDebugSession.abort();
+#endif
     _subscribeQueued = false;
     _mqttWasConnected = false;
     _subWaitStartMs = 0;
@@ -396,6 +404,9 @@ void MqttClient::loop() {
         if (txOk) {
             flushPending_();
             drainInbound_();
+#if defined(AUTOSTART_MQTT_DEBUG)
+            mqttDebugSession.tickDownlink(*this);
+#endif
         }
 
         const bool teleIdle = (_inboundCount == 0) && (_pendingCount == 0) && !_cmdBusy && !_fsm.hasCtrlOutbound();

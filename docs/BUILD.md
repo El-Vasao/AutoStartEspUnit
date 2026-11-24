@@ -1,11 +1,11 @@
 # Сборка, прошивка, LittleFS (ESP32-C3)
 
-Основной путь: [`build.py`](../build.py) и [`platformio.ini`](../platformio.ini), окружение `esp32c3`.
+Основной путь: [`build.py`](../build.py) и [`platformio.ini`](../platformio.ini). Production: `esp32c3`. Стенд с MQTT cfg/prg: `esp32c3_debug`.
 
 ```mermaid
 flowchart TD
-  Py[python build.py release] --> Ver[Version.h]
-  Ver --> Pio[pio run -e esp32c3]
+  Py[python build.py release|debug] --> Ver[Version.h]
+  Ver --> Pio[pio run -e esp32c3 / esp32c3_debug]
   Pio --> Dist[dist/*.bin]
   Dist --> Ota[dist/*-ota.bin]
   Fs[python build.py fs] --> Gz[index.html.gz style.css.gz app.js.gz]
@@ -22,18 +22,20 @@ flowchart TD
 ```bash
 python build.py --help
 
-python build.py release -u    # прошивка и загрузка
+python build.py release -u    # production (без MQTT debug ops)
+python build.py debug -u      # -DAUTOSTART_MQTT_DEBUG: cfg/prg chunks, modem_reboot
 python build.py fs            # UI из трёх gzip → LittleFS uploadfs
 python build.py release --no-ota
 python build.py -c            # очистка
 python build.py -m            # монитор (порт загрузки; журнал — UART1/IO7)
 ```
 
+**Production = `release`.** Сборка `debug` ставит `FIRMWARE_BUILD_TYPE "debug"` и бинарь `autostart-<ver>-debug.bin`; на устройстве доступны MQTT-команды cfg/prg/modem_reboot (см. [`docs/modules/mqtt.md`](modules/mqtt.md)). Runtime-флага в конфиге нет — только макрос компиляции. Старый SERIAL_DEBUG на UART0 не возвращается (логи на UART1/IO7).
 
 Что делает скрипт:
 
-1. Читает semver из [`VERSION`](../VERSION), пишет `include/common/Version.h` (не в git)
-2. `pio run -e esp32c3` (и по желанию `--target upload`)
+1. Читает semver из [`VERSION`](../VERSION), пишет `include/common/Version.h` (не в git) с `FIRMWARE_BUILD_TYPE`
+2. `pio run -e esp32c3` или `esp32c3_debug` (и по желанию `--target upload`)
 3. Копирует `dist/autostart-<semver>-<type>.bin`
 4. Собирает OTA (`dist/*-ota.bin`), если нет `--no-ota`; после успеха двигает `VERSION` на **+0.0.1**
 5. `fs`: собирает `index.html.gz`, `style.css.gz` и `app.js.gz` (и схемы), затем `uploadfs`. Если в `data/` есть `config.json`, он попадает в образ LittleFS. OTA-пакет этот файл не включает.

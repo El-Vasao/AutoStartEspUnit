@@ -16,6 +16,9 @@ enum class MqttCommandKind : uint8_t {
     HwMap,
     TrigMap,
     Reboot,
+    Cfg,
+    Prg,
+    ModemReboot,
 };
 
 enum class MqttSetName : uint8_t {
@@ -26,6 +29,18 @@ enum class MqttSetName : uint8_t {
     Trigger,
     TempTrigger,
     WifiAp,
+};
+
+enum class MqttDebugOp : uint8_t {
+    None = 0,
+    Begin,
+    Put,
+    Commit,
+    Abort,
+    Get,
+    Set,
+    Reset,
+    Delete,
 };
 
 /// Внутренняя классификация; на линии отображается в MqttCmd::CODE_* по образцу HTTP.
@@ -50,6 +65,17 @@ struct MqttCommand {
     bool hasEnabled{false};
     uint32_t epoch{0};
     bool hasEpoch{false};
+
+    MqttDebugOp debugOp{MqttDebugOp::None};
+    uint32_t debugBytes{0};
+    bool hasDebugBytes{false};
+    char debugCrcHex[9]{};
+    uint16_t debugChunkI{0};
+    uint16_t debugChunkN{0};
+    bool hasDebugChunk{false};
+    char debugPath[48]{};
+    char debugValue[48]{};
+    /// Для `put`: сырой JSON команды живёт только до dispatch; data читается повторным сканом.
 };
 
 inline uint16_t mqttErrToHttpCode(MqttCmdErr e) {
@@ -78,6 +104,13 @@ inline const char* mqttCmdKindStr(MqttCommandKind k) {
         case MqttCommandKind::HwMap: return "hwmap";
         case MqttCommandKind::TrigMap: return "trigmap";
         case MqttCommandKind::Reboot: return "reboot";
+        case MqttCommandKind::Cfg: return "cfg";
+        case MqttCommandKind::Prg: return "prg";
+        case MqttCommandKind::ModemReboot: return "modem_reboot";
         default: return "";
     }
+}
+
+inline bool mqttCmdIsDebugKind(MqttCommandKind k) {
+    return k == MqttCommandKind::Cfg || k == MqttCommandKind::Prg || k == MqttCommandKind::ModemReboot;
 }

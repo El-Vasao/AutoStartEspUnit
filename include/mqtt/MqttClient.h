@@ -52,6 +52,11 @@ public:
     void onProgramLifecycle(uint8_t programId, bool finishedOk);
     static void onProgramLifecycleThunk(void* ctx, uint8_t programId, bool finishedOk);
 
+#if defined(AUTOSTART_MQTT_DEBUG)
+    /// Publish one downlink chunk on `{prefix}/cfg` or `{prefix}/prg` (suffix = "cfg"|"prg").
+    bool publishDebugChunk(const char* suffix, const char* payload, uint16_t len);
+#endif
+
 private:
     enum class PendingKind : uint8_t { None, Thin, Status, List, HwMap, TrigMap };
 
@@ -157,6 +162,10 @@ private:
     char _topicTrigMap[TextBytes::Mqtt::TOPIC]{};
     char _topicCmd[TextBytes::Mqtt::TOPIC]{};
     char _topicReply[TextBytes::Mqtt::TOPIC]{};
+#if defined(AUTOSTART_MQTT_DEBUG)
+    char _topicCfg[TextBytes::Mqtt::TOPIC]{};
+    char _topicPrg[TextBytes::Mqtt::TOPIC]{};
+#endif
 
     void connect();
     void noteSessionErrorIfNeeded_();

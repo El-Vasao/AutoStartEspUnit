@@ -36,6 +36,14 @@ uint16_t parseU16(const char* v) {
     return static_cast<uint16_t>(n);
 }
 
+uint32_t parseU32(const char* v) {
+    if (!v || !*v) return 0;
+    char* end = nullptr;
+    unsigned long n = strtoul(v, &end, 10);
+    if (!end || *end != '\0') return 0;
+    return static_cast<uint32_t>(n);
+}
+
 bool parseBoolToken(const char* v, bool* out) {
     if (!v || !out) return false;
     if (strcmp(v, "true") == 0 || strcmp(v, "1") == 0) {
@@ -82,7 +90,24 @@ bool readJsonStringContent(const char*& p, char* out, size_t outCap) {
     return true;
 }
 
-enum class Key : uint8_t { None, Id, Cmd, Program, Name, Ref, Enabled, Epoch };
+enum class Key : uint8_t {
+    None,
+    Id,
+    Cmd,
+    Program,
+    Name,
+    Ref,
+    Enabled,
+    Epoch,
+    Op,
+    Bytes,
+    Crc,
+    I,
+    N,
+    Path,
+    Value,
+    Data,
+};
 
 Key keyFrom(const char* k) {
     if (strcmp(k, "id") == 0) return Key::Id;
@@ -92,6 +117,14 @@ Key keyFrom(const char* k) {
     if (strcmp(k, "ref") == 0) return Key::Ref;
     if (strcmp(k, "enabled") == 0) return Key::Enabled;
     if (strcmp(k, "epoch") == 0) return Key::Epoch;
+    if (strcmp(k, "op") == 0) return Key::Op;
+    if (strcmp(k, "bytes") == 0) return Key::Bytes;
+    if (strcmp(k, "crc") == 0) return Key::Crc;
+    if (strcmp(k, "i") == 0) return Key::I;
+    if (strcmp(k, "n") == 0) return Key::N;
+    if (strcmp(k, "path") == 0) return Key::Path;
+    if (strcmp(k, "value") == 0) return Key::Value;
+    if (strcmp(k, "data") == 0) return Key::Data;
     return Key::None;
 }
 
@@ -103,6 +136,18 @@ MqttSetName setNameFrom(const char* n) {
     if (strcmp(n, "temp_trigger") == 0) return MqttSetName::TempTrigger;
     if (strcmp(n, "wifi_ap") == 0) return MqttSetName::WifiAp;
     return MqttSetName::None;
+}
+
+MqttDebugOp debugOpFrom(const char* o) {
+    if (strcmp(o, "begin") == 0) return MqttDebugOp::Begin;
+    if (strcmp(o, "put") == 0) return MqttDebugOp::Put;
+    if (strcmp(o, "commit") == 0) return MqttDebugOp::Commit;
+    if (strcmp(o, "abort") == 0) return MqttDebugOp::Abort;
+    if (strcmp(o, "get") == 0) return MqttDebugOp::Get;
+    if (strcmp(o, "set") == 0) return MqttDebugOp::Set;
+    if (strcmp(o, "reset") == 0) return MqttDebugOp::Reset;
+    if (strcmp(o, "delete") == 0) return MqttDebugOp::Delete;
+    return MqttDebugOp::None;
 }
 
 bool eqIgnoreAscii(const char* a, const char* b) {
@@ -126,6 +171,9 @@ MqttCommandKind cmdFrom(const char* c) {
     if (eqIgnoreAscii(c, "hwmap")) return MqttCommandKind::HwMap;
     if (eqIgnoreAscii(c, "trigmap")) return MqttCommandKind::TrigMap;
     if (strcmp(c, "reboot") == 0) return MqttCommandKind::Reboot;
+    if (strcmp(c, "cfg") == 0) return MqttCommandKind::Cfg;
+    if (strcmp(c, "prg") == 0) return MqttCommandKind::Prg;
+    if (strcmp(c, "modem_reboot") == 0) return MqttCommandKind::ModemReboot;
     return MqttCommandKind::None;
 }
 
@@ -146,6 +194,21 @@ bool mqttExtractReqId(const char* json, char* out, size_t outCap) {
     return readJsonStringContent(p, out, outCap) && out[0] != '\0' && strlen(out) <= MqttCmd::ID_MAX_LEN;
 }
 
+bool mqttExtractDebugDataB64(const char* json, char* out, size_t outCap) {
+    if (!json || !out || outCap < 2) return false;
+    out[0] = '\0';
+    const char* p = strstr(json, "\"data\"");
+    if (!p) return false;
+    p += 6;
+    skipWs(p);
+    if (*p != ':') return false;
+    p++;
+    skipWs(p);
+    if (*p != '"') return false;
+    p++;
+    return readJsonStringContent(p, out, outCap);
+}
+
 bool parseMqttCommandJson(const char* json, MqttCommand& out) {
     out = MqttCommand{};
     if (!json || !*json) return false;
@@ -157,7 +220,10 @@ bool parseMqttCommandJson(const char* json, MqttCommand& out) {
 
     char cmdStr[24]{};
     char nameStr[24]{};
+    char opStr[16]{};
     bool gotCmd = false;
+    bool gotChunkI = false;
+    bool gotChunkN = false;
 
     for (;;) {
         skipWs(p);
@@ -182,38 +248,55 @@ bool parseMqttCommandJson(const char* json, MqttCommand& out) {
 
         if (*p == '"') {
             p++;
-            char vbuf[48];
-            if (!readJsonStringContent(p, vbuf, sizeof vbuf)) return false;
-            switch (key) {
-                case Key::Id:
-                    if (vbuf[0] == '\0' || strlen(vbuf) > MqttCmd::ID_MAX_LEN || !idCharsetOk(vbuf)) return false;
-                    copyTo(out.id, sizeof(out.id), vbuf);
-                    break;
-                case Key::Cmd:
-                    copyTo(cmdStr, sizeof(cmdStr), vbuf);
-                    gotCmd = true;
-                    break;
-                case Key::Name:
-                    copyTo(nameStr, sizeof(nameStr), vbuf);
-                    break;
-                case Key::Program:
-                    out.programId = parseU8(vbuf);
-                    break;
-                case Key::Ref:
-                    out.ref = parseU16(vbuf);
-                    break;
-                case Key::Enabled: {
-                    bool b = false;
-                    if (!parseBoolToken(vbuf, &b)) return false;
-                    out.enabled = b;
-                    out.hasEnabled = true;
-                    break;
+            // data may be long — skip into throwaway if not a small field
+            if (key == Key::Data) {
+                char skip[MqttDebugLimits::CHUNK_B64_MAX + 1];
+                if (!readJsonStringContent(p, skip, sizeof skip)) return false;
+            } else {
+                char vbuf[48];
+                if (!readJsonStringContent(p, vbuf, sizeof vbuf)) return false;
+                switch (key) {
+                    case Key::Id:
+                        if (vbuf[0] == '\0' || strlen(vbuf) > MqttCmd::ID_MAX_LEN || !idCharsetOk(vbuf)) return false;
+                        copyTo(out.id, sizeof(out.id), vbuf);
+                        break;
+                    case Key::Cmd:
+                        copyTo(cmdStr, sizeof(cmdStr), vbuf);
+                        gotCmd = true;
+                        break;
+                    case Key::Name:
+                        copyTo(nameStr, sizeof(nameStr), vbuf);
+                        break;
+                    case Key::Op:
+                        copyTo(opStr, sizeof(opStr), vbuf);
+                        break;
+                    case Key::Crc:
+                        copyTo(out.debugCrcHex, sizeof(out.debugCrcHex), vbuf);
+                        break;
+                    case Key::Path:
+                        copyTo(out.debugPath, sizeof(out.debugPath), vbuf);
+                        break;
+                    case Key::Value:
+                        copyTo(out.debugValue, sizeof(out.debugValue), vbuf);
+                        break;
+                    case Key::Program:
+                        out.programId = parseU8(vbuf);
+                        break;
+                    case Key::Ref:
+                        out.ref = parseU16(vbuf);
+                        break;
+                    case Key::Enabled: {
+                        bool b = false;
+                        if (!parseBoolToken(vbuf, &b)) return false;
+                        out.enabled = b;
+                        out.hasEnabled = true;
+                        break;
+                    }
+                    default:
+                        break;
                 }
-                default:
-                    break;
             }
         } else if (*p == 't' || *p == 'f') {
-            // голые true/false
             char vbuf[8]{};
             size_t i = 0;
             while (*p && isalpha((unsigned char)*p) && i + 1 < sizeof(vbuf)) vbuf[i++] = *p++;
@@ -242,12 +325,20 @@ bool parseMqttCommandJson(const char* json, MqttCommand& out) {
                     out.epoch = static_cast<uint32_t>(n);
                     out.hasEpoch = true;
                 }
-            }
-            else if (key == Key::Enabled) {
+            } else if (key == Key::Enabled) {
                 bool b = false;
                 if (!parseBoolToken(nbuf, &b)) return false;
                 out.enabled = b;
                 out.hasEnabled = true;
+            } else if (key == Key::Bytes) {
+                out.debugBytes = parseU32(nbuf);
+                out.hasDebugBytes = true;
+            } else if (key == Key::I) {
+                out.debugChunkI = parseU16(nbuf);
+                gotChunkI = true;
+            } else if (key == Key::N) {
+                out.debugChunkN = parseU16(nbuf);
+                gotChunkN = true;
             }
         }
 
@@ -270,6 +361,10 @@ bool parseMqttCommandJson(const char* json, MqttCommand& out) {
     if (out.kind == MqttCommandKind::None) return false;
     if (out.kind == MqttCommandKind::Set) {
         out.setName = setNameFrom(nameStr);
+    }
+    if (out.kind == MqttCommandKind::Cfg || out.kind == MqttCommandKind::Prg) {
+        out.debugOp = debugOpFrom(opStr);
+        out.hasDebugChunk = gotChunkI && gotChunkN;
     }
     return true;
 }

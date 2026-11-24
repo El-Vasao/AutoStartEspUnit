@@ -27,6 +27,10 @@ public:
 #ifdef UNIT_TEST
     BaseConfig& testBase() { return baseCache; }
 #endif
+#if defined(AUTOSTART_MQTT_DEBUG)
+    /// Только debug-сборка: точечный MQTT cfg set мутирует RAM, затем `save()`.
+    BaseConfig& debugMutableBase() { return baseCache; }
+#endif
     /// JSON RAM-кэша тем же emit, что и `/config.json`. ФС не читает.
     void emitBaseJson(Print& out) const;
     uint16_t getCRC() const { return configCRC; }
