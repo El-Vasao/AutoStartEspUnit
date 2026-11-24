@@ -271,9 +271,9 @@ namespace Adc {
     constexpr uint8_t SAMPLES = 5;
     /// EMA «мнения» по медиане тика. Deadband/commit смотрят на неё, не на один шумный отсчёт.
     constexpr float EVIDENCE_ALPHA = 0.50f;
-    /// Ниже шага MQTT-графика (0,1 В): глушит шум АЦП/ШИМ, не глотает десятки вольт.
-    constexpr float DEADBAND_V = 0.05f;
-    /// Ступенька 0,1 В — commit (график / нагрузка / зарядка).
+    /// Всё < 0,1 В на машине неинтересно (и глушит ШИМ стенда). Ступенька = COMMIT_V.
+    constexpr float DEADBAND_V = 0.10f;
+    /// Минимальный сдвиг, который виден в статусе / MQTT-графике.
     constexpr float COMMIT_V = 0.10f;
     /// Скачок ≥ этого (стартер) — commit за один тик.
     constexpr float FAST_TRACK_V = 0.50f;
