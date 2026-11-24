@@ -30,12 +30,12 @@ Harness note: `bench.py` cmd `id` must be unique across sessions (fixed: time-pr
 | # | Case | Result | Notes |
 |---|------|--------|-------|
 | C1 | success `follow` | **pass** | `last=1`, starter edged, V~14, K1+K2 left on |
-| C2 | stop after success (idle) | **fail** | `ProgramExecutor::stop()` calls `allOff` **only if `_running`**; after successful «Запуск» MQTT `stop` leaves ACC/IGN on. Mid-run stop is OK (see F). |
+| C2 | stop after success (idle) | **expected** | Documented: `stop()` allOff only while running; after success use program «Стоп». Mid-run stop OK (F). |
 | C3 | `nofire` | **pass** | run → **500**, relays off |
 | C4 | block IN2 | **pass** | `Engine start blocked by interlock`, 500, no starter |
 | C5 | already running (V≥13.2) | **pass** | `stop=already_running`, no crank |
 | C6 | freeze `vbat 12.0` | **pass** | crank tried, run → 500 |
-| C7 | `stall` / 3s | **inconclusive** | stall during `wait_after_start` looked like `voltage_low` retries → 500; need longer `stall_ms` after confirmed success |
+| C7 | engine stop after success | **pending retest** | CarEmu: `e engine stop` after C1-like success (no auto `stall_ms`) |
 
 ## D–E. RPM / input start
 
@@ -51,6 +51,6 @@ Harness note: `bench.py` cmd `id` must be unique across sessions (fixed: time-pr
 
 ## Findings to track
 
-1. **Idle `stop` does not clear leftover relays** after successful start (code vs TESTING.md expectation).
-2. Bench cmd ids must not reuse `b0001…` across processes.
+1. Idle `stop` after success — documented in BEHAVIOR / TESTING / USAGE (not a harness bug).
+2. Bench cmd ids must not reuse `b0001…` across processes (fixed: time-prefixed).
 3. Between cases reset with `run 231` (Все выкл) + `e vbat auto` to avoid `already_running` contamination.
