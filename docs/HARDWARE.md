@@ -1,37 +1,57 @@
-# Заметки по порту ESP32-C3
+# Железо AutoStart (ESP32-C3)
 
 Ветка: `esp32`. Окружение PlatformIO: **`esp32c3`** (`python build.py release|fs`).
 
-## Пины
+## Модуль MCU
 
-Полная карта — только в [`include/common/Pins.h`](../include/common/Pins.h) (XH-C3F на сетях ESP-12; не Ai-Thinker C3-12F).
+Поддерживаемый модуль: **XH-C3F** (форм-фактор посадочного места ESP-12E/F).
 
-## Разделы
+**Не** Ai-Thinker ESP-C3-12F: у него другая разводка тех же площадок. Карта пинов прошивки — только под XH-C3F.
 
-[`partitions.csv`](../partitions.csv) — два слота OTA (`app0`/`app1`) и ФС с меткой `spiffs` (её монтирует Arduino LittleFS). ФС около 1,4 МБ.
+Полная карта: [`include/common/Pins.h`](../include/common/Pins.h).
 
 ## UART
 
-- **UART0 (GPIO20/21)** — только SIM800.
-- **UART1 TX (GPIO2 / `Pin::LOG_TX`)** — диагностический журнал (`logger`). RX на MCU не открывается. Подключение: IO2 → RX USB-UART, общий GND, 115200 8N1. Отдельной обвязки не требуется; IO2 — strap C3, не тянуть линию вниз на reset. На XH-C3F это площадка **EN** (бывш. EN у ESP-12), не TXD0. Порт прошивки (UART0) журнал больше не показывает. Порт поднимается в `initVariant()` (ещё до `setup()`), чтобы был виден весь прикладной boot.
+| Роль | Пины | Примечание |
+|------|------|------------|
+| SIM800 (AT/MQTT) | UART0: TX IO21, RX IO20 | Только модем |
+| Диагностический журнал | UART1 TX: **IO7** (`Pin::LOG_TX`), RX dummy IO6 | 115200 8N1 |
+
+### Журнал на IO7
+
+Espressif для ESP32-C3 (ESP-AT) сажает UART1 на **GPIO6 (RX) / GPIO7 (TX)**. Прошивка делает так же: TX=IO7, RX=IO6 (пин не выводим на разъём).
+
+**IO2 не используем для журнала:** это strap-пин; с подключённым USB-UART на нём часто полная тишина.
+
+Подключение: **чип IO7 (MCU TX) → RX адаптера**, общий GND, **115200 8N1**.
+
+Порт в `initVariant()` до `setup()`. Порт прошивки (UART0) журнал не показывает.
+
+### Если COM адаптера молчит
+
+1. **Поменять RX↔TX** (MCU TX → адаптер RX). Адаптер «исправен» ≠ правильная пара к ESP.
+2. COM — порт адаптера на IO7, не UART0 прошивки.
+3. 115200 8N1, общий GND, логика 3.3 В.
+4. SoftAP UI показывает логи → прошивка жива, смотреть только проводку IO7.
+5. Loopback адаптера (TX–RX на адаптере без ESP): эхо в терминале = адаптер/COM ок.
+
+## Разделы flash
+
+[`partitions.csv`](../partitions.csv) — два слота OTA (`app0`/`app1`) и ФС с меткой `spiffs`. ФС ~1,4 МБ.
 
 ## UI SoftAP — 3 gzip-ассета
 
-После `python build.py fs`:
-
-1. `index.html.gz`
-2. `style.css.gz`
-3. `app.js.gz`
+После `python build.py fs`: `index.html.gz`, `style.css.gz`, `app.js.gz`.
 
 ## Сборка
 
 ```bash
-python build.py release -u   # прошивка
-python build.py fs           # UI в LittleFS
+python build.py release -u
+python build.py fs
 ```
 
-`include/common/Version.h` генерируется и не попадает в git.
+`include/common/Version.h` генерируется, в git не входит.
 
 ## RAM
 
-На поле: около 170 КБ свободной кучи вскоре после загрузки на C3 — запас SoftAP/UI больше не упирается в узкое место ESP8266.
+~170 КБ свободной кучи вскоре после загрузки на C3.

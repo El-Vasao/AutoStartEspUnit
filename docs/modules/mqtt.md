@@ -107,12 +107,13 @@ MQTT-публикация статуса и подписка на команды
 {"id":"7f3a0123456789ab","cmd":"trigmap"}
 {"id":"7f3a0123456789ab","cmd":"set","name":"thermostat","enabled":true}
 {"id":"t1","cmd":"set_time","epoch":1710000000}
+{"id":"dbg1","cmd":"reboot"}
 ```
 
 | Поле | Правило |
 |------|---------|
 | `id` | 1..16, `A-Za-z0-9_-` (телефон: 16 hex) |
-| `cmd` | `run` \| `stop` \| `list` \| `programs` \| `status` \| `seq` \| `set` \| `set_time` \| `hwmap` \| `trigmap`. `programs`, `hwmap` и `trigmap` без учёта регистра; каждая публикует только свой топик |
+| `cmd` | `run` \| `stop` \| `list` \| `programs` \| `status` \| `seq` \| `set` \| `set_time` \| `hwmap` \| `trigmap` \| `reboot`. `programs`, `hwmap` и `trigmap` без учёта регистра; каждая публикует только свой топик |
 | `set.name` | `thermostat` \| `battery_saver` \| `input` \| `trigger` \| `temp_trigger` \| `wifi_ap` |
 
 | code | Смысл |
@@ -127,6 +128,7 @@ MQTT-публикация статуса и подписка на команды
 
 - `status` — новый full retained `state`, reply `{id,code:200,seq}` (seq этого кадра).
 - `seq` — **ничего не публикует** в `state`. Reply `{id,code:200}` и поле `seq`, только если из очереди уже что-то ушло. Иначе поля `seq` нет.
+- `reboot` — debug: после `202` вызывает `core.reboot()` (мгновенный hard-restart). Финального `200` нет — устройство уже перезагружается.
 
 ### Снимок `state`
 

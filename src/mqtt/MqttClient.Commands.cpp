@@ -311,6 +311,7 @@ bool MqttClient::validateArgs_(const MqttCommand& cmd, MqttCmdErr& errOut) const
         case MqttCommandKind::Seq:
         case MqttCommandKind::HwMap:
         case MqttCommandKind::TrigMap:
+        case MqttCommandKind::Reboot:
             return true;
         case MqttCommandKind::Set:
             if (cmd.setName == MqttSetName::None || !cmd.hasEnabled) {
@@ -630,6 +631,12 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
             finalizeIdRing_(pr.id, pr.code);
             logger.log(LogModule::MqttClient, "command final id=%s code=%u\n", pr.id, (unsigned)pr.code);
             (void)stageReply_(pr);
+            return;
+        }
+        case MqttCommandKind::Reboot: {
+            logger.log(LogModule::MqttClient, "reboot id=%s\n", cmd.id);
+            // Мгновенный hard-restart; финальный reply не успеет уйти — клиент ждёт только 202.
+            core.reboot();
             return;
         }
         default: {

@@ -91,9 +91,17 @@ void test_parse_set_time() {
     TEST_ASSERT_EQUAL_UINT32(1700000000u, cmd.epoch);
 }
 
+void test_parse_reboot() {
+    MqttCommand cmd;
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\"id\":\"rb1\",\"cmd\":\"reboot\"}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::Reboot, (int)cmd.kind);
+    TEST_ASSERT_EQUAL_STRING("rb1", cmd.id);
+    TEST_ASSERT_EQUAL_STRING("reboot", mqttCmdKindStr(cmd.kind));
+}
+
 void test_parse_rejects_unknown_cmd() {
     MqttCommand cmd;
-    TEST_ASSERT_FALSE(parseMqttCommandJson("{\"id\":\"x\",\"cmd\":\"reboot\"}", cmd));
+    TEST_ASSERT_FALSE(parseMqttCommandJson("{\"id\":\"x\",\"cmd\":\"nope\"}", cmd));
 }
 
 void test_parse_rejects_missing_id_or_cmd() {
@@ -187,6 +195,7 @@ int main(int, char**) {
     RUN_TEST(test_parse_set_thermostat);
     RUN_TEST(test_parse_set_input_ref);
     RUN_TEST(test_parse_set_time);
+    RUN_TEST(test_parse_reboot);
     RUN_TEST(test_parse_rejects_unknown_cmd);
     RUN_TEST(test_parse_rejects_missing_id_or_cmd);
     RUN_TEST(test_parse_rejects_bad_json);

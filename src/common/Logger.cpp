@@ -10,8 +10,10 @@
 #include "common/Version.h"
 #include "driver/gpio.h"
 #include "driver/uart.h"
+#include "esp_rom_gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "soc/uart_periph.h"
 #endif
 
 // Определена в WebServer.Core.cpp (тесты подставляют свой приёмник). Вызывается только из задачи основного цикла.
@@ -29,8 +31,11 @@ TaskHandle_t s_loopTask = nullptr;
 portMUX_TYPE s_ringMux = portMUX_INITIALIZER_UNLOCKED;
 bool s_logUartReady = false;
 
+// RX обязателен для uart_set_pin на C3; GPIO6 в проекте не занят.
+constexpr int kLogRxDummy = 6;
+constexpr uart_port_t kLogUart = UART_NUM_1;
+
 bool isrContext() { return xPortInIsrContext(); }
-// До begin() всё выполняется в setup() в задаче цикла.
 bool onLoopTask() { return s_loopTask == nullptr || xTaskGetCurrentTaskHandle() == s_loopTask; }
 void rememberLoopTask() { s_loopTask = xTaskGetCurrentTaskHandle(); }
 struct RingLock {
@@ -40,28 +45,40 @@ struct RingLock {
 #endif
 
 char s_ring[Logging::DEFERRED_SLOTS][Logging::MAX_MESSAGE_LENGTH];
-size_t s_ringHead = 0;   // следующий слот для чтения
+size_t s_ringHead = 0;
 size_t s_ringCount = 0;
 
 void uartPrint(const char* line) {
 #if !defined(UNIT_TEST)
     if (!s_logUartReady || !line) return;
     const size_t n = strlen(line);
-    if (n == 0) return;
-    (void)uart_write_bytes(UART_NUM_1, line, n);
+    if (n) (void)uart_write_bytes(kLogUart, line, n);
 #else
     (void)line;
 #endif
 }
 
 #if !defined(UNIT_TEST)
-/// Идемпотентно: UART1 TX-only на Pin::LOG_TX. Вызывается из initVariant() до setup().
-bool ensureLogUart_() {
-    if (s_logUartReady) return true;
-
-    // Не через Serial1: Arduino begin(rx=-1, tx=…) на C3 ненадёжен.
-    Serial1.end();
+void probeLogPad_() {
+    // Медленные фронты на Pin::LOG_TX: мультиметр/светодиод на COM5-RX должны видеть ~5 Гц.
     gpio_reset_pin(static_cast<gpio_num_t>(Pin::LOG_TX));
+    gpio_set_direction(static_cast<gpio_num_t>(Pin::LOG_TX), GPIO_MODE_OUTPUT);
+    for (int i = 0; i < 10; i++) {
+        gpio_set_level(static_cast<gpio_num_t>(Pin::LOG_TX), i & 1);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+bool ensureLogUart_(bool force = false) {
+    if (s_logUartReady && !force) return true;
+
+    Serial1.end();
+    if (uart_is_driver_installed(kLogUart)) {
+        (void)uart_driver_delete(kLogUart);
+    }
+    s_logUartReady = false;
+
+    probeLogPad_();
 
     uart_config_t cfg{};
     cfg.baud_rate = static_cast<int>(Logging::UART_BAUD);
@@ -72,26 +89,37 @@ bool ensureLogUart_() {
     cfg.source_clk = UART_SCLK_XTAL;
     cfg.rx_flow_ctrl_thresh = 0;
 
-    esp_err_t err = ESP_OK;
-    if (uart_is_driver_installed(UART_NUM_1)) {
-        err = uart_driver_delete(UART_NUM_1);
-    }
-    // rx_buffer_size=0 → RX off; tx ring 256.
+    // Как в Arduino HAL: install → param → pins. RX buf > FIFO (128).
+    esp_err_t err = uart_driver_install(kLogUart, 256, 256, 0, nullptr, 0);
+    if (err == ESP_OK) err = uart_param_config(kLogUart, &cfg);
     if (err == ESP_OK) {
-        err = uart_driver_install(UART_NUM_1, 0, 256, 0, nullptr, 0);
-    }
-    if (err == ESP_OK) {
-        err = uart_param_config(UART_NUM_1, &cfg);
-    }
-    if (err == ESP_OK) {
-        err = uart_set_pin(UART_NUM_1, Pin::LOG_TX, UART_PIN_NO_CHANGE,
+        err = uart_set_pin(kLogUart, Pin::LOG_TX, kLogRxDummy,
                            UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     }
-    s_logUartReady = (err == ESP_OK);
-    if (s_logUartReady) {
-        (void)uart_wait_tx_done(UART_NUM_1, pdMS_TO_TICKS(20));
+    if (err == ESP_OK) {
+        esp_rom_gpio_connect_out_signal(
+            Pin::LOG_TX,
+            UART_PERIPH_SIGNAL(kLogUart, SOC_UART_TX_PIN_IDX),
+            false, false);
     }
-    return s_logUartReady;
+
+    s_logUartReady = (err == ESP_OK);
+    if (!s_logUartReady) {
+        // Быстрое мигание = UART init failed (пайка/пин живы, драйвер нет).
+        for (int i = 0; i < 40; i++) {
+            gpio_set_level(static_cast<gpio_num_t>(Pin::LOG_TX), i & 1);
+            vTaskDelay(pdMS_TO_TICKS(25));
+        }
+        return false;
+    }
+
+    char banner[96];
+    snprintf(banner, sizeof(banner),
+             "\n[log] UART1 TX GPIO%u %lu 8N1 fw %s\n",
+             (unsigned)Pin::LOG_TX, (unsigned long)Logging::UART_BAUD, FIRMWARE_VERSION_STR);
+    uartPrint(banner);
+    (void)uart_wait_tx_done(kLogUart, pdMS_TO_TICKS(100));
+    return true;
 }
 #endif
 
@@ -127,7 +155,7 @@ size_t logFormatLine(char* out, size_t cap, uint32_t ms, LogModule module, const
 
 void Logger::begin() {
 #if !defined(UNIT_TEST)
-    (void)ensureLogUart_();
+    (void)ensureLogUart_(/*force=*/true);
 #endif
     rememberLoopTask();
 }
@@ -204,7 +232,7 @@ void Logger::logSerialOnly(LogModule module, const char* format, ...) {
 void Logger::flushUart() {
 #if !defined(UNIT_TEST)
     if (s_logUartReady) {
-        (void)uart_wait_tx_done(UART_NUM_1, pdMS_TO_TICKS(200));
+        (void)uart_wait_tx_done(kLogUart, pdMS_TO_TICKS(200));
     }
 #endif
 }
@@ -212,16 +240,8 @@ void Logger::flushUart() {
 Logger logger;
 
 #if !defined(UNIT_TEST)
-/// Раньше setup()/loopTask: Arduino вызывает из initArduino() до создания loopTask.
 extern "C" void initVariant() {
     if (!ensureLogUart_()) return;
-    // Прямой TX до rememberLoopTask — чтобы баннер не ждал setup().
-    char banner[96];
-    snprintf(banner, sizeof(banner),
-             "\n[log] UART1 TX GPIO%u %lu 8N1 fw %s\n",
-             (unsigned)Pin::LOG_TX, (unsigned long)Logging::UART_BAUD, FIRMWARE_VERSION_STR);
-    uartPrint(banner);
-    (void)uart_wait_tx_done(UART_NUM_1, pdMS_TO_TICKS(50));
     logger.log(LogModule::Logger, "early init (before setup)\n");
 }
 #endif

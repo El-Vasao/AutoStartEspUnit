@@ -17,7 +17,7 @@
  *   ESP-32-C3 (XH-C3F)  --> SIM800C (SIM800L)
  *   TXD (IO21)          --> RXD
  *   RXD (IO20)          --> TXD
- *   (UART0 только модем; журнал — UART1 TX на IO2)
+ *   (UART0 только модем; журнал — UART1 TX на IO7, как у ESP-AT)
  *
  *   1-Wire (DS18B20, DS2413) - IO9     // strap C3: LOW = download
  *   Button on PCB / IN3       - IO8     // strap C3; active_state LOW (на GND)
@@ -32,7 +32,8 @@
  *   K5-  IO1
  *
  *   VBAT (делитель 1:15 → ~0–1 В) - IO0 / ADC1_CH0
- *   Log UART1 TX                  - IO2   // strap C3; только TX к USB-UART RX
+ *   Log UART1 TX                  - IO7   // ESP-AT default U1TXD; только TX к USB-UART RX
+ *                                         // (IO2 — strap; с адаптером на нём часто тишина)
  *
  * ---------------------------------------------------------------------------
  * Площадки модуля ESP-12 ↔ XH-C3F (левый / правый ряд)
@@ -41,7 +42,7 @@
  *   Площадка ESP-12     XH-C3F     Цепь на плате AutoStart
  *   RST                 EN         enable модуля (не GPIO); у XH EN сверху слева
  *   ADC                 IO0        VBAT
- *   EN                  IO2        журнал UART1 TX (бывш. EN у 12E)
+ *   EN                  IO2        strap / свободен (не журнал)
  *   GPIO16              IO1        K5
  *   GPIO14              IO3        K1
  *   GPIO12              IO4        IN2
@@ -55,6 +56,9 @@
  *   GPIO2               IO8        Button / IN3
  *   GPIO15              IO10       K4
  *   GND                 GND        земля
+ *   (на модуле отдельно) IO6/IO7   журнал: RX dummy / TX (см. Pin::LOG_TX)
+ *
+ * Журнал: чип **IO7** → RX USB-UART (ESP-AT UART1 TX). Не IO2 (strap).
  *
  */
 
@@ -64,8 +68,9 @@ namespace Pin {
     constexpr uint8_t GSM_TX = 21;     // TXD → SIM800 RXD
     constexpr uint8_t GSM_RX = 20;     // RXD ← SIM800 TXD
 
-    // Диагностический UART1 TX (MCU→USB-UART RX). RX не используется.
-    constexpr uint8_t LOG_TX = 2;
+    // Диагностический UART1 TX (MCU→USB-UART RX). Как ESP-AT: U1TXD=GPIO7.
+    // Dummy RX в Logger — GPIO6. IO2 не используем (strap + типичные глюки с адаптером).
+    constexpr uint8_t LOG_TX = 7;
 
     // Шина 1-Wire
     constexpr uint8_t ONEWIRE = 9;

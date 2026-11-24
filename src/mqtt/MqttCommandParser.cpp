@@ -125,6 +125,7 @@ MqttCommandKind cmdFrom(const char* c) {
     if (strcmp(c, "set_time") == 0) return MqttCommandKind::SetTime;
     if (eqIgnoreAscii(c, "hwmap")) return MqttCommandKind::HwMap;
     if (eqIgnoreAscii(c, "trigmap")) return MqttCommandKind::TrigMap;
+    if (strcmp(c, "reboot") == 0) return MqttCommandKind::Reboot;
     return MqttCommandKind::None;
 }
 

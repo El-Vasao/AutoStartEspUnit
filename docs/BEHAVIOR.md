@@ -203,7 +203,7 @@ flowchart TD
 
 Топики, retain и размеры кадров — в [modules/mqtt.md](modules/mqtt.md). Здесь только решения.
 
-Команды: `run`, `stop`, `list`, `programs`, `status`, `seq`, `set`, `set_time`, `hwmap`, `trigmap`. `programs`, `hwmap` и `trigmap` читаются без учёта регистра и публикуют только свой топик (`programs`, `hwMap`, `trigMap`). Имена `set`: `thermostat`, `battery_saver`, `input`, `trigger`, `temp_trigger`, `wifi_ap`.
+Команды: `run`, `stop`, `list`, `programs`, `status`, `seq`, `set`, `set_time`, `hwmap`, `trigmap`, `reboot`. `programs`, `hwmap` и `trigmap` читаются без учёта регистра и публикуют только свой топик (`programs`, `hwMap`, `trigMap`). Имена `set`: `thermostat`, `battery_saver`, `input`, `trigger`, `temp_trigger`, `wifi_ap`. `reboot` — debug: после ack `202` зовёт `core.reboot()` без финального reply.
 
 Негодный `run` отвечает 422. Код 404 бывает только у `set` на отсутствующий вход или триггер. Код 409 прошивка не шлёт. `stop` отвечает 200, даже если программа не выполняется. Слишком большой payload `/cmd` отбрасывается без ответа. При обрыве живой сессии публикуется retained `online=false`, затем MQTT DISCONNECT, а команды ещё во входной очереди получают 500.
 

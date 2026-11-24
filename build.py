@@ -572,7 +572,7 @@ USAGE:
   python build.py [COMMAND] [OPTIONS]
 
 COMMANDS:
-  release             Build firmware (SSE + UART1 log TX on IO2)
+  release             Build firmware (SSE + UART1 log TX on IO7)
   fs                  Build 3-gzip UI tree and upload LittleFS (uploadfs)
 
 OPTIONS:
@@ -663,7 +663,7 @@ def check_pins():
     pins = {
         "GSM_TX": 21,
         "GSM_RX": 20,
-        "LOG_TX": 2,
+        "LOG_TX": 7,
         "ONEWIRE": 9,
         "BUTTON": 8,
         "VBAT_ADC": 0,
@@ -782,7 +782,7 @@ def main():
         return
 
     if "debug" in args:
-        print_error("build.py debug removed: logs always go to UART1 TX on IO2 (and SSE)")
+        print_error("build.py debug removed: logs always go to UART1 TX on IO7 (and SSE)")
 
     build_type = "release"
     upload = "-u" in args or "--upload" in args

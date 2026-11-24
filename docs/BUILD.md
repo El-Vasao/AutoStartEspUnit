@@ -26,7 +26,7 @@ python build.py release -u    # прошивка и загрузка
 python build.py fs            # UI из трёх gzip → LittleFS uploadfs
 python build.py release --no-ota
 python build.py -c            # очистка
-python build.py -m            # монитор (порт загрузки; журнал — UART1/IO2)
+python build.py -m            # монитор (порт загрузки; журнал — UART1/IO7)
 ```
 
 
@@ -80,4 +80,4 @@ python -m platformio device monitor
 
 - Разделы: [`partitions.csv`](../partitions.csv)
 - Пины и запуск: [`HARDWARE.md`](HARDWARE.md)
-- Журнал: UART1 TX на GPIO2 (+ SSE); UART0 только SIM800
+- Модуль: XH-C3F (см. [`HARDWARE.md`](HARDWARE.md)); журнал: UART1 TX на IO7 (+ SSE); UART0 только SIM800
