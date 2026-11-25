@@ -44,6 +44,8 @@ StatusSnapshot sample() {
     s.lastProgramId = 2;
     s.timerRemainingSec = 9;
     s.thermostatRuntime = true;
+    s.thermostatAllowed = true;
+    s.batterySaverAllowed = false;
     s.inputTriggerRuntime[0] = true;
     s.timeSynced = true;
     s.epochUtc = 100;
@@ -78,9 +80,23 @@ static void test_full_status_matches_golden_json() {
         "\"temps\":{\"T1\":{\"ok\":true,\"t\":21.50}}},"
         "\"csq\":15,"
         "\"program\":{\"running\":true,\"current\":4,\"last\":2,\"timerRemaining\":9},"
-        "\"runtime\":{\"thermostat\":true,\"batterySaver\":false,"
+        "\"runtime\":{\"thermostat\":true,\"thermostatAllowed\":true,"
+        "\"batterySaver\":false,\"batterySaverAllowed\":false,"
         "\"inputTriggersById\":{\"5\":true},\"tempTriggersById\":{}}}";
     TEST_ASSERT_EQUAL_STRING(golden, out.data());
+}
+
+static void test_delta_emits_allowed_flags() {
+    StatusSnapshot prev = sample();
+    StatusSnapshot cur = prev;
+    cur.seq = 5;
+    cur.thermostatAllowed = false;
+    cur.batterySaverAllowed = true;
+    BufPrint out;
+    emitMqttStatusDeltaJson(cur, prev, sampleCfg(), out);
+    TEST_ASSERT_NOT_NULL(strstr(out.data(), "\"thermostatAllowed\":false"));
+    TEST_ASSERT_NOT_NULL(strstr(out.data(), "\"batterySaverAllowed\":true"));
+    TEST_ASSERT_NULL(strstr(out.data(), "\"thermostat\":"));
 }
 
 static void test_invalid_voltage_is_null_and_errors_are_appended() {
@@ -157,5 +173,6 @@ int main(int, char**) {
     RUN_TEST(test_invalid_voltage_is_null_and_errors_are_appended);
     RUN_TEST(test_change_thresholds_ignore_uptime_epoch_and_heap);
     RUN_TEST(test_delta_contains_only_changed_relay);
+    RUN_TEST(test_delta_emits_allowed_flags);
     return UNITY_END();
 }

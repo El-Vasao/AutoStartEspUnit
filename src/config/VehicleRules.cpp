@@ -197,7 +197,40 @@ const char* validate(const BaseConfig& cfg) {
     if (bs.voltage_start_threshold <= bs.voltage_abort_threshold) {
         return "battery_saver start threshold must be above abort threshold";
     }
+    if (cfg.thermostat.enabled && !thermostatReady(cfg.thermostat)) {
+        return "thermostat enabled but config incomplete";
+    }
+    if (cfg.battery_saver.enabled && !batterySaverReady(cfg.battery_saver)) {
+        return "battery_saver enabled but config incomplete";
+    }
     return nullptr;
+}
+
+bool thermostatReady(const ThermostatConfig& ts) {
+    if (ts.sensor_id == 0) return false;
+    if (!ts.comparison[0]) return false;
+    if (!isfinite(ts.lower_threshold) || !isfinite(ts.upper_threshold)) return false;
+    if (!(ts.upper_threshold > ts.lower_threshold)) return false;
+    if (ts.program_id_lower == 0 && ts.program_id_upper == 0) return false;
+    return true;
+}
+
+bool batterySaverReady(const BatterySaverConfig& bs) {
+    // Same bounds as normalize/validate voltage helpers (anonymous) — keep local to avoid linkage.
+    constexpr float kVoltMin = 5.0f;
+    constexpr float kVoltMax = 30.0f;
+    const bool startOk =
+        isfinite(bs.voltage_start_threshold) && bs.voltage_start_threshold >= kVoltMin &&
+        bs.voltage_start_threshold <= kVoltMax;
+    const bool abortOk =
+        isfinite(bs.voltage_abort_threshold) && bs.voltage_abort_threshold >= kVoltMin &&
+        bs.voltage_abort_threshold <= kVoltMax;
+    if (!startOk || !abortOk) return false;
+    if (!(bs.voltage_start_threshold > bs.voltage_abort_threshold)) return false;
+    if (!isfinite(bs.hysteresis) || bs.hysteresis < 0.0f) return false;
+    if (bs.max_attempts_per_day == 0) return false;
+    if (bs.program_id == 0) return false;
+    return true;
 }
 
 } // namespace vehicle_rules

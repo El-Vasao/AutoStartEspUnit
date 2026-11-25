@@ -48,12 +48,12 @@ static void factoryResetThunk(void* ctx) {
     static_cast<Core*>(ctx)->factoryReset();
 }
 
-static void setThermostatThunk(void* ctx, bool en) {
-    static_cast<Core*>(ctx)->setThermostatRuntime(en);
+static bool setThermostatThunk(void* ctx, bool en) {
+    return static_cast<Core*>(ctx)->setThermostatRuntime(en);
 }
 
-static void setBatterySaverThunk(void* ctx, bool en) {
-    static_cast<Core*>(ctx)->setBatterySaverRuntime(en);
+static bool setBatterySaverThunk(void* ctx, bool en) {
+    return static_cast<Core*>(ctx)->setBatterySaverRuntime(en);
 }
 
 static bool setInputRuntimeThunk(void* ctx, uint16_t id, bool en) {

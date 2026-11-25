@@ -68,6 +68,7 @@ public:
     bool emitProgramIndexArray(Print& p) const;
 
     bool isProgramUsed(uint8_t id) const;
+    /// Сверяет `/programs` с `index.json`. Если каталог пуст — пишет заводской набор.
     bool ensureProgramIndex();
 
     /// FNV-1a сырых байт `/programs/<id>.json` в порядке возрастания id. 0, пока индекс не принят.

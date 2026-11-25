@@ -1,9 +1,26 @@
 # Документация проекта
 
-Источник правды по AutoStartEspUnit (ESP32-C3). См. также корневой [README](../README.md).
+Источник правды по AutoStartEspUnit (ESP32-C3). Продуктовый обзор — в корневом [README](../README.md).
+
+## Целевое железо
+
+- Модуль MCU: **XH-C3F** на сетях ESP-12E (не Ai-Thinker C3-12F — другая разводка).
+- SoftAP считается доверенной сетью: отдельной авторизации API/OTA нет.
+- Пины и UART: [HARDWARE.md](HARDWARE.md).
+
+## Быстрый старт для разработчика
+
+```bash
+python build.py release -u
+python build.py fs
+pio test -e native
+node --test "test/js/**/*.test.mjs"
+```
+
+Подробности сборки и LittleFS: [BUILD.md](BUILD.md). Карта для агентов (раскладка, команды, как добавить поле / шаг / MQTT / SSE): [AGENTS.md](../AGENTS.md).
 
 ## С чего начать
-- Карта для агентов (раскладка, команды, как добавить поле, шаг, MQTT или SSE): [AGENTS.md](../AGENTS.md)
+
 - Железо и пины: [HARDWARE.md](HARDWARE.md)
 - Сборка, прошивка, ФС: [BUILD.md](BUILD.md)
 - Архитектура: [ARCHITECTURE.md](ARCHITECTURE.md)

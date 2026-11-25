@@ -416,7 +416,11 @@ void WebServer::setupApiRoutes_() {
                 request->send(400, kContentTypeText, "Missing enabled");
                 return;
             }
-            if (p && p->control.setThermostat) p->control.setThermostat(p->control.ctx, en);
+            const bool ok = p && p->control.setThermostat && p->control.setThermostat(p->control.ctx, en);
+            if (!ok) {
+                request->send(422, kContentTypeText, "Thermostat config incomplete");
+                return;
+            }
             sendJsonSuccess(request);
             return;
         }
@@ -426,7 +430,12 @@ void WebServer::setupApiRoutes_() {
                 request->send(400, kContentTypeText, "Missing enabled");
                 return;
             }
-            if (p && p->control.setBatterySaver) p->control.setBatterySaver(p->control.ctx, en);
+            const bool ok =
+                p && p->control.setBatterySaver && p->control.setBatterySaver(p->control.ctx, en);
+            if (!ok) {
+                request->send(422, kContentTypeText, "Battery saver config incomplete");
+                return;
+            }
             sendJsonSuccess(request);
             return;
         }

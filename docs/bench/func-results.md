@@ -1,11 +1,11 @@
 # Функциональный стенд — результаты
 
-Firmware tip: AutoStart **1.0.31** (`debug` build for D/E). Prefix `car/emulator`. Date: 2026-11-24.
+Firmware tip: AutoStart **1.0.32+** (`debug` build for D/E). Prefix `car/emulator`. Date: 2026-11-24.
 
-Captures: `CarEmu/tools/bench/audit-captures/func-*.jsonl`  
+Captures: `CarEmu/tools/bench/audit-captures/func-*.jsonl` / `func-DE-live4.txt`  
 Harness note: `bench.py` cmd `id` must be unique across sessions (fixed: time-prefixed); otherwise device id-ring returns cached `200` and **does not run**.
 
-Verdicts: thin `/reply` = HTTP-like `code` only; **reason** is in `/state` → `err` (`[{code,msg,active},…]`). After fail cases use `status` / `Bench.wait_status()` and read `last_err`, not reply alone.
+Verdicts: thin `/reply` = HTTP-like `code` only; **reason** is in `/state` → `err` (`[{code,msg,active},…]`). Full `status` keeps history after `markDelivered`.
 
 ## A. Prep
 
@@ -41,7 +41,7 @@ Verdicts: thin `/reply` = HTTP-like `code` only; **reason** is in `/state` → `
 
 ## D–E. RPM / input start
 
-**Путь:** debug FW + `cfg get` → patch (IN1 type/`threshold_rpm`) → `cfg_put_bytes` → MQTT `reboot` (не один `cfg set`). Скрипт: `CarEmu/tools/bench/run_func_de.py`. Capture: `audit-captures/func-DE-live3.txt`.
+**Путь:** debug FW + `cfg get` → patch (IN1 type/`threshold_rpm`) → `cfg_put_bytes` → MQTT `reboot` (не один `cfg set`). Скрипт: `CarEmu/tools/bench/run_func_de.py`. Capture: `audit-captures/func-DE-live4.txt` (**0 failed / 22**).
 
 `reboot_required` **не** гасит MQTT/GSM — только отображаемое имя режима ([BEHAVIOR.md](../BEHAVIOR.md)); после `cfg put` нужен реальный `reboot`, иначе менеджеры/`enabled` не перечитываются с boot.
 
@@ -49,15 +49,15 @@ Verdicts: thin `/reply` = HTTP-like `code` only; **reason** is in `/state` → `
 |---|------|--------|-------|
 | D0 | flash debug FW | **pass** | manual |
 | D0b | MQTT debug smoke | **pass** | set/get/put/prg get/404 |
-| D1 | rpm success | **pass** | put+reboot; `run 1` → 200, last=1, K1+K2, err none |
-| D2 | rpm fail nofire | **pass*** | reply **500**; `state.err` часто уже inactive к `status` |
+| D1 | rpm success | **pass** | put+reboot; `run 1` → 200, last=1, K1+K2 |
+| D2 | rpm fail nofire | **pass** | reply **500**; full status `err` code 83 active |
 | E1 | input success | **pass** | mid-crank `in1 h` → 200 |
-| E2 | input fail | **fail→fixed** | с `follow` после прокрутки V-settle → 200; в скрипте теперь `nofire`+`in1 l` (ретест после оживления MQTT) |
-| C1-reg | timed after restore | **pass** | put timed+reboot; V≈13.96, K1+K2 |
+| E2 | input fail | **pass** | `nofire`+`in1 l` → 500, err 83 |
+| C1-reg | timed after restore | **pass** | V≈14.01, K1+K2 |
 | prg get/put 200 | | **pass** | scratch id 200 |
-| prg delete 200 | | **fail** | reply timeout после put (retry в скрипте) |
+| prg delete 200 | | **pass** | |
 | cfg set 404 | | **pass** | |
-| modem_reboot | | **partial** | ack 202; recover status timed out (~3 min) |
+| modem_reboot | | **pass** | ack 202; MQTT recover after hard-drop+CFUN |
 
 Helpers: `cfg_put_bytes` raw≈120 B; `wait_reply` skips 202; settle after commit before `reboot` (иначе SIM800 `rx_incomplete`).
 
@@ -69,9 +69,25 @@ Helpers: `cfg_put_bytes` raw≈120 B; `wait_reply` skips 202; settle after commi
 | preempt `run 1` → `run 2` | pass | handoff; old id **500**, new **200** |
 | stop mid-run | pass | stop at step 3/8 → `allOff`, relays false; run id **500** |
 
+## G. Gap (Stop / debug tail / LWT)
+
+Скрипт: `CarEmu/tools/bench/run_func_gap.py`. SoftAP **не** используется (см. [README.md](README.md) § SoftAP).
+
+| # | Case | Result | Notes |
+|---|------|--------|-------|
+| S1 | «Стоп» после успеха | pending | `run 1` → idle `stop` keeps relays → `run 2` clears K1/K2/K5 |
+| D1 | `cfg set` valid | pending | rpm → get → timed |
+| D3 | id-ring replay | pending | same id → cached code + AS `id-ring replay` |
+| D2 | `prg reset` | pending | list has 1 and 2 |
+| D4 | `cfg reset` + restore | pending | put restore **before** reboot (`setup_required=false`); never reboot on factory flash |
+| L1 | LWT / hard-drop | pending | `modem_reboot`: no graceful `pub online false`; online false→true |
+
+Voice/SMS/DTMF и broker TCP drop mid-SEND — вне tooling (field log).
+
 ## Findings to track
 
 1. Idle `stop` after success — documented in BEHAVIOR / TESTING / USAGE (not a harness bug).
 2. Bench cmd ids must not reuse `b0001…` across processes (fixed: time-prefixed).
 3. Between cases reset with `run 231` (Все выкл) + `e vbat auto` to avoid `already_running` contamination.
 4. FW (2026-11-24 scope): `modem_reboot` hard-drop MQTT before CFUN; full `state.err` keeps history; debug commit/delete settle RX; id-ring replay log.
+5. SoftAP is human-only for bench automation; `cfg reset` + reboot with factory `setup_required` drops MQTT until operator restores.

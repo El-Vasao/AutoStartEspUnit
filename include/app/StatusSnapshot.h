@@ -41,7 +41,9 @@ struct StatusSnapshot {
     bool inputTriggerRuntime[Limits::MAX_TRIGGERS]{};
     bool tempTriggerRuntime[Limits::MAX_TRIGGERS]{};
     bool thermostatRuntime{false};
+    bool thermostatAllowed{false};
     bool batterySaverRuntime{false};
+    bool batterySaverAllowed{false};
 
     bool timeSynced{false};
     bool timeStale{false};

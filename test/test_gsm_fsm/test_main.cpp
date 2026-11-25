@@ -106,7 +106,7 @@ static void test_gprs_apn_then_warm_bearer_reaches_ready() {
     GsmFsmTestAccess::acceptOk(gsm);
     GsmFsmTestAccess::gprs(gsm);
     GsmFsmTestAccess::flushTx(gsm);
-    TEST_ASSERT_NOT_NULL(strstr(Serial.tx(), "AT+SAPBR=3,1,\"APN\",\"internet.mts.ru\""));
+    TEST_ASSERT_NOT_NULL(strstr(Serial.tx(), "AT+SAPBR=3,1,\"APN\",\"internet\""));
     GsmFsmTestAccess::acceptOk(gsm);
     GsmFsmTestAccess::gprs(gsm);
     TEST_ASSERT_EQUAL_INT((int)GsmState::GPRS_ATTACH, (int)GsmFsmTestAccess::state(gsm));

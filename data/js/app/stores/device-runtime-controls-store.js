@@ -30,9 +30,17 @@
         const rt = Alpine.store('deviceStatus')?.runtime || {};
         return !!rt.thermostat;
       },
+      get thermostatAllowed() {
+        const rt = Alpine.store('deviceStatus')?.runtime || {};
+        return !!rt.thermostatAllowed;
+      },
       get batterySaverEnabled() {
         const rt = Alpine.store('deviceStatus')?.runtime || {};
         return !!rt.batterySaver;
+      },
+      get batterySaverAllowed() {
+        const rt = Alpine.store('deviceStatus')?.runtime || {};
+        return !!rt.batterySaverAllowed;
       },
       get batterySaverAttemptsToday() {
         const rt = Alpine.store('deviceStatus')?.runtime || {};
@@ -189,17 +197,24 @@
 
       async toggleThermostat() {
         const current = this.thermostatEnabled;
+        const turningOn = !current;
+        if (turningOn && !this.thermostatAllowed) {
+          Alpine.store('uiToast').error('Сначала заполните настройки термостата');
+          return;
+        }
         try {
-          const { ok } = await APP.api.apiJson(runtimeEndpoint(), {
+          const { ok, status } = await APP.api.apiJson(runtimeEndpoint(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `op=thermostat&enabled=${!current}`
+            body: `op=thermostat&enabled=${turningOn}`
           });
           if (ok) {
             const st = Alpine.store('deviceStatus');
             if (!st.runtime || typeof st.runtime !== 'object') st.runtime = {};
-            st.runtime.thermostat = !current;
-            Alpine.store('uiToast').success(!current ? 'Вкл' : 'Выкл');
+            st.runtime.thermostat = turningOn;
+            Alpine.store('uiToast').success(turningOn ? 'Вкл' : 'Выкл');
+          } else if (status === 422) {
+            Alpine.store('uiToast').error('Сначала заполните настройки термостата');
           } else Alpine.store('uiToast').error('Ошибка');
         } catch (e) {
           Alpine.store('uiToast').error('Ошибка сети');
@@ -208,17 +223,24 @@
 
       async toggleBatterySaver() {
         const current = this.batterySaverEnabled;
+        const turningOn = !current;
+        if (turningOn && !this.batterySaverAllowed) {
+          Alpine.store('uiToast').error('Сначала заполните настройки защиты АКБ');
+          return;
+        }
         try {
-          const { ok } = await APP.api.apiJson(runtimeEndpoint(), {
+          const { ok, status } = await APP.api.apiJson(runtimeEndpoint(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `op=batterysaver&enabled=${!current}`
+            body: `op=batterysaver&enabled=${turningOn}`
           });
           if (ok) {
             const st = Alpine.store('deviceStatus');
             if (!st.runtime || typeof st.runtime !== 'object') st.runtime = {};
-            st.runtime.batterySaver = !current;
-            Alpine.store('uiToast').success(!current ? 'Вкл' : 'Выкл');
+            st.runtime.batterySaver = turningOn;
+            Alpine.store('uiToast').success(turningOn ? 'Вкл' : 'Выкл');
+          } else if (status === 422) {
+            Alpine.store('uiToast').error('Сначала заполните настройки защиты АКБ');
           } else Alpine.store('uiToast').error('Ошибка');
         } catch (e) {
           Alpine.store('uiToast').error('Ошибка сети');

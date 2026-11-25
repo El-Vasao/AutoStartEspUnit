@@ -3,6 +3,7 @@
 #include "core/Core.h"
 #include "core/TimeSyncManager.h"
 #include "config/Config.h"
+#include "config/VehicleRules.h"
 #include "common/Utils.h"
 #include "common/Logger.h"
 
@@ -28,7 +29,12 @@ BatterySaverManager::BatterySaverManager(Config& config, SensorsController& sens
 
 void BatterySaverManager::begin() {
     logger.log(LogModule::BatterySaverManager, "start\n");
-    _runtimeEnabled = _config.getBase().battery_saver.enabled;
+    const auto& bs = _config.getBase().battery_saver;
+    const bool ready = vehicle_rules::batterySaverReady(bs);
+    _runtimeEnabled = bs.enabled && ready;
+    if (bs.enabled && !ready) {
+        logger.log(LogModule::BatterySaverManager, "enabled but config incomplete — runtime off\n");
+    }
     logger.log(LogModule::BatterySaverManager, "runtime on: %d\n", _runtimeEnabled);
 }
 
@@ -39,7 +45,7 @@ void BatterySaverManager::update() {
     }
 
     const auto& bs = _config.getBase().battery_saver;
-    if (!bs.enabled) return;
+    if (!vehicle_rules::batterySaverReady(bs)) return;
 
     uint32_t now = millis();
 

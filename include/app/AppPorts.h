@@ -34,8 +34,9 @@ struct AppControlPort {
     void (*startOtaUpdate)(void* ctx){nullptr};
     void (*factoryReset)(void* ctx){nullptr};
 
-    void (*setThermostat)(void* ctx, bool en){nullptr};
-    void (*setBatterySaver)(void* ctx, bool en){nullptr};
+    /// false, если ON при неполном конфиге функции (device ready).
+    bool (*setThermostat)(void* ctx, bool en){nullptr};
+    bool (*setBatterySaver)(void* ctx, bool en){nullptr};
     /// false, если id не найден.
     bool (*setInputRuntime)(void* ctx, uint16_t id, bool en){nullptr};
     bool (*setInputTrigger)(void* ctx, uint16_t id, bool en){nullptr};

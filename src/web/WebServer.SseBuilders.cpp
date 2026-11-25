@@ -141,8 +141,14 @@ static void emitRuntimeObject(Print& p, const SseStatusPort& st) {
     p.print("\"thermostat\":");
     p.print(st.thermostatRuntime ? "true" : "false");
     commaOut(p, &rr);
+    p.print("\"thermostatAllowed\":");
+    p.print(st.thermostatAllowed ? "true" : "false");
+    commaOut(p, &rr);
     p.print("\"batterySaver\":");
     p.print(st.batterySaverRuntime ? "true" : "false");
+    commaOut(p, &rr);
+    p.print("\"batterySaverAllowed\":");
+    p.print(st.batterySaverAllowed ? "true" : "false");
     commaOut(p, &rr);
     p.print("\"batterySaverAttemptsToday\":");
     p.print((unsigned)st.batterySaverAttemptsToday);

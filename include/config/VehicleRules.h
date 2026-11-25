@@ -46,4 +46,10 @@ uint8_t normalize(BaseConfig& cfg, NoteFn note, void* ctx);
 /// Строгая проверка. nullptr — всё корректно; иначе текст первой найденной причины.
 const char* validate(const BaseConfig& cfg);
 
+/// Конфиг термостата полон и согласован — единственный источник для *Allowed / enable gate.
+bool thermostatReady(const ThermostatConfig& ts);
+
+/// Конфиг защиты АКБ полон и согласован — единственный источник для *Allowed / enable gate.
+bool batterySaverReady(const BatterySaverConfig& bs);
+
 } // namespace vehicle_rules

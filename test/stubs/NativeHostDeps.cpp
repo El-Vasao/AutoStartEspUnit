@@ -65,8 +65,10 @@ GsmController& Core::getGSM() {
 
 void Core::setTriggerRuntime(uint8_t, bool) {}
 void Core::setTempTriggerRuntime(uint8_t, bool) {}
-void Core::setBatterySaverRuntime(bool) {}
-void Core::setThermostatRuntime(bool) {}
+bool Core::setBatterySaverRuntime(bool) { return true; }
+bool Core::setThermostatRuntime(bool) { return true; }
+bool Core::getBatterySaverAllowed() const { return true; }
+bool Core::getThermostatAllowed() const { return true; }
 
 void Core::applyWallClockEpoch(uint32_t) {}
 

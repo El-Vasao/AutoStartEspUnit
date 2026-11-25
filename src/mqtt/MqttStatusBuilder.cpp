@@ -241,7 +241,9 @@ bool mqttStatusHasSignificantChanges(const StatusSnapshot& cur, const StatusSnap
     if (programIdsChanged(cur, prev)) return true;
     if (timerRemainingChanged(cur, prev)) return true;
     if (cur.thermostatRuntime != prev.thermostatRuntime) return true;
+    if (cur.thermostatAllowed != prev.thermostatAllowed) return true;
     if (cur.batterySaverRuntime != prev.batterySaverRuntime) return true;
+    if (cur.batterySaverAllowed != prev.batterySaverAllowed) return true;
     if (anyTriggerChanged(cur, prev, cfg)) return true;
     if (lastErrChanged(cur, prev)) return true;
     if (cur.lastErrCount > 0) return true;
@@ -257,7 +259,9 @@ bool mqttStatusHasEdgeChanges(const StatusSnapshot& cur, const StatusSnapshot& p
     if (anyRelayChanged(cur, prev)) return true;
     if (programIdsChanged(cur, prev)) return true;
     if (cur.thermostatRuntime != prev.thermostatRuntime) return true;
+    if (cur.thermostatAllowed != prev.thermostatAllowed) return true;
     if (cur.batterySaverRuntime != prev.batterySaverRuntime) return true;
+    if (cur.batterySaverAllowed != prev.batterySaverAllowed) return true;
     if (anyTriggerChanged(cur, prev, cfg)) return true;
     if (voltageChanged(cur, prev, JsonBytes::Mqtt::EDGE_VOLTAGE_EPS)) return true;
     if (anyTempChanged(cur, prev, JsonBytes::Mqtt::EDGE_TEMP_EPS)) return true;
@@ -351,8 +355,14 @@ void emitMqttStatusJson(const StatusSnapshot& s, const BaseConfig& cfg, Print& p
         p.print("\"thermostat\":");
         p.print(s.thermostatRuntime ? "true" : "false");
         comma(p, &rr);
+        p.print("\"thermostatAllowed\":");
+        p.print(s.thermostatAllowed ? "true" : "false");
+        comma(p, &rr);
         p.print("\"batterySaver\":");
         p.print(s.batterySaverRuntime ? "true" : "false");
+        comma(p, &rr);
+        p.print("\"batterySaverAllowed\":");
+        p.print(s.batterySaverAllowed ? "true" : "false");
         comma(p, &rr);
         p.print("\"inputTriggersById\":");
         printInputTriggersFull(p, s, cfg);
@@ -510,9 +520,11 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
     }
 
     const bool rtThermo = cur.thermostatRuntime != prev.thermostatRuntime;
+    const bool rtThermoAllowed = cur.thermostatAllowed != prev.thermostatAllowed;
     const bool rtBatt = cur.batterySaverRuntime != prev.batterySaverRuntime;
+    const bool rtBattAllowed = cur.batterySaverAllowed != prev.batterySaverAllowed;
     const bool rtTrig = anyTriggerChanged(cur, prev, cfg);
-    if (rtThermo || rtBatt || rtTrig) {
+    if (rtThermo || rtThermoAllowed || rtBatt || rtBattAllowed || rtTrig) {
         comma(p, &c);
         p.print("\"runtime\":{");
         bool rr = false;
@@ -521,10 +533,20 @@ void emitMqttStatusDeltaJson(const StatusSnapshot& cur, const StatusSnapshot& pr
             p.print("\"thermostat\":");
             p.print(cur.thermostatRuntime ? "true" : "false");
         }
+        if (rtThermoAllowed) {
+            comma(p, &rr);
+            p.print("\"thermostatAllowed\":");
+            p.print(cur.thermostatAllowed ? "true" : "false");
+        }
         if (rtBatt) {
             comma(p, &rr);
             p.print("\"batterySaver\":");
             p.print(cur.batterySaverRuntime ? "true" : "false");
+        }
+        if (rtBattAllowed) {
+            comma(p, &rr);
+            p.print("\"batterySaverAllowed\":");
+            p.print(cur.batterySaverAllowed ? "true" : "false");
         }
         if (rtTrig) {
             bool anyIn = false;

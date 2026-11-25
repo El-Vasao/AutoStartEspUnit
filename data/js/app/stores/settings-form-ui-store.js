@@ -70,6 +70,51 @@
     if (Number.isFinite(bsStart) && Number.isFinite(bsAbort) && bsStart <= bsAbort) {
       out.push({ field: 'battery_saver.voltage_start_threshold', message: 'Должен быть выше порога прерывания' });
     }
+
+    const ts = cfg?.thermostat || {};
+    const tsLower = num(ts.lower_threshold);
+    const tsUpper = num(ts.upper_threshold);
+    const tsSensor = String(ts.sensor_id || '').trim();
+    const tsProgLower = Number(ts.program_id_lower) || 0;
+    const tsProgUpper = Number(ts.program_id_upper) || 0;
+    const tsReady =
+      !!tsSensor &&
+      Number.isFinite(tsLower) &&
+      Number.isFinite(tsUpper) &&
+      tsUpper > tsLower &&
+      (tsProgLower !== 0 || tsProgUpper !== 0);
+    if (ts.enabled && !tsReady) {
+      if (!tsSensor) out.push({ field: 'thermostat.sensor_id', message: 'Выберите датчик' });
+      if (Number.isFinite(tsLower) && Number.isFinite(tsUpper) && !(tsUpper > tsLower)) {
+        out.push({ field: 'thermostat.upper_threshold', message: 'Должен быть выше нижнего порога' });
+      }
+      if (tsProgLower === 0 && tsProgUpper === 0) {
+        out.push({ field: 'thermostat.program_id_lower', message: 'Укажите хотя бы одну программу' });
+      }
+    }
+
+    const bsProg = Number(bs.program_id) || 0;
+    const bsAttempts = Number(bs.max_attempts_per_day);
+    const bsHyst = num(bs.hysteresis);
+    const bsReady =
+      Number.isFinite(bsStart) &&
+      Number.isFinite(bsAbort) &&
+      bsStart > bsAbort &&
+      Number.isFinite(bsHyst) &&
+      bsHyst >= 0 &&
+      bsAttempts >= 1 &&
+      bsProg !== 0;
+    if (bs.enabled && !bsReady) {
+      if (!(Number.isFinite(bsStart) && Number.isFinite(bsAbort) && bsStart > bsAbort)) {
+        out.push({ field: 'battery_saver.voltage_start_threshold', message: 'Конфиг защиты АКБ неполон' });
+      }
+      if (!(bsAttempts >= 1)) {
+        out.push({ field: 'battery_saver.max_attempts_per_day', message: 'Должно быть ≥ 1' });
+      }
+      if (bsProg === 0) {
+        out.push({ field: 'battery_saver.program_id', message: 'Укажите программу' });
+      }
+    }
     return out;
   }
 

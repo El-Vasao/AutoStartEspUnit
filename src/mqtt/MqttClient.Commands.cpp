@@ -626,16 +626,14 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
             if (_ports) {
                 switch (cmd.setName) {
                     case MqttSetName::Thermostat:
-                        if (_ports->control.setThermostat) {
-                            _ports->control.setThermostat(_ports->control.ctx, cmd.enabled);
-                            ok = true;
-                        }
+                        ok = _ports->control.setThermostat &&
+                             _ports->control.setThermostat(_ports->control.ctx, cmd.enabled);
+                        err = ok ? MqttCmdErr::None : MqttCmdErr::Rejected;
                         break;
                     case MqttSetName::BatterySaver:
-                        if (_ports->control.setBatterySaver) {
-                            _ports->control.setBatterySaver(_ports->control.ctx, cmd.enabled);
-                            ok = true;
-                        }
+                        ok = _ports->control.setBatterySaver &&
+                             _ports->control.setBatterySaver(_ports->control.ctx, cmd.enabled);
+                        err = ok ? MqttCmdErr::None : MqttCmdErr::Rejected;
                         break;
                     case MqttSetName::Input:
                         ok = _ports->control.setInputRuntime &&

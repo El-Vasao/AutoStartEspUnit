@@ -118,10 +118,14 @@ public:
 
     // Управление рантаймом (делегируется менеджерам)
     bool getThermostatRuntime() const;
-    void setThermostatRuntime(bool en);
+    /// false, если ON при неполном конфиге (ready). OFF всегда true.
+    bool setThermostatRuntime(bool en);
+    bool getThermostatAllowed() const;
 
     bool getBatterySaverRuntime() const;
-    void setBatterySaverRuntime(bool en);
+    /// false, если ON при неполном конфиге (ready). OFF всегда true.
+    bool setBatterySaverRuntime(bool en);
+    bool getBatterySaverAllowed() const;
     uint8_t getBatterySaverAttemptsToday() const;
 
     bool getTriggerRuntime(uint8_t index) const;

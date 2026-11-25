@@ -118,7 +118,9 @@ void MqttClient::captureStatusSnapshot_(StatusSnapshot& s, bool fullErrHistory) 
     }
 
     s.thermostatRuntime = core.getThermostatRuntime();
+    s.thermostatAllowed = core.getThermostatAllowed();
     s.batterySaverRuntime = core.getBatterySaverRuntime();
+    s.batterySaverAllowed = core.getBatterySaverAllowed();
 
     for (uint8_t i = 0; i < Limits::MAX_TRIGGERS; i++) {
         s.inputTriggerRuntime[i] = false;

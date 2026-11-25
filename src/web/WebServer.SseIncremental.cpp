@@ -103,7 +103,9 @@ static SseStatusPort makeStatusPort() {
     st.freeHeap = espHalFreeHeap();
     st.engineRunning = core.isEngineRunning();
     st.thermostatRuntime = core.getThermostatRuntime();
+    st.thermostatAllowed = core.getThermostatAllowed();
     st.batterySaverRuntime = core.getBatterySaverRuntime();
+    st.batterySaverAllowed = core.getBatterySaverAllowed();
     st.batterySaverAttemptsToday = core.getBatterySaverAttemptsToday();
     {
         const auto& ts = core.getTimeSync();

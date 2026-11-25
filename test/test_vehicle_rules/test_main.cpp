@@ -10,10 +10,11 @@ static BaseConfig makeCfg() {
         c.inputs[i].enabled = true;
         c.inputs[i].type = InputType::DIGITAL;
     }
-    // IN2 — импульсный, с порогом.
+    // IN2 — импульсный, с порогом. Блокировку держим на цифровом IN1 (заводской JSON — IN2).
     c.inputs[1].type = InputType::PULSE_COUNTER;
     c.inputs[1].pulse.pulses_per_rev = 2;
     c.inputs[1].pulse.threshold_rpm = 400;
+    c.vehicle.start_block_input_id = 1;
     return c;
 }
 
@@ -109,7 +110,8 @@ void test_rpm_method_input_checks() {
 void test_input_method_input_checks() {
     BaseConfig c = makeCfg();
     c.vehicle.start_method = StartMethod::Input;
-    c.vehicle.start_input_id = 1;
+    // IN3 цифровой; IN1 занят блокировкой в makeCfg.
+    c.vehicle.start_input_id = 3;
     TEST_ASSERT_NULL(vehicle_rules::validate(c));
     c.vehicle.start_input_id = 2; // импульсный
     TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
@@ -166,6 +168,44 @@ void test_battery_saver_thresholds() {
     TEST_ASSERT_TRUE(c.battery_saver.voltage_start_threshold > c.battery_saver.voltage_abort_threshold);
 }
 
+void test_thermostat_ready_and_enabled_validate() {
+    ThermostatConfig ts;
+    ts.program_id_lower = 0;
+    ts.program_id_upper = 0;
+    TEST_ASSERT_FALSE(vehicle_rules::thermostatReady(ts)); // programs 0
+    ts.program_id_lower = 2;
+    TEST_ASSERT_TRUE(vehicle_rules::thermostatReady(ts));
+    ts.upper_threshold = ts.lower_threshold;
+    TEST_ASSERT_FALSE(vehicle_rules::thermostatReady(ts));
+
+    BaseConfig c = makeCfg();
+    c.thermostat.enabled = true;
+    c.thermostat.program_id_lower = 0;
+    c.thermostat.program_id_upper = 0;
+    TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
+    c.thermostat.program_id_lower = 1;
+    c.thermostat.upper_threshold = 10.0f;
+    c.thermostat.lower_threshold = 5.0f;
+    TEST_ASSERT_NULL(vehicle_rules::validate(c));
+}
+
+void test_battery_saver_ready_and_enabled_validate() {
+    BatterySaverConfig bs;
+    bs.program_id = 0;
+    TEST_ASSERT_FALSE(vehicle_rules::batterySaverReady(bs)); // program 0
+    bs.program_id = 3;
+    TEST_ASSERT_TRUE(vehicle_rules::batterySaverReady(bs));
+    bs.max_attempts_per_day = 0;
+    TEST_ASSERT_FALSE(vehicle_rules::batterySaverReady(bs));
+
+    BaseConfig c = makeCfg();
+    c.battery_saver.enabled = true;
+    c.battery_saver.program_id = 0;
+    TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
+    c.battery_saver.program_id = 2;
+    TEST_ASSERT_NULL(vehicle_rules::validate(c));
+}
+
 void test_pulses_per_rev_zero() {
     BaseConfig c = makeCfg();
     c.inputs[1].pulse.pulses_per_rev = 0;
@@ -191,6 +231,8 @@ int main(int, char**) {
     RUN_TEST(test_block_input_checks);
     RUN_TEST(test_engine_indicator_pulse_needs_threshold);
     RUN_TEST(test_battery_saver_thresholds);
+    RUN_TEST(test_thermostat_ready_and_enabled_validate);
+    RUN_TEST(test_battery_saver_ready_and_enabled_validate);
     RUN_TEST(test_pulses_per_rev_zero);
     return UNITY_END();
 }

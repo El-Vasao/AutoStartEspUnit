@@ -48,7 +48,7 @@ struct GsmConfig {
     char dtmf_password[TextBytes::Gsm::DTMF_PASSWORD];
 
     GsmConfig() {
-        strcpy(apn, "internet.mts.ru");
+        strcpy(apn, "internet");
         apn_user[0] = '\0';
         apn_pass[0] = '\0';
         owner_phone[0] = '\0';
@@ -69,12 +69,12 @@ struct MqttConfig {
     char topic_prefix[TextBytes::Mqtt::TOPIC_PREFIX];
     uint16_t publish_interval_sec;
 
-    MqttConfig() : port(1883), publish_interval_sec(30) {
-        strcpy(broker, "mqtt.example.com");
-        strcpy(client_id, "autostart-ABC123");
+    MqttConfig() : port(1883), publish_interval_sec(300) {
+        broker[0] = '\0';
+        client_id[0] = '\0';
         user[0] = '\0';
         pass[0] = '\0';
-        strcpy(topic_prefix, "car/ABC123");
+        strcpy(topic_prefix, "car");
     }
 };
 
@@ -114,7 +114,7 @@ struct VehicleConfig {
           starter_crank_time_sec(StarterLimits::CRANK_TIME_DEFAULT_SEC),
           starter_retry_pause_sec(StarterLimits::RETRY_PAUSE_DEFAULT_SEC),
           starter_attempts(StarterLimits::ATTEMPTS_DEFAULT),
-          start_block_input_id(0),
+          start_block_input_id(2), ///< IN2 нейтраль
           engine_input_id(2) { ///< IN2
         strcpy(engine_detection_source, "voltage");
     }
@@ -214,10 +214,10 @@ struct ThermostatConfig {
     ThermostatConfig()
         : enabled(false),
           sensor_id(1), ///< T1
-          lower_threshold(5.0f),
+          lower_threshold(-15.0f),
           upper_threshold(10.0f),
-          program_id_lower(0),
-          program_id_upper(0) {
+          program_id_lower(1),
+          program_id_upper(2) {
         strcpy(comparison, "above");
     }
 };
@@ -243,7 +243,7 @@ struct BatterySaverConfig {
           min_low_voltage_duration_sec(180),
           min_time_between_attempts_sec(1800),
           max_attempts_per_day(3),
-          program_id(0) {}
+          program_id(1) {}
 };
 
 // ------------------------------------------------------------------

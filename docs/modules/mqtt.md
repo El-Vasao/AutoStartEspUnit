@@ -124,7 +124,7 @@ MQTT-публикация статуса и подписка на команды
 | **200** | Успешный финал |
 | **400** | parse / args |
 | **404** | `set` на отсутствующий вход или триггер |
-| **422** | негодный `run`, rejected, каталог не влез |
+| **422** | негодный `run`, rejected (`wifi_ap`, thermostat/battery_saver ON при `!*Allowed`), каталог не влез |
 | **500** | авария `run`; команда ещё во входной очереди в момент обрыва сессии |
 | **503** | inbound полна / кольцо id исчерпано / status не встал |
 
@@ -175,6 +175,9 @@ MQTT-публикация статуса и подписка на команды
 ### Снимок `state`
 
 Корень full: `full:true`, `seq`, `uptime`, `mode`, `time` (`epoch`,`synced`,`stale`,`tz`), `io` (`voltage`,`engine`,`inputs`,`relays`,`temps` с `t`/`ok`), `csq` (число 0..31 / 99), `program`, `runtime`, `err` (omit если пуст).
+
+`runtime`: `thermostat`, `thermostatAllowed`, `batterySaver`, `batterySaverAllowed`, `inputTriggersById`, `tempTriggersById`.  
+`*Allowed` = device `ready` (конфиг функции полон). Решение о возможности включения принимает **только устройство**; клиентские проверки не заменяют gate. `set`…`enabled:true` при `*Allowed==false` → **422**. OFF всегда 200 (если порт есть).
 
 `err` в **full** (`birth` / period / `cmd=status`): кольцо истории (в т.ч. уже delivered и `active:false`), чтобы после `run`→500 клиент всё ещё видел причину. В **edge**-дельте — только ещё недоставленные; `markDelivered` после SEND без изменений.
 

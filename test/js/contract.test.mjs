@@ -28,25 +28,48 @@ test('factory DEFAULT_CONFIG_JSON passes settings.schema.json', () => {
   assert.ok(ok, 'schema errors: ' + JSON.stringify(plain(validate.errors), null, 2));
 });
 
+test('factory DEFAULT_CONFIG_JSON is impersonalized product profile', () => {
+  const cfg = defaultConfigJson();
+  assert.equal(cfg.gsm.owner_phone, '');
+  assert.equal(cfg.gsm.dtmf_password, '');
+  assert.equal(cfg.gsm.apn, 'internet');
+  assert.equal(cfg.mqtt.broker, '');
+  assert.equal(cfg.mqtt.user, '');
+  assert.equal(cfg.mqtt.pass, '');
+  assert.equal(cfg.mqtt.topic_prefix, 'car');
+  assert.equal(cfg.vehicle.start_block_input_id, 'IN2');
+  assert.deepEqual(cfg.inputs.map((i) => i.name), ['Педаль тормоза', 'Нейтраль', 'Кнопка']);
+  assert.equal(cfg.inputs[1].active_state, true);
+  assert.deepEqual(cfg.relays.map((r) => r.name), ['ACC', 'Зажигание', 'Стартер', 'Замок', 'Обход']);
+  assert.deepEqual(cfg.sensors.map((s) => s.name), ['Салон', 'Двигатель', 'Улица']);
+  assert.ok(cfg.sensors.every((s) => s.rom === ''));
+  assert.equal(cfg.thermostat.enabled, false);
+  assert.equal(cfg.thermostat.program_id_lower, 1);
+  assert.equal(cfg.thermostat.program_id_upper, 2);
+  assert.equal(cfg.battery_saver.enabled, false);
+  assert.equal(cfg.battery_saver.program_id, 1);
+});
+
 test('factory DEFAULT_CONFIG_JSON seeds disabled triggers on all inputs and sensors', () => {
   const cfg = defaultConfigJson();
   assert.equal(cfg.input_triggers.length, 3);
   assert.equal(cfg.temperature_triggers.length, 3);
   for (const tr of cfg.input_triggers) {
     assert.equal(tr.enabled, false);
-    assert.equal(tr.program_id, 0);
     assert.equal(tr.trigger_level, 1);
   }
   assert.deepEqual(cfg.input_triggers.map((t) => t.input_id), ['IN1', 'IN2', 'IN3']);
   assert.deepEqual(cfg.input_triggers.map((t) => t.id), [1, 2, 3]);
+  // IN1 тормоз → Стоп; IN2 нейтраль без программы (блокировка через vehicle); IN3 кнопка → Запуск.
+  assert.deepEqual(cfg.input_triggers.map((t) => t.program_id), [2, 0, 1]);
   for (const tr of cfg.temperature_triggers) {
     assert.equal(tr.enabled, false);
-    assert.equal(tr.program_id, 0);
-    assert.equal(tr.comparison, 'above');
-    assert.equal(tr.threshold, 0);
   }
   assert.deepEqual(cfg.temperature_triggers.map((t) => t.sensor_id), ['T1', 'T2', 'T3']);
   assert.deepEqual(cfg.temperature_triggers.map((t) => t.id), [1, 2, 3]);
+  assert.deepEqual(cfg.temperature_triggers.map((t) => t.comparison), ['below', 'above', 'below']);
+  assert.deepEqual(cfg.temperature_triggers.map((t) => t.threshold), [-10, 105, -15]);
+  assert.deepEqual(cfg.temperature_triggers.map((t) => t.program_id), [1, 2, 1]);
 });
 
 test('program.schema.json and programs.index.schema.json compile in strict mode', () => {

@@ -7,7 +7,12 @@
 // Должен проходить `data/validation/settings.schema.json` (проверяет test/js/contract.test.mjs),
 // иначе устройство уйдёт в EMERGENCY_AP.
 // Публичные id каналов — шёлк K/IN/T с единицы; подписи входов и реле заданы.
-// ROM T1–T3 — фиксированные DS18B20 эмулятора стенда (CarEmu), не случайные адреса шины.
+// Обезличенный «из коробки» профиль: без телефона/MQTT/ROM стенда; триггеры и термо/АКБ
+// предпривязаны к заводским программам, но выключены до настройки установщиком.
+//
+// Входы: IN1 педаль тормоза (триггер → «Стоп»), IN2 нейтраль (блокировка ENGINE_START;
+// логически активен = запрет; active_state под полярность датчика — с завода true),
+// IN3 кнопка платы (active low).
 static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
   "setup_required": true,
   "wifi": {
@@ -17,20 +22,20 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "ap_timeout_enabled": false
   },
   "gsm": {
-    "apn": "internet.yota",
+    "apn": "internet",
     "apn_user": "",
     "apn_pass": "",
-    "owner_phone": "+79167393566",
-    "dtmf_password": "4611"
+    "owner_phone": "",
+    "dtmf_password": ""
   },
   "mqtt": {
-    "broker": "m5.wqtt.ru",
-    "port": 10162,
+    "broker": "",
+    "port": 1883,
     "client_id": "",
-    "user": "testUser",
-    "pass": "testPass",
-    "topic_prefix": "car/emulator",
-    "publish_interval_sec": 600
+    "user": "",
+    "pass": "",
+    "topic_prefix": "car",
+    "publish_interval_sec": 300
   },
   "vehicle": {
     "adc_voltage_coeff": 0.004,
@@ -49,9 +54,9 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "engine_input_id": "IN2"
   },
   "sensors": [
-    { "id": "T1", "rom": "28:CE:01:00:00:00:00:5F", "coeff": 0, "name": "Cabin" },
-    { "id": "T2", "rom": "28:CE:02:00:00:00:00:11", "coeff": 0, "name": "Engine" },
-    { "id": "T3", "rom": "28:CE:03:00:00:00:00:DC", "coeff": 0, "name": "Outside" }
+    { "id": "T1", "rom": "", "coeff": 0, "name": "Салон" },
+    { "id": "T2", "rom": "", "coeff": 0, "name": "Двигатель" },
+    { "id": "T3", "rom": "", "coeff": 0, "name": "Улица" }
   ],
   "inputs": [
     {
@@ -59,7 +64,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "Parking brake SW",
+      "name": "Педаль тормоза",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -67,7 +72,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "Neutral SW",
+      "name": "Нейтраль",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -75,25 +80,25 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": false,
-      "name": "Button",
+      "name": "Кнопка",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     }
   ],
   "relays": [
     { "id": "K1", "name": "ACC" },
-    { "id": "K2", "name": "IGN" },
-    { "id": "K3", "name": "STA" },
-    { "id": "K4", "name": "LOCK" },
-    { "id": "K5", "name": "IMMO" }
+    { "id": "K2", "name": "Зажигание" },
+    { "id": "K3", "name": "Стартер" },
+    { "id": "K4", "name": "Замок" },
+    { "id": "K5", "name": "Обход" }
   ],
   "thermostat": {
     "enabled": false,
     "sensor_id": "T1",
     "comparison": "above",
-    "lower_threshold": -25.0,
+    "lower_threshold": -15.0,
     "upper_threshold": 10.0,
-    "program_id_lower": 0,
-    "program_id_upper": 0
+    "program_id_lower": 1,
+    "program_id_upper": 2
   },
   "battery_saver": {
     "enabled": false,
@@ -103,7 +108,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "min_low_voltage_duration_sec": 180,
     "min_time_between_attempts_sec": 1800,
     "max_attempts_per_day": 3,
-    "program_id": 0
+    "program_id": 1
   },
   "time": {
     "enabled": true,
@@ -112,13 +117,13 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "sync_interval_hours": 6
   },
   "input_triggers": [
-    { "id": 1, "enabled": false, "input_id": "IN1", "trigger_level": 1, "program_id": 0 },
+    { "id": 1, "enabled": false, "input_id": "IN1", "trigger_level": 1, "program_id": 2 },
     { "id": 2, "enabled": false, "input_id": "IN2", "trigger_level": 1, "program_id": 0 },
-    { "id": 3, "enabled": false, "input_id": "IN3", "trigger_level": 1, "program_id": 0 }
+    { "id": 3, "enabled": false, "input_id": "IN3", "trigger_level": 1, "program_id": 1 }
   ],
   "temperature_triggers": [
-    { "id": 1, "enabled": false, "sensor_id": "T1", "comparison": "above", "threshold": 0, "program_id": 0 },
-    { "id": 2, "enabled": false, "sensor_id": "T2", "comparison": "above", "threshold": 0, "program_id": 0 },
-    { "id": 3, "enabled": false, "sensor_id": "T3", "comparison": "above", "threshold": 0, "program_id": 0 }
+    { "id": 1, "enabled": false, "sensor_id": "T1", "comparison": "below", "threshold": -10, "program_id": 1 },
+    { "id": 2, "enabled": false, "sensor_id": "T2", "comparison": "above", "threshold": 105, "program_id": 2 },
+    { "id": 3, "enabled": false, "sensor_id": "T3", "comparison": "below", "threshold": -15, "program_id": 1 }
   ]
 })";

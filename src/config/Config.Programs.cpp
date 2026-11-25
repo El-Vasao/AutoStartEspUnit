@@ -143,7 +143,7 @@ bool Config::writeFactoryPrograms() {
     if (!writeNamedAction(prog, 237, "K4 выкл", "RELAY_OFF", 4)) return false;
     if (!writeNamedAction(prog, 238, "K5 вкл", "RELAY_ON", 5)) return false;
     if (!writeNamedAction(prog, 239, "K5 выкл", "RELAY_OFF", 5)) return false;
-    if (!writeNamedAction(prog, 240, "SMS", "SMS_OWNER", 0, "Test")) return false;
+    if (!writeNamedAction(prog, 240, "SMS", "SMS_OWNER", 0, "AutoStart")) return false;
     if (!writeNamedAction(prog, 241, "Звонок", "CALL_OWNER")) return false;
     if (!writeNamedAction(prog, 242, "АКБ вкл", "BATTERY_SAVER_ON")) return false;
     if (!writeNamedAction(prog, 243, "АКБ выкл", "BATTERY_SAVER_OFF")) return false;

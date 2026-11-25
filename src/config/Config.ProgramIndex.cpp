@@ -127,6 +127,12 @@ bool Config::ensureProgramIndex() {
         root.close();
     }
 
+    // Пустая FS — заводской набор «из коробки» (Запуск/Стоп + служебные), иначе только индекс.
+    if (filesCount == 0) {
+        logger.log(LogModule::Config, "ensureProgramIndex: no programs, writing factory set\n");
+        return writeFactoryPrograms();
+    }
+
     bool mismatch = true;
     size_t indexCount = 0;
 

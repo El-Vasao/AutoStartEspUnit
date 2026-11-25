@@ -41,7 +41,7 @@
 | `RELAY_PULSE_OFF_ON_OFF` | Выкл, `ms`, вкл, `ms`, выкл |
 | `INPUT_ENABLE` / `DISABLE` | Рантайм-включение входа |
 | `INPUT_TRIGGER_*` / `TEMP_TRIGGER_*` | Защёлка по id. Включение взводит её, выключение сбрасывает |
-| `BATTERY_SAVER_*` / `THERMOSTAT_*` | Только рантайм-флаг; `enabled` в конфиге всё равно нужен |
+| `BATTERY_SAVER_*` / `THERMOSTAT_*` | Только рантайм-флаг; ON требует device `ready` |
 | `ENGINE_START` | `StarterMachine` из `config.vehicle` |
 
 Реле: обычное завершение их оставляет. `stop()` делает `allOff()` только пока программа running; обрыв с ошибкой и неудачный `start()` — тоже `allOff()`. Удачная передача слота снимает только крутящийся стартер.

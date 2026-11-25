@@ -4,6 +4,7 @@
 #include "core/FlashCommitCoordinator.h"
 
 #include "config/Config.h"
+#include "config/VehicleRules.h"
 #include "fs/FsManager.h"
 #include "common/Logger.h"
 #include "common/Utils.h"
@@ -122,9 +123,18 @@ bool Core::getThermostatRuntime() const {
     return impl.thermostatManager.isEnabled();
 }
 
-void Core::setThermostatRuntime(bool en) {
+bool Core::getThermostatAllowed() const {
+    return vehicle_rules::thermostatReady(config.getBase().thermostat);
+}
+
+bool Core::setThermostatRuntime(bool en) {
     CorePrivate& impl = *_impl;
+    if (en && !getThermostatAllowed()) {
+        logger.log(LogModule::Core, "thermostat ON rejected: config incomplete\n");
+        return false;
+    }
     impl.thermostatManager.setEnabled(en);
+    return true;
 }
 
 bool Core::getBatterySaverRuntime() const {
@@ -132,9 +142,18 @@ bool Core::getBatterySaverRuntime() const {
     return impl.batterySaverManager.isEnabled();
 }
 
-void Core::setBatterySaverRuntime(bool en) {
+bool Core::getBatterySaverAllowed() const {
+    return vehicle_rules::batterySaverReady(config.getBase().battery_saver);
+}
+
+bool Core::setBatterySaverRuntime(bool en) {
     CorePrivate& impl = *_impl;
+    if (en && !getBatterySaverAllowed()) {
+        logger.log(LogModule::Core, "battery_saver ON rejected: config incomplete\n");
+        return false;
+    }
     impl.batterySaverManager.setEnabled(en);
+    return true;
 }
 
 uint8_t Core::getBatterySaverAttemptsToday() const {

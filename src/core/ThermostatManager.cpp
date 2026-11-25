@@ -1,6 +1,7 @@
 // src/core/ThermostatManager.cpp
 #include "core/ThermostatManager.h"
 #include "config/Config.h"
+#include "config/VehicleRules.h"
 #include "common/Constants.h"
 #include "common/Logger.h"
 
@@ -25,11 +26,15 @@ ThermostatManager::ThermostatManager(Config& config, SensorsController& sensors,
 
 void ThermostatManager::begin() {
     logger.log(LogModule::ThermostatManager, "start\n");
-    _runtimeEnabled = _config.getBase().thermostat.enabled;
+    const auto& ts = _config.getBase().thermostat;
+    const bool ready = vehicle_rules::thermostatReady(ts);
+    _runtimeEnabled = ts.enabled && ready;
+    if (ts.enabled && !ready) {
+        logger.log(LogModule::ThermostatManager, "enabled but config incomplete — runtime off\n");
+    }
     _lowerLatch.reset();
     _upperLatch.reset();
-    const auto& ts = _config.getBase().thermostat;
-    if (_runtimeEnabled && ts.enabled) {
+    if (_runtimeEnabled) {
         const char* rom = "";
         for (uint8_t j = 0; j < HardwareLimits::SENSORS; j++) {
             if (_config.getBase().sensors[j].id == ts.sensor_id) {
@@ -49,7 +54,7 @@ void ThermostatManager::begin() {
 
 void ThermostatManager::update() {
     const auto& ts = _config.getBase().thermostat;
-    if (!_runtimeEnabled || !ts.enabled) {
+    if (!_runtimeEnabled || !vehicle_rules::thermostatReady(ts)) {
         _lowerLatch.reset();
         _upperLatch.reset();
         return;
