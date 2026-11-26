@@ -142,6 +142,26 @@ void test_confirm_zero_threshold_never() {
     for (uint32_t t = 0; t < 1000; t += 10) TEST_ASSERT_FALSE(c.update(t, 5000.0f, 0));
 }
 
+void test_suspect_streak_resets_ring() {
+    RpmEstimator e;
+    e.configure(1);
+    uint32_t t = 1000;
+    e.onEdge(t);
+    // Интервал 1 мкс ниже minIntervalUs_ (5 мс для 12000 об/мин) — все фронты suspect.
+    for (int i = 0; i < Rpm::MAX_SUSPECT_STREAK + 1; i++) {
+        t += 1;
+        e.onEdge(t);
+    }
+    TEST_ASSERT_EQUAL_UINT8(1, e.edgeCount());
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, e.rpm(t + 10));
+
+    // После сброса снова нужен полный интервал, затем цепочка считается нормально.
+    const uint32_t base = t + 300000; // больше ZERO_TIMEOUT_MS
+    e.onEdge(base);
+    e.onEdge(base + 100000);
+    assertRpmNear(600.0f, e.rpm(base + 100010));
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -160,5 +180,6 @@ int main(int, char**) {
     RUN_TEST(test_confirm_resets_on_drop);
     RUN_TEST(test_confirm_zero_threshold_never);
     RUN_TEST(test_value_log_due_uses_band);
+    RUN_TEST(test_suspect_streak_resets_ring);
     return UNITY_END();
 }

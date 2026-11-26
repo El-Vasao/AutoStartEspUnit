@@ -224,6 +224,101 @@ void test_parse_cfg_prg_modem() {
     TEST_ASSERT_EQUAL_STRING("YWI=", b64);
 }
 
+void test_enabled_string_and_numeric_forms() {
+    MqttCommand cmd;
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"e1\",\"cmd\":\"set\",\"name\":\"thermostat\",\"enabled\":\"true\"}", cmd));
+    TEST_ASSERT_TRUE(cmd.hasEnabled);
+    TEST_ASSERT_TRUE(cmd.enabled);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"e2\",\"cmd\":\"set\",\"name\":\"thermostat\",\"enabled\":\"0\"}", cmd));
+    TEST_ASSERT_TRUE(cmd.hasEnabled);
+    TEST_ASSERT_FALSE(cmd.enabled);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"e3\",\"cmd\":\"set\",\"name\":\"thermostat\",\"enabled\":1}", cmd));
+    TEST_ASSERT_TRUE(cmd.hasEnabled);
+    TEST_ASSERT_TRUE(cmd.enabled);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"e4\",\"cmd\":\"set\",\"name\":\"thermostat\",\"enabled\":0}", cmd));
+    TEST_ASSERT_TRUE(cmd.hasEnabled);
+    TEST_ASSERT_FALSE(cmd.enabled);
+
+    TEST_ASSERT_FALSE(parseMqttCommandJson(
+        "{\"id\":\"e5\",\"cmd\":\"set\",\"name\":\"thermostat\",\"enabled\":\"yes\"}", cmd));
+    TEST_ASSERT_FALSE(parseMqttCommandJson(
+        "{\"id\":\"e6\",\"cmd\":\"set\",\"name\":\"thermostat\",\"enabled\":2}", cmd));
+}
+
+void test_string_numeric_fields_and_unknown_keys() {
+    MqttCommand cmd;
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"s\",\"cmd\":\"run\",\"program\":\"3\",\"ref\":\"2\","
+        "\"unknown\":\"v\",\"x\":1,\"y\":true}", cmd));
+    TEST_ASSERT_EQUAL((int)MqttCommandKind::Run, (int)cmd.kind);
+    TEST_ASSERT_EQUAL_UINT8(3, cmd.programId);
+    TEST_ASSERT_EQUAL_UINT16(2, cmd.ref);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"p\",\"cmd\":\"run\",\"program\":\"999\"}", cmd));
+    TEST_ASSERT_EQUAL_UINT8(0, cmd.programId);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"r\",\"cmd\":\"set\",\"name\":\"input\",\"ref\":\"70000\"}", cmd));
+    TEST_ASSERT_EQUAL_UINT16(0, cmd.ref);
+
+    // Строковые bytes/i/n/epoch сейчас не разбираются — остаются дефолтными.
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"c\",\"cmd\":\"cfg\",\"op\":\"put\",\"bytes\":\"5\","
+        "\"i\":\"1\",\"n\":\"2\",\"data\":\"YQ==\"}", cmd));
+    TEST_ASSERT_FALSE(cmd.hasDebugBytes);
+    TEST_ASSERT_FALSE(cmd.hasDebugChunk);
+
+    TEST_ASSERT_TRUE(parseMqttCommandJson(
+        "{\"id\":\"t\",\"cmd\":\"set_time\",\"epoch\":\"123\"}", cmd));
+    TEST_ASSERT_FALSE(cmd.hasEpoch);
+}
+
+void test_debug_ops_all_and_unknown() {
+    struct Case {
+        const char* op;
+        MqttDebugOp expect;
+    };
+    const Case cases[] = {
+        {"begin", MqttDebugOp::Begin},   {"put", MqttDebugOp::Put},
+        {"commit", MqttDebugOp::Commit}, {"abort", MqttDebugOp::Abort},
+        {"get", MqttDebugOp::Get},       {"set", MqttDebugOp::Set},
+        {"reset", MqttDebugOp::Reset},   {"delete", MqttDebugOp::Delete},
+        {"unknown", MqttDebugOp::None},
+    };
+    for (const Case& c : cases) {
+        char json[96];
+        snprintf(json, sizeof(json), "{\"id\":\"d\",\"cmd\":\"cfg\",\"op\":\"%s\"}", c.op);
+        MqttCommand cmd;
+        TEST_ASSERT_TRUE_MESSAGE(parseMqttCommandJson(json, cmd), c.op);
+        TEST_ASSERT_EQUAL_MESSAGE((int)c.expect, (int)cmd.debugOp, c.op);
+    }
+}
+
+void test_extractors_edge_cases() {
+    char id[32];
+    TEST_ASSERT_FALSE(mqttExtractReqId(nullptr, id, sizeof(id)));
+    TEST_ASSERT_FALSE(mqttExtractReqId("{\"id\":\"abc\"}", id, 1));
+    TEST_ASSERT_FALSE(mqttExtractReqId("{\"id\":\"\"}", id, sizeof(id)));
+    TEST_ASSERT_FALSE(mqttExtractReqId("{\"id\":\"0123456789abcdefX\"}", id, sizeof(id)));
+    TEST_ASSERT_FALSE(mqttExtractReqId("{\"id\" \"abc\"}", id, sizeof(id)));
+
+    char b64[16];
+    TEST_ASSERT_FALSE(mqttExtractDebugDataB64(nullptr, b64, sizeof(b64)));
+    TEST_ASSERT_FALSE(mqttExtractDebugDataB64("{\"cmd\":\"cfg\"}", b64, sizeof(b64)));
+    TEST_ASSERT_FALSE(mqttExtractDebugDataB64("{\"data\":123}", b64, sizeof(b64)));
+    TEST_ASSERT_FALSE(mqttExtractDebugDataB64("{\"data\":\"0123456789abcdef\"}", b64, sizeof(b64)));
+    TEST_ASSERT_TRUE(mqttExtractDebugDataB64("{\"data\":\"YQ==\"}", b64, sizeof(b64)));
+    TEST_ASSERT_EQUAL_STRING("YQ==", b64);
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -247,5 +342,9 @@ int main(int, char**) {
     RUN_TEST(test_id_length_limit);
     RUN_TEST(test_trailing_garbage_rejected);
     RUN_TEST(test_parse_cfg_prg_modem);
+    RUN_TEST(test_enabled_string_and_numeric_forms);
+    RUN_TEST(test_string_numeric_fields_and_unknown_keys);
+    RUN_TEST(test_debug_ops_all_and_unknown);
+    RUN_TEST(test_extractors_edge_cases);
     return UNITY_END();
 }

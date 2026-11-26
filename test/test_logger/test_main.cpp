@@ -120,6 +120,13 @@ static void test_flush_from_foreign_task_is_noop() {
     TEST_ASSERT_EQUAL_UINT32(1, test_log::count());
 }
 
+static void test_begin_serial_only_and_flush_are_safe() {
+    logger.begin();
+    logger.logSerialOnly(LogModule::Core, "ignored %d\n", 1);
+    logger.flushUart();
+    TEST_ASSERT_EQUAL_UINT32(0, test_log::count());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_line_has_millis_and_module);
@@ -131,5 +138,6 @@ int main(int, char**) {
     RUN_TEST(test_loop_log_emits_deferred_lines_first);
     RUN_TEST(test_ring_overflow_is_counted_and_reported);
     RUN_TEST(test_flush_from_foreign_task_is_noop);
+    RUN_TEST(test_begin_serial_only_and_flush_are_safe);
     return UNITY_END();
 }

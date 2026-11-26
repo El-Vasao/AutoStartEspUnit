@@ -483,6 +483,18 @@ void test_begin_clamps_crank_above_max_only() {
     TEST_ASSERT_EQUAL((int)Phase::Settling, (int)m.phase());
 }
 
+static void test_stop_reason_strings() {
+    TEST_ASSERT_EQUAL_STRING("already_running", stopReasonToString(StopReason::AlreadyRunning));
+    TEST_ASSERT_EQUAL_STRING("condition", stopReasonToString(StopReason::Condition));
+    TEST_ASSERT_EQUAL_STRING("max_time", stopReasonToString(StopReason::MaxTime));
+    TEST_ASSERT_EQUAL_STRING("voltage_ok", stopReasonToString(StopReason::VoltageOk));
+    TEST_ASSERT_EQUAL_STRING("voltage_low", stopReasonToString(StopReason::VoltageLow));
+    TEST_ASSERT_EQUAL_STRING("no_voltage", stopReasonToString(StopReason::NoVoltage));
+    TEST_ASSERT_EQUAL_STRING("blocked", stopReasonToString(StopReason::Blocked));
+    TEST_ASSERT_EQUAL_STRING("none", stopReasonToString(StopReason::None));
+    TEST_ASSERT_EQUAL_STRING("none", stopReasonToString(static_cast<StopReason>(99)));
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -520,5 +532,6 @@ int main(int, char**) {
     RUN_TEST(test_timed_crank_boundary_stays_on_until_crankMs);
     RUN_TEST(test_timed_half_second_crank_stops_at_500);
     RUN_TEST(test_begin_clamps_crank_above_max_only);
+    RUN_TEST(test_stop_reason_strings);
     return UNITY_END();
 }

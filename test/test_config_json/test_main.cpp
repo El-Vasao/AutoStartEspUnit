@@ -1,7 +1,9 @@
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <unity.h>
 
+#include "common/Crc16.h"
 #include "config/internal/BaseConfigJsonIo.h"
 #include "config/internal/ProgramJsonIo.h"
 
@@ -22,6 +24,12 @@ bool parseCfg(const std::string& json, BaseConfig& cfg, config_internal::ParseMo
               bool* hasCal = nullptr, float* calV = nullptr) {
     File f = fileOf(json);
     return config_internal::parseBaseConfigStreamingFromFile(f, cfg, mode, hasCal, calV);
+}
+
+bool parseCfgSeen(const std::string& json, BaseConfig& cfg, uint16_t* seen) {
+    File f = fileOf(json);
+    return config_internal::parseBaseConfigStreamingFromFile(f, cfg, config_internal::ParseMode::Strict,
+                                                             nullptr, nullptr, seen);
 }
 
 bool parseProg(const std::string& json, Program& out) {
@@ -335,6 +343,252 @@ static void test_tz_offset_out_of_range_keeps_previous() {
     TEST_ASSERT_EQUAL_INT8(5, cfg.time.tz_offset_hours);
 }
 
+static void fillFullConfig(BaseConfig& cfg) {
+    cfg.setup_required = true;
+
+    strcpy(cfg.wifi.ssid, "MyCar");
+    strcpy(cfg.wifi.password, "pa\"ss");
+    cfg.wifi.ap_timeout_sec = 90;
+    cfg.wifi.ap_timeout_enabled = true;
+
+    strcpy(cfg.gsm.apn, "internet");
+    strcpy(cfg.gsm.apn_user, "user");
+    strcpy(cfg.gsm.apn_pass, "pass");
+    strcpy(cfg.gsm.owner_phone, "+71234567890");
+    strcpy(cfg.gsm.dtmf_password, "1234");
+
+    strcpy(cfg.mqtt.broker, "broker.local");
+    cfg.mqtt.port = 1884;
+    strcpy(cfg.mqtt.client_id, "dev1");
+    strcpy(cfg.mqtt.user, "mqtt-user");
+    strcpy(cfg.mqtt.pass, "mqtt-pass");
+    strcpy(cfg.mqtt.topic_prefix, "car/x");
+    cfg.mqtt.publish_interval_sec = 30;
+
+    cfg.vehicle.adc_voltage_coeff = 0.012345678f;
+    cfg.vehicle.starter_max_time_sec = 20;
+    cfg.vehicle.wait_after_start_sec = 7;
+    cfg.vehicle.engine_running_voltage_threshold = 13.4f;
+    cfg.vehicle.engine_stopped_voltage_threshold = 12.2f;
+    cfg.vehicle.starter_relay_id = 4;
+    cfg.vehicle.start_method = StartMethod::Rpm;
+    cfg.vehicle.start_input_id = 1;
+    cfg.vehicle.starter_crank_time_sec = 1.75f;
+    cfg.vehicle.starter_retry_pause_sec = 4;
+    cfg.vehicle.starter_attempts = 3;
+    cfg.vehicle.start_block_input_id = 2;
+    strcpy(cfg.vehicle.engine_detection_source, "input");
+    cfg.vehicle.engine_input_id = 3;
+
+    for (uint8_t i = 0; i < HardwareLimits::SENSORS; i++) {
+        cfg.sensors[i].id = static_cast<uint8_t>(i + 1);
+        cfg.sensors[i].coeff = (i == 0) ? 0.004f : 1.0f;
+    }
+    strcpy(cfg.sensors[0].name, "Cabin");
+    strcpy(cfg.sensors[0].rom, "AA:BB:CC:DD:EE:FF:11:22");
+    strcpy(cfg.sensors[1].name, "Engine");
+
+    for (uint8_t i = 0; i < HardwareLimits::INPUTS; i++) {
+        cfg.inputs[i].id = static_cast<uint8_t>(i + 1);
+        cfg.inputs[i].enabled = (i != 1);
+    }
+    strcpy(cfg.inputs[0].name, "Brake");
+    cfg.inputs[0].active_state = false;
+    cfg.inputs[1].type = InputType::PULSE_COUNTER;
+    strcpy(cfg.inputs[1].name, "RPM");
+    cfg.inputs[1].pulse.pulses_per_rev = 4;
+    cfg.inputs[1].pulse.threshold_rpm = 800;
+
+    for (uint8_t i = 0; i < HardwareLimits::RELAYS; i++) {
+        cfg.relays[i].id = static_cast<uint8_t>(i + 1);
+    }
+    strcpy(cfg.relays[0].name, "ACC");
+    strcpy(cfg.relays[1].name, "IGN");
+
+    cfg.thermostat.enabled = true;
+    cfg.thermostat.sensor_id = 1;
+    strcpy(cfg.thermostat.comparison, "below");
+    cfg.thermostat.lower_threshold = -10.5f;
+    cfg.thermostat.upper_threshold = 25.5f;
+    cfg.thermostat.program_id_lower = 3;
+    cfg.thermostat.program_id_upper = 4;
+
+    cfg.battery_saver.enabled = true;
+    cfg.battery_saver.voltage_start_threshold = 11.9f;
+    cfg.battery_saver.voltage_abort_threshold = 10.6f;
+    cfg.battery_saver.hysteresis = 0.4f;
+    cfg.battery_saver.min_low_voltage_duration_sec = 200;
+    cfg.battery_saver.min_time_between_attempts_sec = 1900;
+    cfg.battery_saver.max_attempts_per_day = 4;
+    cfg.battery_saver.program_id = 2;
+
+    cfg.time.enabled = true;
+    strcpy(cfg.time.ntp_server, "pool.ntp.org");
+    cfg.time.tz_offset_hours = -5;
+    cfg.time.sync_interval_hours = 12;
+
+    cfg.input_triggers_count = 2;
+    cfg.input_triggers[0].id = 10;
+    cfg.input_triggers[0].enabled = true;
+    cfg.input_triggers[0].input_id = 1;
+    cfg.input_triggers[0].trigger_level = 1;
+    cfg.input_triggers[0].program_id = 5;
+    cfg.input_triggers[1].id = 11;
+    cfg.input_triggers[1].enabled = false;
+    cfg.input_triggers[1].input_id = 0;
+
+    cfg.temperature_triggers_count = 2;
+    cfg.temperature_triggers[0].id = 20;
+    cfg.temperature_triggers[0].enabled = true;
+    cfg.temperature_triggers[0].sensor_id = 2;
+    strcpy(cfg.temperature_triggers[0].comparison, "below");
+    cfg.temperature_triggers[0].threshold = -12.5f;
+    cfg.temperature_triggers[0].program_id = 6;
+    cfg.temperature_triggers[1].id = 21;
+    cfg.temperature_triggers[1].enabled = false;
+    cfg.temperature_triggers[1].sensor_id = 3;
+}
+
+static void test_full_config_round_trip_and_seen_sections() {
+    BaseConfig cfg;
+    fillFullConfig(cfg);
+
+    MemPrint out;
+    const size_t n = config_internal::serializeBaseConfigToPrint(cfg, out);
+    TEST_ASSERT_EQUAL_UINT32((unsigned)out.s.size(), (unsigned)n);
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"setup_required\":true"));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"ssid\":\"MyCar\""));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"password\":\"pa\\\"ss\""));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"starter_relay_id\":\"K4\""));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"start_input_id\":\"IN1\""));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"engine_detection_source\":\"input\""));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"sensor_name\":\"Cabin\""));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"rom\":\"AA:BB:CC:DD:EE:FF:11:22\""));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"pulses_per_rev\":4"));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"threshold_rpm\":800"));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"input_triggers\":["));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"temperature_triggers\":["));
+
+    BaseConfig back;
+    uint16_t seen = 0;
+    TEST_ASSERT_TRUE(parseCfgSeen(out.s, back, &seen));
+    TEST_ASSERT_EQUAL_UINT16(config_internal::ConfigSection::RequiredPost, seen);
+    TEST_ASSERT_TRUE(back.setup_required);
+    TEST_ASSERT_EQUAL_STRING("MyCar", back.wifi.ssid);
+    TEST_ASSERT_EQUAL_STRING("pa\"ss", back.wifi.password);
+    TEST_ASSERT_EQUAL_UINT16(90, back.wifi.ap_timeout_sec);
+    TEST_ASSERT_TRUE(back.wifi.ap_timeout_enabled);
+    TEST_ASSERT_EQUAL_STRING("+71234567890", back.gsm.owner_phone);
+    TEST_ASSERT_EQUAL_STRING("1234", back.gsm.dtmf_password);
+    TEST_ASSERT_EQUAL_UINT16(1884, back.mqtt.port);
+    TEST_ASSERT_EQUAL_STRING("car/x", back.mqtt.topic_prefix);
+    TEST_ASSERT_EQUAL_UINT16(30, back.mqtt.publish_interval_sec);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.012345678f, back.vehicle.adc_voltage_coeff);
+    TEST_ASSERT_EQUAL((int)StartMethod::Rpm, (int)back.vehicle.start_method);
+    TEST_ASSERT_EQUAL_UINT8(4, back.vehicle.starter_relay_id);
+    TEST_ASSERT_EQUAL_UINT8(1, back.vehicle.start_input_id);
+    TEST_ASSERT_EQUAL_UINT8(2, back.vehicle.start_block_input_id);
+    TEST_ASSERT_EQUAL_STRING("input", back.vehicle.engine_detection_source);
+    TEST_ASSERT_EQUAL_UINT8(3, back.vehicle.engine_input_id);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.004f, back.sensors[0].coeff);
+    TEST_ASSERT_EQUAL_STRING("Cabin", back.sensors[0].name);
+    TEST_ASSERT_EQUAL_STRING("AA:BB:CC:DD:EE:FF:11:22", back.sensors[0].rom);
+    TEST_ASSERT_EQUAL((int)InputType::PULSE_COUNTER, (int)back.inputs[1].type);
+    TEST_ASSERT_EQUAL_UINT16(4, back.inputs[1].pulse.pulses_per_rev);
+    TEST_ASSERT_EQUAL_UINT16(800, back.inputs[1].pulse.threshold_rpm);
+    TEST_ASSERT_EQUAL_STRING("ACC", back.relays[0].name);
+    TEST_ASSERT_EQUAL_STRING("IGN", back.relays[1].name);
+    TEST_ASSERT_TRUE(back.thermostat.enabled);
+    TEST_ASSERT_EQUAL_UINT8(1, back.thermostat.sensor_id);
+    TEST_ASSERT_EQUAL_STRING("below", back.thermostat.comparison);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, -10.5f, back.thermostat.lower_threshold);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 25.5f, back.thermostat.upper_threshold);
+    TEST_ASSERT_TRUE(back.battery_saver.enabled);
+    TEST_ASSERT_EQUAL_UINT16(200, back.battery_saver.min_low_voltage_duration_sec);
+    TEST_ASSERT_EQUAL_UINT8(4, back.battery_saver.max_attempts_per_day);
+    TEST_ASSERT_TRUE(back.time.enabled);
+    TEST_ASSERT_EQUAL_INT8(-5, back.time.tz_offset_hours);
+    TEST_ASSERT_EQUAL_UINT32(12, back.time.sync_interval_hours);
+    TEST_ASSERT_EQUAL_UINT8(2, back.input_triggers_count);
+    TEST_ASSERT_EQUAL_UINT16(10, back.input_triggers[0].id);
+    TEST_ASSERT_EQUAL_UINT8(5, back.input_triggers[0].program_id);
+    TEST_ASSERT_EQUAL_UINT8(2, back.temperature_triggers_count);
+    TEST_ASSERT_EQUAL_UINT16(20, back.temperature_triggers[0].id);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, -12.5f, back.temperature_triggers[0].threshold);
+}
+
+static void test_crc16_serialized_config_matches_string() {
+    BaseConfig cfg;
+    fillFullConfig(cfg);
+    MemPrint out;
+    config_internal::serializeBaseConfigToPrint(cfg, out);
+
+    size_t len = 0;
+    const uint16_t crc = config_internal::crc16SerializedBaseConfig(cfg, &len);
+    TEST_ASSERT_EQUAL_UINT32((unsigned)out.s.size(), (unsigned)len);
+    TEST_ASSERT_EQUAL_HEX16(calculateCRC16(out.s.data(), out.s.size()), crc);
+}
+
+static void test_progmem_parse_valid_null_and_invalid() {
+    BaseConfig cfg;
+    TEST_ASSERT_TRUE(config_internal::parseBaseConfigStreamingFromProgmem(
+        cfg, "{\"wifi\":{\"ssid\":\"Progmem\"},\"relays\":[]}"));
+    TEST_ASSERT_EQUAL_STRING("Progmem", cfg.wifi.ssid);
+
+    BaseConfig bad;
+    TEST_ASSERT_FALSE(config_internal::parseBaseConfigStreamingFromProgmem(bad, nullptr));
+    TEST_ASSERT_FALSE(config_internal::parseBaseConfigStreamingFromProgmem(bad, ""));
+    TEST_ASSERT_FALSE(config_internal::parseBaseConfigStreamingFromProgmem(bad, "[]"));
+    TEST_ASSERT_FALSE(config_internal::parseBaseConfigStreamingFromProgmem(bad, "{\"wifi\":{\"ssid\":\"x\"}"));
+}
+
+static void test_seen_sections_partial_and_null_values_ignored() {
+    BaseConfig cfg;
+    strcpy(cfg.wifi.ssid, "keep");
+    uint16_t seen = 0;
+    TEST_ASSERT_TRUE(parseCfgSeen("{\"wifi\":{\"ssid\":null,\"ap_timeout_sec\":null},\"relays\":[]}",
+                                  cfg, &seen));
+    TEST_ASSERT_EQUAL_STRING("keep", cfg.wifi.ssid);
+    TEST_ASSERT_EQUAL_UINT16(config_internal::ConfigSection::Wifi | config_internal::ConfigSection::Relays,
+                             seen);
+}
+
+static void test_strict_root_must_be_object() {
+    BaseConfig cfg;
+    TEST_ASSERT_FALSE(parseCfg("[]", cfg, config_internal::ParseMode::Strict));
+    TEST_ASSERT_FALSE(parseCfg("42", cfg, config_internal::ParseMode::Strict));
+    TEST_ASSERT_FALSE(parseCfg("\"text\"", cfg, config_internal::ParseMode::Strict));
+    TEST_ASSERT_TRUE(parseCfg("{\"wifi\":null}", cfg, config_internal::ParseMode::Strict));
+}
+
+static void test_strict_invalid_numbers_and_silk_fail() {
+    BaseConfig cfg;
+    TEST_ASSERT_FALSE(parseCfg("{\"wifi\":{\"ap_timeout_sec\":70000}}", cfg,
+                               config_internal::ParseMode::Strict));
+    TEST_ASSERT_FALSE(parseCfg("{\"vehicle\":{\"starter_relay_id\":\"K9\"}}", cfg,
+                               config_internal::ParseMode::Strict));
+    TEST_ASSERT_FALSE(parseCfg("{\"battery_saver\":{\"max_attempts_per_day\":999}}", cfg,
+                               config_internal::ParseMode::Strict));
+}
+
+static void test_mqtt_port_overflow_clamps_to_max() {
+    // Текущий контракт: port парсится через parseU16 (clamp), а не tryParseU16 (fail).
+    BaseConfig cfg;
+    TEST_ASSERT_TRUE(parseCfg("{\"mqtt\":{\"port\":70000}}", cfg,
+                              config_internal::ParseMode::Strict));
+    TEST_ASSERT_EQUAL_UINT16(65535, cfg.mqtt.port);
+}
+
+static void test_serialize_nonfinite_float_as_zero() {
+    BaseConfig cfg;
+    cfg.vehicle.adc_voltage_coeff = NAN;
+    cfg.vehicle.engine_running_voltage_threshold = INFINITY;
+    MemPrint out;
+    config_internal::serializeBaseConfigToPrint(cfg, out);
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"adc_voltage_coeff\":0,"));
+    TEST_ASSERT_NOT_NULL(strstr(out.s.c_str(), "\"engine_running_voltage_threshold\":0,"));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_emit_parse_keeps_hidden_fields);
@@ -350,5 +604,13 @@ int main(int, char**) {
     RUN_TEST(test_program_step_round_trip);
     RUN_TEST(test_battery_saver_u16_overflow_fails_strict);
     RUN_TEST(test_tz_offset_out_of_range_keeps_previous);
+    RUN_TEST(test_full_config_round_trip_and_seen_sections);
+    RUN_TEST(test_crc16_serialized_config_matches_string);
+    RUN_TEST(test_progmem_parse_valid_null_and_invalid);
+    RUN_TEST(test_seen_sections_partial_and_null_values_ignored);
+    RUN_TEST(test_strict_root_must_be_object);
+    RUN_TEST(test_strict_invalid_numbers_and_silk_fail);
+    RUN_TEST(test_mqtt_port_overflow_clamps_to_max);
+    RUN_TEST(test_serialize_nonfinite_float_as_zero);
     return UNITY_END();
 }

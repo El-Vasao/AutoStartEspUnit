@@ -195,6 +195,45 @@ static void test_reset_clears_partial_frame() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Raw, (uint8_t)f.feed('a'));
 }
 
+static void test_abort_replays_each_partial_header_state() {
+    IpdFramer f;
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Consumed, (uint8_t)f.feed('+'));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Consumed, (uint8_t)f.feed('I'));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Raw, (uint8_t)f.feed('X'));
+    TEST_ASSERT_EQUAL_STRING("+I", f.replay());
+
+    for (const char* p = "+IPD"; *p; ++p) f.feed(*p);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Raw, (uint8_t)f.feed('X'));
+    TEST_ASSERT_EQUAL_STRING("+IPD", f.replay());
+
+    for (const char* p = "+IPD,"; *p; ++p) f.feed(*p);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Raw, (uint8_t)f.feed('X'));
+    TEST_ASSERT_EQUAL_STRING("+IPD,", f.replay());
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)IpdFramer::State::Idle, (uint8_t)f.state());
+}
+
+static void test_ipd_length_overflow_saturates_to_discard() {
+    IpdFramer f;
+    Ev last = Ev::Consumed;
+    for (const char* p = "+IPD,999999999999999:"; *p; ++p) last = f.feed(*p);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Ev::Discard, (uint8_t)last);
+    TEST_ASSERT_TRUE(f.inDiscard());
+    TEST_ASSERT_FALSE(f.inPayload());
+    TEST_ASSERT_EQUAL_UINT16(0, f.length());
+}
+
+static void test_control_lines_trailing_ws_and_short_prefixes() {
+    TEST_ASSERT_TRUE(ctl("OK \t\r\n"));
+    TEST_ASSERT_TRUE(ctl("AT"));
+    TEST_ASSERT_TRUE(ctl("ATX"));
+    TEST_ASSERT_TRUE(ctl(">"));
+    TEST_ASSERT_TRUE(ctl("+"));
+    TEST_ASSERT_TRUE(ctl("CSQ:"));
+    TEST_ASSERT_TRUE(ctl("IPD,"));
+    TEST_ASSERT_FALSE(ctl("NO CARRI"));
+    TEST_ASSERT_FALSE(ctl("OKAY"));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_control_lines_finals_and_echo);
@@ -211,5 +250,8 @@ int main(int, char**) {
     RUN_TEST(test_aborted_header_replays_consumed_bytes);
     RUN_TEST(test_plain_byte_is_raw_without_replay);
     RUN_TEST(test_reset_clears_partial_frame);
+    RUN_TEST(test_abort_replays_each_partial_header_state);
+    RUN_TEST(test_ipd_length_overflow_saturates_to_discard);
+    RUN_TEST(test_control_lines_trailing_ws_and_short_prefixes);
     return UNITY_END();
 }
