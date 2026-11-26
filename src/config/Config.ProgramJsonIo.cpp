@@ -61,7 +61,7 @@ public:
     bool ok() const { return !failed_ && sawRootArray_ && sp_ == -1; }
     size_t count() const { return n_; }
 
-    void whitespace(char) override {} // GCOV_EXCL_LINE: парсер не вызывает whitespace.
+    void whitespace(char) override {}
     void startDocument() override {
         failed_ = false;
         sawRootArray_ = false;
@@ -90,7 +90,7 @@ public:
             pop();
             return;
         }
-        failed_ = true; // GCOV_EXCL_LINE: defensive, парсер не даёт этот переход.
+        failed_ = true;
     }
 
     void startObject() override {
@@ -111,10 +111,8 @@ public:
         if (failed_) return;
         if (popJunk()) return;
         if (cur() != Idx::Row) {
-            // GCOV_EXCL_START: defensive, парсер не даёт этот переход.
             failed_ = true;
             return;
-            // GCOV_EXCL_STOP
         }
         if (rows_ && n_ < cap_) {
             rows_[n_] = row_;
@@ -145,10 +143,8 @@ private:
 
     void push(Idx x) {
         if (sp_ + 1 >= 8) {
-            // GCOV_EXCL_START: стек ограничен RootArr/Row, переполнение недостижимо.
             failed_ = true;
             return;
-            // GCOV_EXCL_STOP
         }
         stk_[++sp_] = x;
     }
@@ -194,10 +190,8 @@ class SkipStepsRootListener : public JsonListener {
 protected:
     void push(P x) {
         if (sp_ + 1 >= 12) {
-            // GCOV_EXCL_START: стек ограничен Root/StepsArr/StepObj/StepsSkip.
             failed_ = true;
             return;
-            // GCOV_EXCL_STOP
         }
         stk_[++sp_] = x;
     }
@@ -252,7 +246,7 @@ public:
 
     bool okResult() const { return ok_ && !failed_; }
 
-    void whitespace(char) override {} // GCOV_EXCL_LINE: парсер не вызывает whitespace.
+    void whitespace(char) override {}
     void startDocument() override {
         failed_ = false;
         ok_ = false;
@@ -291,7 +285,7 @@ public:
             pop();
             return;
         }
-        failed_ = true; // GCOV_EXCL_LINE: defensive, парсер не даёт этот переход.
+        failed_ = true;
     }
 
     void startArray() override {
@@ -317,7 +311,7 @@ public:
             if (skipLvl_ == 0) pop();
             return;
         }
-        failed_ = true; // GCOV_EXCL_LINE: defensive, парсер не даёт этот переход.
+        failed_ = true;
     }
 
     void key(const char* k) override {
@@ -350,7 +344,7 @@ private:
 template <typename StepSink>
 class ProgramBodyListenerBase : public SkipStepsRootListener {
 public:
-    void whitespace(char) override {} // GCOV_EXCL_LINE: парсер не вызывает whitespace.
+    void whitespace(char) override {}
 
     void startDocument() override {
         failed_ = false;
@@ -393,7 +387,7 @@ public:
             pop();
             return;
         }
-        failed_ = true; // GCOV_EXCL_LINE: defensive, парсер не даёт этот переход.
+        failed_ = true;
     }
 
     void startArray() override {
@@ -413,7 +407,7 @@ public:
             pop();
             return;
         }
-        failed_ = true; // GCOV_EXCL_LINE: defensive, парсер не даёт этот переход.
+        failed_ = true;
     }
 
     void key(const char* k) override {
@@ -448,10 +442,8 @@ public:
     }
     void onBeginStepObject() {
         if (!prog_) {
-            // GCOV_EXCL_START: listener всегда создаётся с валидным Program.
             failed_ = true;
             return;
-            // GCOV_EXCL_STOP
         }
         if (prog_->step_count >= Limits::MAX_STEPS_PER_PROGRAM) {
             failed_ = true;
@@ -515,10 +507,8 @@ public:
     void onEndDoc() { good_ = !failed_; }
     void onBeginStepObject() {
         if (!steps_ || !cnt_) {
-            // GCOV_EXCL_START: публичный API проверяет указатели до создания listener.
             failed_ = true;
             return;
-            // GCOV_EXCL_STOP
         }
         if (*cnt_ >= maxSteps_) {
             failed_ = true;

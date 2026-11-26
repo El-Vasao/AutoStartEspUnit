@@ -60,7 +60,7 @@ IpdFramer::Event IpdFramer::abort_() {
         case State::MatchD:     prefix = "+IP"; break;
         case State::MatchComma: prefix = "+IPD"; break;
         case State::ReadLen:    prefix = "+IPD,"; break;
-        default: break; // GCOV_EXCL_LINE: switch покрывает все State.
+        default: break;
     }
     strncpy(_replay, prefix, sizeof(_replay) - 1);
     _replay[sizeof(_replay) - 1] = '\0';
@@ -168,10 +168,8 @@ IpdFramer::Event IpdFramer::feed(char c) {
             }
             return Event::Payload;
     }
-    // GCOV_EXCL_START: switch покрывает все State, хвост недостижим.
     _state = State::Idle;
     return Event::Raw;
-    // GCOV_EXCL_STOP
 }
 
 } // namespace sim800_lines
