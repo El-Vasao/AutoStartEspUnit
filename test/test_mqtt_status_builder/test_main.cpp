@@ -487,6 +487,59 @@ static void test_significant_and_edge_program_runtime_and_errors() {
     TEST_ASSERT_TRUE(mqttStatusHasEdgeChanges(cur, prev, cfg));
 }
 
+static void test_delta_valid_voltage_csq_and_err() {
+    StatusSnapshot prev = sample();
+
+    StatusSnapshot cur = prev;
+    cur.seq = 5;
+    cur.voltage = 13.0f;
+    BufPrint out;
+    emitMqttStatusDeltaJson(cur, prev, sampleCfg(), out);
+    TEST_ASSERT_EQUAL_STRING("{\"full\":false,\"seq\":5,\"io\":{\"voltage\":13.00}}", out.data());
+
+    cur = prev;
+    cur.seq = 5;
+    cur.csqRssi = 16;
+    BufPrint csq;
+    emitMqttStatusDeltaJson(cur, prev, sampleCfg(), csq);
+    TEST_ASSERT_EQUAL_STRING("{\"full\":false,\"seq\":5,\"csq\":16}", csq.data());
+
+    cur = prev;
+    cur.seq = 5;
+    cur.lastErrCount = 1;
+    cur.lastErr[0].code = 7;
+    cur.lastErr[0].active = true;
+    strcpy(cur.lastErr[0].msg, "x");
+    BufPrint err;
+    emitMqttStatusDeltaJson(cur, prev, sampleCfg(), err);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"full\":false,\"seq\":5,\"err\":[{\"code\":7,\"msg\":\"x\",\"active\":true}]}", err.data());
+}
+
+static void test_significant_and_edge_last_err_metadata() {
+    const BaseConfig cfg = sampleCfg();
+    StatusSnapshot prev = sample();
+    prev.lastErrCount = 1;
+    prev.lastErr[0].code = 7;
+    prev.lastErr[0].active = true;
+    prev.lastErr[0].uptimeSec = 10;
+
+    StatusSnapshot cur = prev;
+    cur.lastErr[0].code = 8;
+    TEST_ASSERT_TRUE(mqttStatusHasSignificantChanges(cur, prev, cfg));
+    TEST_ASSERT_TRUE(mqttStatusHasEdgeChanges(cur, prev, cfg));
+
+    cur = prev;
+    cur.lastErr[0].active = false;
+    TEST_ASSERT_TRUE(mqttStatusHasSignificantChanges(cur, prev, cfg));
+    TEST_ASSERT_TRUE(mqttStatusHasEdgeChanges(cur, prev, cfg));
+
+    cur = prev;
+    cur.lastErr[0].uptimeSec = 11;
+    TEST_ASSERT_TRUE(mqttStatusHasSignificantChanges(cur, prev, cfg));
+    TEST_ASSERT_TRUE(mqttStatusHasEdgeChanges(cur, prev, cfg));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_full_status_matches_golden_json);
@@ -506,5 +559,7 @@ int main(int, char**) {
     RUN_TEST(test_delta_runtime_fields_and_triggers);
     RUN_TEST(test_significant_and_edge_modes_time_and_io);
     RUN_TEST(test_significant_and_edge_program_runtime_and_errors);
+    RUN_TEST(test_delta_valid_voltage_csq_and_err);
+    RUN_TEST(test_significant_and_edge_last_err_metadata);
     return UNITY_END();
 }

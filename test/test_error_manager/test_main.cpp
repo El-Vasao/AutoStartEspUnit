@@ -156,6 +156,21 @@ static void test_set_reactivates_inactive_same_code_without_new_slot() {
     TEST_ASSERT_FALSE(em.historyAt(0).delivered);
 }
 
+static void test_set_none_clears_and_reactivates_inactive_tail() {
+    ErrorManager em = fresh();
+    ErrorSnapshotEntry out[ErrorHistory::CAPACITY];
+    em.set(ErrorCode::GSM_NO_RESPONSE);
+    em.set(ErrorCode::RELAY_TIMEOUT); // ring: [RELAY, GSM]
+    em.clear(ErrorCode::GSM_NO_RESPONSE); // GSM inactive at index 1
+    em.set(ErrorCode::GSM_NO_RESPONSE);   // reactivate at i > 0, move to front
+    TEST_ASSERT_TRUE(em.isActive(ErrorCode::GSM_NO_RESPONSE));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ErrorCode::GSM_NO_RESPONSE, (uint8_t)em.historyAt(0).code);
+
+    em.set(ErrorCode::NONE); // clear all actives
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)ErrorCode::NONE, (uint8_t)em.get());
+    TEST_ASSERT_EQUAL_UINT8(0, em.copyActive(out, ErrorHistory::CAPACITY));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_set_makes_code_current_and_active);
@@ -169,5 +184,6 @@ int main(int, char**) {
     RUN_TEST(test_boot_reset_is_active_only_without_other_actives);
     RUN_TEST(test_every_error_message_fits_snapshot_buffer);
     RUN_TEST(test_set_reactivates_inactive_same_code_without_new_slot);
+    RUN_TEST(test_set_none_clears_and_reactivates_inactive_tail);
     return UNITY_END();
 }

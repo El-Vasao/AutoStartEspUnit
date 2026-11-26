@@ -254,6 +254,34 @@ static void test_program_object_skips_junk_inside_step() {
     TEST_ASSERT_EQUAL_UINT32(5, p.steps[0].ms);
 }
 
+static void test_whitespace_and_root_junk_are_ignored() {
+    IndexRow rows[2]{};
+    size_t count = 0;
+    File idx = fileOf(" \n [ { \"id\" : 1 , \"name\" : \"a\" } ] \t");
+    TEST_ASSERT_TRUE(program_json::parseProgramIndexFile(idx, rows, 2, &count));
+    TEST_ASSERT_EQUAL_UINT32(1, (unsigned)count);
+    TEST_ASSERT_EQUAL_STRING("a", rows[0].name);
+
+    uint8_t id = 0;
+    char name[TextBytes::Programs::NAME]{};
+    File hdr = fileOf(" { \"id\" : 7 , \"name\" : \"N\" , \"steps\" : [ ] , \"extra\" : { \"x\" : 1 } } ");
+    TEST_ASSERT_TRUE(program_json::parseProgramHeaderFile(hdr, 7, &id, name, sizeof name));
+    TEST_ASSERT_EQUAL_UINT8(7, id);
+    TEST_ASSERT_EQUAL_STRING("N", name);
+
+    Program p;
+    File progObj = fileOf(
+        " { \"id\" : 1 , \"name\" : \"p\" , \"steps\" : [ { \"action\" : \"WAIT\" } ] ,"
+        " \"extra\" : { \"x\" : [ 1 ] } } ");
+    TEST_ASSERT_TRUE(program_json::parseProgramObjectFile(progObj, p));
+    TEST_ASSERT_EQUAL_UINT8(1, p.step_count);
+
+    Program p2;
+    File progArr = fileOf("{\"id\":1,\"steps\":[{\"action\":\"WAIT\"}],\"extra\":[1,2]}");
+    TEST_ASSERT_TRUE(program_json::parseProgramObjectFile(progArr, p2));
+    TEST_ASSERT_EQUAL_UINT8(1, p2.step_count);
+}
+
 static void test_emit_program_zero_steps_and_count() {
     Program p;
     MemPrint out;
@@ -347,6 +375,7 @@ int main(int, char**) {
     RUN_TEST(test_compiled_invalid_silk_fails);
     RUN_TEST(test_program_object_requires_id_and_nonempty_steps);
     RUN_TEST(test_program_object_skips_junk_inside_step);
+    RUN_TEST(test_whitespace_and_root_junk_are_ignored);
     RUN_TEST(test_emit_program_zero_steps_and_count);
     RUN_TEST(test_emit_program_optional_fields_and_escaping);
     RUN_TEST(test_emit_program_relay_prefix_requires_underscore);

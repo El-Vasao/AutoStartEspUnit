@@ -110,6 +110,8 @@ void test_parse_rejects_missing_id_or_cmd() {
     TEST_ASSERT_FALSE(parseMqttCommandJson("{\"id\":\"x\"}", cmd));
     TEST_ASSERT_FALSE(parseMqttCommandJson("", cmd));
     TEST_ASSERT_FALSE(parseMqttCommandJson(nullptr, cmd));
+    TEST_ASSERT_FALSE(parseMqttCommandJson("{}", cmd));
+    TEST_ASSERT_FALSE(parseMqttCommandJson("{ }", cmd));
 }
 
 void test_parse_rejects_bad_json() {
@@ -182,6 +184,7 @@ void test_trailing_garbage_rejected() {
     MqttCommand cmd;
     TEST_ASSERT_FALSE(parseMqttCommandJson("{\"id\":\"a\",\"cmd\":\"stop\"} x", cmd));
     TEST_ASSERT_TRUE(parseMqttCommandJson("  {\"id\":\"a\",\"cmd\":\"stop\"}  ", cmd));
+    TEST_ASSERT_TRUE(parseMqttCommandJson("{\n \"id\" : \"a\" , \"cmd\" : \"stop\" \n} \t", cmd));
 }
 
 void test_parse_cfg_prg_modem() {

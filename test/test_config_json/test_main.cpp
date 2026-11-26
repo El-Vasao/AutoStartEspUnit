@@ -579,6 +579,59 @@ static void test_mqtt_port_overflow_clamps_to_max() {
     TEST_ASSERT_EQUAL_UINT16(65535, cfg.mqtt.port);
 }
 
+static void test_base_sax_whitespace_extra_relays_and_nested_junk() {
+    std::string json = " { \"wifi\" : { \"ssid\" : \"X\" } , \"relays\" : [";
+    for (int i = 0; i < HardwareLimits::RELAYS + 1; i++) {
+        if (i) json += ',';
+        const int id = (i < HardwareLimits::RELAYS) ? (i + 1) : 1;
+        json += "{\"id\":\"K" + std::to_string(id) + "\"}";
+    }
+    json += "], \"inputs\":[{\"id\":\"IN1\",\"foo\":{\"bar\":1}}]}";
+
+    BaseConfig cfg;
+    TEST_ASSERT_TRUE(parseCfg(json, cfg, config_internal::ParseMode::Strict));
+    TEST_ASSERT_EQUAL_STRING("X", cfg.wifi.ssid);
+    TEST_ASSERT_EQUAL_UINT8(1, cfg.inputs[0].id);
+}
+
+static void test_topic_prefix_trims_trailing_slashes() {
+    BaseConfig cfg;
+    TEST_ASSERT_TRUE(parseCfg("{\"mqtt\":{\"topic_prefix\":\"car///\"}}", cfg,
+                              config_internal::ParseMode::Strict));
+    TEST_ASSERT_EQUAL_STRING("car", cfg.mqtt.topic_prefix);
+}
+
+static void test_channel_ids_must_match_slot() {
+    BaseConfig cfg;
+    TEST_ASSERT_FALSE(parseCfg("{\"sensors\":[{\"id\":\"T2\"}]}", cfg,
+                               config_internal::ParseMode::Strict));
+    TEST_ASSERT_FALSE(parseCfg("{\"inputs\":[{\"id\":\"IN2\"}]}", cfg,
+                               config_internal::ParseMode::Strict));
+    TEST_ASSERT_FALSE(parseCfg("{\"relays\":[{\"id\":\"K2\"}]}", cfg,
+                               config_internal::ParseMode::Strict));
+}
+
+static void test_battery_saver_duration_overflow() {
+    BaseConfig cfg;
+    TEST_ASSERT_FALSE(parseCfg("{\"battery_saver\":{\"min_low_voltage_duration_sec\":70000}}", cfg,
+                               config_internal::ParseMode::Strict));
+    TEST_ASSERT_FALSE(parseCfg("{\"battery_saver\":{\"min_time_between_attempts_sec\":70000}}", cfg,
+                               config_internal::ParseMode::Strict));
+}
+
+static void test_progmem_extra_arrays_trim_and_log() {
+    std::string doc = "{\"relays\":[";
+    for (int i = 0; i < HardwareLimits::RELAYS + 1; i++) {
+        if (i) doc += ',';
+        const int id = (i < HardwareLimits::RELAYS) ? (i + 1) : 1;
+        doc += "{\"id\":\"K" + std::to_string(id) + "\"}";
+    }
+    doc += "]}";
+    BaseConfig cfg;
+    TEST_ASSERT_TRUE(config_internal::parseBaseConfigStreamingFromProgmem(cfg, doc.c_str()));
+    TEST_ASSERT_EQUAL_UINT8(1, cfg.relays[0].id);
+}
+
 static void test_serialize_nonfinite_float_as_zero() {
     BaseConfig cfg;
     cfg.vehicle.adc_voltage_coeff = NAN;
@@ -611,6 +664,11 @@ int main(int, char**) {
     RUN_TEST(test_strict_root_must_be_object);
     RUN_TEST(test_strict_invalid_numbers_and_silk_fail);
     RUN_TEST(test_mqtt_port_overflow_clamps_to_max);
+    RUN_TEST(test_base_sax_whitespace_extra_relays_and_nested_junk);
+    RUN_TEST(test_topic_prefix_trims_trailing_slashes);
+    RUN_TEST(test_channel_ids_must_match_slot);
+    RUN_TEST(test_battery_saver_duration_overflow);
+    RUN_TEST(test_progmem_extra_arrays_trim_and_log);
     RUN_TEST(test_serialize_nonfinite_float_as_zero);
     return UNITY_END();
 }

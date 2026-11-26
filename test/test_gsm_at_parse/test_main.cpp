@@ -69,6 +69,8 @@ void test_phonesMatch_suffix10() {
 void test_phonesMatch_short() {
     TEST_ASSERT_TRUE(gsm_at::phonesMatch("12345", "12345"));
     TEST_ASSERT_FALSE(gsm_at::phonesMatch("12345", "12346"));
+    TEST_ASSERT_FALSE(gsm_at::phonesMatch("12345", "79031234567"));
+    TEST_ASSERT_FALSE(gsm_at::phonesMatch("79031234567", "12345"));
 }
 
 void test_parseClipDigits() {

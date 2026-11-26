@@ -75,6 +75,8 @@ static void test_cclk_rejects_garbage() {
     TEST_ASSERT_FALSE(parseCclk("+CCLK: \"25/02/30,12:00:00+12\"", ct));
     TEST_ASSERT_FALSE(parseCclk("+CCLK: \"25/01/15,12:00:00*12\"", ct));
     TEST_ASSERT_FALSE(parseCclk("+CCLK: \"25/01/15,12:00:00+99\"", ct));
+    TEST_ASSERT_FALSE(parseCclk("+CCLK: \"\"", ct));
+    TEST_ASSERT_FALSE(parseCclk("+CCLK: \"25/01/15\"", ct));
     TEST_ASSERT_FALSE(parseCclk("+CSQ: 10,0", ct));
 }
 

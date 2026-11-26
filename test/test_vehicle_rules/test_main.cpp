@@ -75,6 +75,19 @@ void test_crank_above_max_ignored_for_rpm_in_validate() {
     TEST_ASSERT_NULL(vehicle_rules::validate(c));
 }
 
+void test_start_method_input_string() {
+    TEST_ASSERT_EQUAL_STRING("input", vehicle_rules::startMethodToString(StartMethod::Input));
+}
+
+void test_engine_voltage_out_of_range() {
+    BaseConfig c = makeCfg();
+    c.vehicle.engine_running_voltage_threshold = 99.0f;
+    TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
+    c = makeCfg();
+    c.vehicle.engine_stopped_voltage_threshold = 0.0f;
+    TEST_ASSERT_NOT_NULL(vehicle_rules::validate(c));
+}
+
 void test_inverted_voltage_thresholds() {
     BaseConfig c = makeCfg();
     c.vehicle.engine_running_voltage_threshold = 12.0f;
@@ -224,6 +237,8 @@ int main(int, char**) {
     RUN_TEST(test_normalize_out_of_range_to_defaults);
     RUN_TEST(test_normalize_clamps_crank_to_max);
     RUN_TEST(test_crank_above_max_ignored_for_rpm_in_validate);
+    RUN_TEST(test_start_method_input_string);
+    RUN_TEST(test_engine_voltage_out_of_range);
     RUN_TEST(test_inverted_voltage_thresholds);
     RUN_TEST(test_rpm_method_input_checks);
     RUN_TEST(test_input_method_input_checks);

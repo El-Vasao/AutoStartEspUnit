@@ -65,6 +65,8 @@ static void test_parse_head_cases() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Head::BadType, (uint8_t)parseHead(reserved15, sizeof(reserved15), h));
     const uint8_t one[] = {0x30};
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Head::NeedMore, (uint8_t)parseHead(one, sizeof(one), h));
+    const uint8_t needMoreRl[] = {0x30, 0x80};
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)Head::NeedMore, (uint8_t)parseHead(needMoreRl, sizeof(needMoreRl), h));
     const uint8_t badRl[] = {0x30, 0xFF, 0xFF, 0xFF, 0xFF};
     TEST_ASSERT_EQUAL_UINT8((uint8_t)Head::BadRemLen, (uint8_t)parseHead(badRl, sizeof(badRl), h));
 }
