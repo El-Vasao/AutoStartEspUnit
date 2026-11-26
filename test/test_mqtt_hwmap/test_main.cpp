@@ -23,9 +23,12 @@ private:
     size_t n_{0};
 };
 
+/// Имя канала по схеме — до 30 символов; буфер NAME = 64 — запас под UTF-8.
+/// '\\' — худший случай JSON-экранирования при допустимой длине имени.
 void fillName(char* dst, size_t cap) {
+    constexpr size_t kSchemaNameChars = 30;
     size_t i = 0;
-    while (i + 1 < cap) {
+    while (i < kSchemaNameChars && i + 1 < cap) {
         dst[i++] = '\\';
     }
     dst[i] = '\0';

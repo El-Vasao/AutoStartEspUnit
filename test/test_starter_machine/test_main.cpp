@@ -437,6 +437,52 @@ void test_timed_settle_in_band_is_failure() {
     TEST_ASSERT_EQUAL((int)Phase::Resting, (int)m.phase());
 }
 
+void test_timed_crank_boundary_stays_on_until_crankMs() {
+    // elapsed == crankMs-1 → still Cranking; elapsed == crankMs → Off + Settling.
+    Params p = timedParams();
+    p.crankMs = 1500;
+    Machine m;
+    m.begin(p, 0);
+    Tick t = m.tick(at(0, 11.0f));
+    TEST_ASSERT_EQUAL((int)RelayCmd::On, (int)t.relay);
+
+    t = m.tick(at(1499, 11.0f));
+    TEST_ASSERT_EQUAL((int)RelayCmd::None, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Cranking, (int)m.phase());
+
+    t = m.tick(at(1500, 11.0f));
+    TEST_ASSERT_EQUAL((int)RelayCmd::Off, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Settling, (int)m.phase());
+    TEST_ASSERT_TRUE(t.resetVoltageWindow);
+}
+
+void test_timed_half_second_crank_stops_at_500() {
+    Params p = timedParams();
+    p.crankMs = 500;
+    p.maxMs = 5000;
+    Machine m;
+    m.begin(p, 0);
+    m.tick(at(0, 11.0f));
+    Tick t = m.tick(at(499, 11.0f));
+    TEST_ASSERT_EQUAL((int)Phase::Cranking, (int)m.phase());
+    t = m.tick(at(500, 11.0f));
+    TEST_ASSERT_EQUAL((int)RelayCmd::Off, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Settling, (int)m.phase());
+}
+
+void test_begin_clamps_crank_above_max_only() {
+    Params p = timedParams();
+    p.crankMs = 9000;
+    p.maxMs = 3000;
+    Machine m;
+    m.begin(p, 0);
+    TEST_ASSERT_EQUAL_UINT32(3000, m.params().crankMs);
+    m.tick(at(0, 11.0f));
+    Tick t = m.tick(at(3000, 11.0f));
+    TEST_ASSERT_EQUAL((int)RelayCmd::Off, (int)t.relay);
+    TEST_ASSERT_EQUAL((int)Phase::Settling, (int)m.phase());
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -471,5 +517,8 @@ int main(int, char**) {
     RUN_TEST(test_timed_running_threshold_is_the_boundary);
     RUN_TEST(test_timed_crank_continues_in_band_below_running);
     RUN_TEST(test_timed_settle_in_band_is_failure);
+    RUN_TEST(test_timed_crank_boundary_stays_on_until_crankMs);
+    RUN_TEST(test_timed_half_second_crank_stops_at_500);
+    RUN_TEST(test_begin_clamps_crank_above_max_only);
     return UNITY_END();
 }

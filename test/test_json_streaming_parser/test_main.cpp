@@ -4,6 +4,7 @@
 
 #include "JsonListener.h"
 #include "JsonStreamingParser.h"
+#include "json/JsonParseFile.h"
 
 namespace {
 /// Пишет события парсера короткой трассой: `{ k:name v:x [ v:1 ] } $`.
@@ -165,6 +166,63 @@ static void test_reset_allows_reuse() {
     TEST_ASSERT_TRUE(parser.done());
 }
 
+static void test_whole_file_valid_truncated_and_failed() {
+    TraceListener valid;
+    File validFile = File("{\"a\":[1,2]}");
+    TEST_ASSERT_TRUE(jsonStreamingParseWholeFile(validFile, valid));
+    TEST_ASSERT_EQUAL_INT(1, valid.documents);
+
+    TraceListener empty;
+    File emptyFile = File("");
+    TEST_ASSERT_FALSE(jsonStreamingParseWholeFile(emptyFile, empty));
+
+    TraceListener truncated;
+    File truncatedFile = File("{\"a\":[1,2");
+    TEST_ASSERT_FALSE(jsonStreamingParseWholeFile(truncatedFile, truncated));
+
+    TraceListener failed;
+    File failedFile = File("{\"a\":x}");
+    TEST_ASSERT_FALSE(jsonStreamingParseWholeFile(failedFile, failed));
+
+    TraceListener trailing;
+    File trailingFile = File("{\"a\":1}]");
+    TEST_ASSERT_FALSE(jsonStreamingParseWholeFile(trailingFile, trailing));
+}
+
+static void test_whole_file_multi_chunk_and_wdt() {
+    std::string json = "{\"a\":\"";
+    json += std::string(600, 'x');
+    json += "\"}";
+    TraceListener l;
+    File f = File(json.data(), json.size());
+    TEST_ASSERT_TRUE(jsonStreamingParseWholeFile(f, l));
+    TEST_ASSERT_EQUAL_INT(1, l.documents);
+}
+
+static void test_progmem_null_empty_and_valid() {
+    TraceListener l;
+    TEST_ASSERT_FALSE(jsonStreamingParseProgmem(l, nullptr));
+
+    TraceListener empty;
+    TEST_ASSERT_FALSE(jsonStreamingParseProgmem(empty, ""));
+
+    TraceListener valid;
+    TEST_ASSERT_TRUE(jsonStreamingParseProgmem(valid, "{\"a\":1}"));
+    TEST_ASSERT_EQUAL_INT(1, valid.documents);
+
+    TraceListener failed;
+    TEST_ASSERT_FALSE(jsonStreamingParseProgmem(failed, "{\"a\":x}"));
+}
+
+static void test_progmem_multi_chunk_and_wdt() {
+    std::string json = "{\"a\":\"";
+    json += std::string(600, 'x');
+    json += "\"}";
+    TraceListener l;
+    TEST_ASSERT_TRUE(jsonStreamingParseProgmem(l, json.c_str()));
+    TEST_ASSERT_EQUAL_INT(1, l.documents);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_flat_object);
@@ -184,5 +242,9 @@ int main(int, char**) {
     RUN_TEST(test_long_token_is_truncated);
     RUN_TEST(test_bom_is_skipped);
     RUN_TEST(test_reset_allows_reuse);
+    RUN_TEST(test_whole_file_valid_truncated_and_failed);
+    RUN_TEST(test_whole_file_multi_chunk_and_wdt);
+    RUN_TEST(test_progmem_null_empty_and_valid);
+    RUN_TEST(test_progmem_multi_chunk_and_wdt);
     return UNITY_END();
 }

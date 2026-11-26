@@ -212,7 +212,11 @@ protected:
     }
     bool bumpJunkEnd() {
         if (!junk_) return false;
-        if (junkNest_) junkNest_--;
+        if (junkNest_) {
+            junkNest_--;
+            return true;
+        }
+        junk_ = false;
         return true;
     }
     void enterJunk() {
