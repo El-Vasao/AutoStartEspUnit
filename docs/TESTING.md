@@ -10,7 +10,9 @@ pio test -e native
 
 Покрытие: CI задаёт `PLATFORMIO_BUILD_FLAGS=--coverage`, затем `gcovr --fail-under-line 15` по `src/` и `include/`. Отдельная job `native-asan` с ASan/UBSan. Локально: `pio test -e native`.
 
-Хост дополнительно: `test_fs_atomic` (`closeWriteStream`: цель → `.bak`, затем `.tmp` → цель; `.bak` удаляется на общем пути, а `/programs/*.json` кроме `index.json` его оставляют; если rename `.tmp` не удался, `.bak` возвращается), `test_ota_stream` (белый список хвоста OTA и слот boot вокруг `Update.end` / `streamFinish`), `test_relay_controller`, `test_digital_inputs`, `test_battery_saver`, `test_mqtt_status_builder`, `test_gsm_fsm`, `test_program_executor`, `test_posted_body`, `test_sse_snapshot`.
+Unit-срез (чистые парсеры, правила, протоколы, state machine) держим на 100% строк. Недостижимый defensive-код — null-guards, хвосты exhaustive switch, `whitespace()` у `JsonListener` — помечается `GCOV_EXCL_LINE` или `GCOV_EXCL_START/STOP` с русским комментарием. Это исключение из отчёта, а не тест; 100% ветвей не цель, потому что остаются реальные defensive-ветки.
+
+Хост дополнительно: `test_fs_atomic` (`closeWriteStream`: цель → `.bak`, затем `.tmp` → цель; `.bak` удаляется на общем пути, а `/programs/*.json` кроме `index.json` его оставляют; если rename `.tmp` не удался, `.bak` возвращается), `test_ota_stream` (белый список хвоста OTA и слот boot вокруг `Update.end` / `streamFinish`), `test_relay_controller`, `test_digital_inputs`, `test_battery_saver`, `test_mqtt_status_builder`, `test_gsm_fsm`, `test_program_executor`, `test_posted_body`, `test_sse_snapshot`, `test_program_json_io`, `test_json_streaming_parser`, `test_config_json`, `test_mqtt_command_parser`, `test_sim800_lines`.
 
 ## JavaScript
 

@@ -8,10 +8,12 @@ namespace {
 
 void copyTo(char* dst, size_t dstCap, const char* src) {
     if (!dst || dstCap == 0) return;
+    // GCOV_EXCL_START: defensive, все текущие вызовы передают не-null src.
     if (!src) {
         dst[0] = '\0';
         return;
     }
+    // GCOV_EXCL_STOP
     size_t i = 0;
     while (src[i] && i + 1 < dstCap) {
         dst[i] = src[i];

@@ -254,6 +254,18 @@ static void test_program_object_skips_junk_inside_step() {
     TEST_ASSERT_EQUAL_UINT32(5, p.steps[0].ms);
 }
 
+static void test_compiled_skips_nested_and_root_junk() {
+    CompiledStep steps[2]{};
+    uint8_t count = 0;
+    char name[TextBytes::Programs::NAME]{};
+    File f = fileOf(
+        "{\"id\":2,\"steps\":[{\"action\":\"WAIT\",\"extra\":{\"a\":1}}],"
+        "\"rootObj\":{\"x\":1},\"rootArr\":[1,2]}");
+    TEST_ASSERT_TRUE(program_json::parseProgramCompiledFile(f, 2, steps, 2, &count, name, sizeof name));
+    TEST_ASSERT_EQUAL_UINT8(1, count);
+    TEST_ASSERT_EQUAL((int)ActionId::WAIT, (int)steps[0].action);
+}
+
 static void test_whitespace_and_root_junk_are_ignored() {
     IndexRow rows[2]{};
     size_t count = 0;
@@ -375,6 +387,7 @@ int main(int, char**) {
     RUN_TEST(test_compiled_invalid_silk_fails);
     RUN_TEST(test_program_object_requires_id_and_nonempty_steps);
     RUN_TEST(test_program_object_skips_junk_inside_step);
+    RUN_TEST(test_compiled_skips_nested_and_root_junk);
     RUN_TEST(test_whitespace_and_root_junk_are_ignored);
     RUN_TEST(test_emit_program_zero_steps_and_count);
     RUN_TEST(test_emit_program_optional_fields_and_escaping);

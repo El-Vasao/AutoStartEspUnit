@@ -21,10 +21,7 @@ bool parseSensorRomString(const char* rom, uint8_t out[8]) {
     const int n = sscanf(rom, "%2x:%2x:%2x:%2x:%2x:%2x:%2x:%2x%c", &b0, &b1, &b2, &b3, &b4, &b5, &b6, &b7,
                          &trail);
     if (n != 8) return false;
-    if (b0 > 0xFFu || b1 > 0xFFu || b2 > 0xFFu || b3 > 0xFFu || b4 > 0xFFu || b5 > 0xFFu ||
-        b6 > 0xFFu || b7 > 0xFFu) {
-        return false;
-    }
+    // %2x уже ограничивает каждый байт диапазоном 0..0xFF.
     out[0] = static_cast<uint8_t>(b0);
     out[1] = static_cast<uint8_t>(b1);
     out[2] = static_cast<uint8_t>(b2);

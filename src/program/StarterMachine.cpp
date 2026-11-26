@@ -176,7 +176,7 @@ Tick Machine::tick(const Sample& s) {
             return t;
         }
     }
-    return t;
+    return t; // GCOV_EXCL_LINE: switch покрывает все Phase, хвост недостижим.
 }
 
 const char* stopReasonToString(StopReason r) {

@@ -153,13 +153,6 @@ bool timerRemainingChanged(const StatusSnapshot& cur, const StatusSnapshot& prev
     return d >= JsonBytes::Mqtt::STATUS_TIMER_EPS_SEC;
 }
 
-bool freeHeapChanged(const StatusSnapshot& cur, const StatusSnapshot& prev) {
-    const uint32_t a = cur.freeHeap;
-    const uint32_t b = prev.freeHeap;
-    const uint32_t d = (a > b) ? (a - b) : (b - a);
-    return d >= JsonBytes::Mqtt::STATUS_HEAP_EPS;
-}
-
 void printInputsByIdFull(Print& p, const StatusSnapshot& s) {
     p.print('{');
     bool ik = false;
@@ -247,7 +240,6 @@ bool mqttStatusHasSignificantChanges(const StatusSnapshot& cur, const StatusSnap
     if (anyTriggerChanged(cur, prev, cfg)) return true;
     if (lastErrChanged(cur, prev)) return true;
     if (cur.lastErrCount > 0) return true;
-    (void)freeHeapChanged;
     return false;
 }
 

@@ -45,11 +45,13 @@ void IRAM_ATTR RpmEstimator::onEdge(uint32_t nowUs) {
 
     if (suspect) {
         if (++suspectStreak_ > Rpm::MAX_SUSPECT_STREAK) {
+            // GCOV_EXCL_START: defensive reset, недостижим через публичный API.
             ts_[0] = nowUs;
             head_ = 1;
             count_ = 1;
             suspectStreak_ = 0;
             return;
+            // GCOV_EXCL_STOP
         }
         head_ = (head_ - 1) & MASK;
         count_--;
