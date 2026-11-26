@@ -139,6 +139,23 @@ static void test_every_error_message_fits_snapshot_buffer() {
     }
 }
 
+static void test_set_reactivates_inactive_same_code_without_new_slot() {
+    ErrorManager em = fresh();
+    ErrorSnapshotEntry out[ErrorHistory::CAPACITY];
+    for (int n = 0; n < 8; n++) {
+        em.set(ErrorCode::MQTT_CONNECT_FAIL);
+        TEST_ASSERT_EQUAL_UINT8(1, em.copyUndelivered(out, ErrorHistory::CAPACITY));
+        em.markDelivered(out, 1);
+        em.clear(ErrorCode::MQTT_CONNECT_FAIL);
+        TEST_ASSERT_EQUAL_UINT8(1, em.historyCount());
+        TEST_ASSERT_FALSE(em.historyAt(0).active);
+    }
+    em.set(ErrorCode::MQTT_CONNECT_FAIL);
+    TEST_ASSERT_EQUAL_UINT8(1, em.historyCount());
+    TEST_ASSERT_TRUE(em.isActive(ErrorCode::MQTT_CONNECT_FAIL));
+    TEST_ASSERT_FALSE(em.historyAt(0).delivered);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_set_makes_code_current_and_active);
@@ -151,5 +168,6 @@ int main(int, char**) {
     RUN_TEST(test_cleared_rtc_is_not_loaded);
     RUN_TEST(test_boot_reset_is_active_only_without_other_actives);
     RUN_TEST(test_every_error_message_fits_snapshot_buffer);
+    RUN_TEST(test_set_reactivates_inactive_same_code_without_new_slot);
     return UNITY_END();
 }

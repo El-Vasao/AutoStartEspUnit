@@ -9,6 +9,7 @@
 #include "config/ConfigTypes.h"
 #include "config/internal/ProgramJsonIo.h"
 #include "core/Core.h"
+#include "core/FlashCommitCoordinator.h"
 #include "fs/FsManager.h"
 #include "gsm/GsmController.h"
 #include "io/DigitalInputs.h"
@@ -189,20 +190,26 @@ bool MqttDebugSession::holdPutB64(const char* b64) {
     return true;
 }
 
-void MqttDebugSession::abort() {
-    state_ = State::Idle;
-    target_ = Target::None;
+void MqttDebugSession::clearUploadFields_() {
     expectBytes_ = 0;
     gotBytes_ = 0;
     expectCrc_ = 0;
     expectN_ = 0;
     nextI_ = 0;
     programId_ = 0;
+    holdB64_[0] = '\0';
+}
+
+void MqttDebugSession::abort() {
+    // Flash already owns deferred body — do not dropPostedBody here.
+    state_ = State::Idle;
+    target_ = Target::None;
+    clearUploadFields_();
+    pendingReplyId_[0] = '\0';
     sendI_ = 0;
     sendN_ = 0;
     sendLen_ = 0;
     sendOff_ = 0;
-    holdB64_[0] = '\0';
 }
 
 uint16_t MqttDebugSession::begin_(const MqttCommand& cmd, Target t) {
@@ -251,6 +258,7 @@ uint16_t MqttDebugSession::put_(const MqttCommand& cmd) {
 }
 
 uint16_t MqttDebugSession::commit_(SensorsController& sensors) {
+    (void)sensors; // apply runs in FlashCommitCoordinator::tick via core.getSensors()
     if (state_ != State::Receiving) return MqttCmd::CODE_CONFLICT;
     if (expectN_ == 0 || nextI_ != expectN_) return MqttCmd::CODE_BAD_REQUEST;
     if (gotBytes_ != expectBytes_) return MqttCmd::CODE_BAD_REQUEST;
@@ -261,33 +269,31 @@ uint16_t MqttDebugSession::commit_(SensorsController& sensors) {
     }
 
     const Target t = target_;
-    if (gotBytes_ >= MqttDebugLimits::PUT_MAX) {
+    if (gotBytes_ == 0 || gotBytes_ > Limits::CONFIG_JSON_SIZE) {
         abort();
         return MqttCmd::CODE_BAD_REQUEST;
     }
-    buf_[gotBytes_] = 0;
 
-    bool ok = false;
-    if (t == Target::Cfg) {
-        // SoftAP parity: write /config.json + RAM, set rebootRequired (не полный hot-apply).
-        ok = fileSystem.atomicWrite(HttpPostJson::TMP_CONFIG, reinterpret_cast<const char*>(buf_), gotBytes_);
-        if (ok) ok = config.applyPostedConfigJsonFile(HttpPostJson::TMP_CONFIG, sensors);
-        if (ok) {
-            core.setRebootRequired(true);
-            core.getRelay().applyStarterConfig();
-            core.getInputs().applyConfig();
-        }
-    } else if (t == Target::Prg) {
-        ok = fileSystem.atomicWrite(HttpPostJson::TMP_PROGRAM, reinterpret_cast<const char*>(buf_), gotBytes_);
-        if (ok) {
-            uint8_t outId = 0;
-            ErrorCode err = ErrorCode::NONE;
-            ok = config.commitPostedProgramFile(HttpPostJson::TMP_PROGRAM, &outId, &err);
-        }
+    // SoftAP parity: arm RAM body + defer FS apply outside MqttClient::drainInbound_.
+    if (flashCommit.isPending()) return MqttCmd::CODE_UNAVAILABLE;
+    if (!flashCommit.armPostedBody(t == Target::Cfg, gotBytes_)) return MqttCmd::CODE_UNAVAILABLE;
+    if (!flashCommit.appendPostedBody(0, buf_, gotBytes_)) {
+        flashCommit.dropPostedBody();
+        abort();
+        return MqttCmd::CODE_INTERNAL;
     }
-    abort();
-    if (ok) settleModemRxAfterFlash_();
-    return ok ? MqttCmd::CODE_OK : MqttCmd::CODE_UNPROCESSABLE;
+    if (t == Target::Cfg) {
+        flashCommit.deferPostedConfigApply();
+    } else {
+        flashCommit.deferPostedProgramApply();
+    }
+
+    clearUploadFields_();
+    target_ = Target::None;
+    state_ = State::CommitPending;
+    logger.log(LogModule::MqttClient, "debug commit deferred (%s)\n",
+               t == Target::Cfg ? "cfg" : "prg");
+    return 0; // final /reply after flashCommit.tick
 }
 
 uint16_t MqttDebugSession::doSet_(const MqttCommand& cmd) {
@@ -420,6 +426,7 @@ uint16_t MqttDebugSession::handle(const MqttCommand& cmd, MqttClient& mqtt, Sens
          cmd.debugOp == MqttDebugOp::Delete || cmd.debugOp == MqttDebugOp::Abort)) {
         abort();
     }
+    if (state_ == State::CommitPending) return MqttCmd::CODE_UNAVAILABLE;
     if (busy() && !uploadStep) return MqttCmd::CODE_UNAVAILABLE;
 
     switch (cmd.debugOp) {
@@ -427,8 +434,14 @@ uint16_t MqttDebugSession::handle(const MqttCommand& cmd, MqttClient& mqtt, Sens
             return begin_(cmd, cmd.kind == MqttCommandKind::Cfg ? Target::Cfg : Target::Prg);
         case MqttDebugOp::Put:
             return put_(cmd);
-        case MqttDebugOp::Commit:
-            return commit_(sensors);
+        case MqttDebugOp::Commit: {
+            const uint16_t code = commit_(sensors);
+            if (state_ == State::CommitPending) {
+                strlcpy(pendingReplyId_, cmd.id, sizeof(pendingReplyId_));
+                return 0;
+            }
+            return code;
+        }
         case MqttDebugOp::Abort:
             if (state_ == State::Receiving) {
                 abort();
@@ -488,6 +501,24 @@ void MqttDebugSession::tickDownlink(MqttClient& mqtt) {
     lastSendMs_ = now;
     if (sendI_ >= sendN_) {
         abort();
+    }
+}
+
+void MqttDebugSession::tickFlashCommit(MqttClient& mqtt) {
+    if (state_ != State::CommitPending) return;
+    if (flashCommit.isPending()) return;
+
+    const uint16_t code =
+        flashCommit.getLastFlashOk() ? MqttCmd::CODE_OK : MqttCmd::CODE_UNPROCESSABLE;
+    char id[MqttCmd::ID_MAX_LEN + 1]{};
+    strlcpy(id, pendingReplyId_, sizeof(id));
+    pendingReplyId_[0] = '\0';
+    state_ = State::Idle;
+    target_ = Target::None;
+
+    if (id[0]) {
+        logger.log(LogModule::MqttClient, "debug commit final id=%s code=%u\n", id, (unsigned)code);
+        mqtt.publishDebugFinalReply(id, code);
     }
 }
 

@@ -80,7 +80,7 @@ flowchart TD
 Дополнение:
 - Для рантайм-исполнения программ — компактные шаги `CompiledStep`. Строка действия в рантайме не хранится; текст SMS лежит в фиксированном `message[]`.
 - Эндпоинт `/bootstrap` — один buffered JSON (inventory + `live`).
-- MQTT: топики `online`/`state`/`programs`/`hwMap`/`trigMap`/`cmd`/`reply`; payload статуса ≤900; кадр ≤ `MQTT_CIPSEND_MAX` (1600), слот `TX_MAX` 3072. Birth: каталоги → full retained `state` → `online=true`. Период = full retain; край = delta. Норматив — `docs/modules/mqtt.md`.
+- MQTT: топики `online`/`state`/`programs`/`hwMap`/`trigMap`/`cmd`/`reply`; payload статуса ≤1024; кадр ≤ `MQTT_CIPSEND_MAX` (1600), слот `TX_MAX` 3072. Birth: каталоги → full retained `state` → `online=true`. Период = full retain; край = delta. Норматив — `docs/modules/mqtt.md`.
 
 ## 3.0) Контракт MQTT (топики, сообщения, доставка)
 MQTT чувствителен к стабильности цикла (SIM800 + SoftAP).

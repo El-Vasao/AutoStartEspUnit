@@ -700,6 +700,8 @@ void MqttClient::dispatchCommand_(const MqttCommand& cmd) {
         case MqttCommandKind::Cfg:
         case MqttCommandKind::Prg: {
             const uint16_t code = mqttDebugSession.handle(cmd, *this, core.getSensors());
+            // 0 = commit deferred to FlashCommitCoordinator; final /reply via tickFlashCommit.
+            if (code == 0 && mqttDebugSession.awaitingFlashCommit()) return;
             PendingReply pr{};
             pr.kind = PendingKind::Thin;
             strlcpy(pr.id, cmd.id, sizeof(pr.id));
@@ -731,5 +733,14 @@ bool MqttClient::publishDebugChunk(const char* suffix, const char* payload, uint
     if (!_fsm.publish(topic, reinterpret_cast<const uint8_t*>(payload), len, false, true)) return false;
     logger.log(LogModule::MqttClient, "pub debug %s bytes=%u\n", suffix, (unsigned)len);
     return true;
+}
+
+void MqttClient::publishDebugFinalReply(const char* id, uint16_t code) {
+    if (!id || !id[0]) return;
+    PendingReply pr{};
+    pr.kind = PendingKind::Thin;
+    strlcpy(pr.id, id, sizeof(pr.id));
+    pr.code = code;
+    (void)stageReply_(pr);
 }
 #endif

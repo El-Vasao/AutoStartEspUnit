@@ -443,7 +443,7 @@ namespace JsonBytes {
         constexpr size_t CMD_JSON_MAX = 512; ///< макс. размер входящей JSON-команды (payload) + '\0'
         /// Лимит тела MQTT PUBLISH (JSON) при длине топика до `TextBytes::Mqtt::TOPIC-1`.
         /// На проводе: payload + 1 (fixed) + ≤4 (RL) + 2 (длина топика) + topicLen ≤ TX_MAX.
-        constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 900;
+        constexpr uint16_t STATUS_PAYLOAD_MAX_BYTES = 1024;
         /// Тело топика `programs` (только массив). Потолок одного CIPSEND минус запас под топик ≤64.
         /// `static_assert` с `NetTiming::MQTT_CIPSEND_MAX` — после объявления NetTiming ниже.
         constexpr size_t PROGRAMS_TOPIC_JSON_MAX = 1480;

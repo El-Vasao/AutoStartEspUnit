@@ -16,10 +16,14 @@ class MqttDebugSession {
 public:
     bool busy() const { return state_ != State::Idle; }
 
+    /// True while commit is deferred to FlashCommitCoordinator (final /reply not yet staged).
+    bool awaitingFlashCommit() const { return state_ == State::CommitPending; }
+
     /// Hold base64 from ingress JSON until `put` runs in dispatch (inbound queue has no payload).
     bool holdPutB64(const char* b64);
 
     /// Returns HTTP-like final code (200/4xx/5xx). Does not stage replies.
+    /// Returns 0 when commit was deferred (final reply later via tickFlashCommit).
     uint16_t handle(const MqttCommand& cmd, MqttClient& mqtt, SensorsController& sensors);
 
     void abort();
@@ -27,8 +31,11 @@ public:
     /// Drain pending downlink chunks (call from MqttClient::loop while connected).
     void tickDownlink(MqttClient& mqtt);
 
+    /// When CommitPending and flashCommit finished, stage final /reply (200/422).
+    void tickFlashCommit(MqttClient& mqtt);
+
 private:
-    enum class State : uint8_t { Idle, Receiving, Sending };
+    enum class State : uint8_t { Idle, Receiving, Sending, CommitPending };
 
     enum class Target : uint8_t { None, Cfg, Prg };
 
@@ -42,6 +49,7 @@ private:
     uint8_t programId_{0};
     uint8_t buf_[MqttDebugLimits::PUT_MAX]{};
     char holdB64_[MqttDebugLimits::CHUNK_B64_MAX + 1]{};
+    char pendingReplyId_[MqttCmd::ID_MAX_LEN + 1]{};
 
     // Downlink
     uint16_t sendI_{0};
@@ -59,6 +67,7 @@ private:
     uint16_t doSet_(const MqttCommand& cmd);
     uint16_t doReset_(const MqttCommand& cmd);
     uint16_t doDelete_(const MqttCommand& cmd);
+    void clearUploadFields_();
 };
 
 uint32_t mqttDebugCrc32(const uint8_t* data, size_t len);

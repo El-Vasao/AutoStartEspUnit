@@ -57,6 +57,8 @@ public:
 #if defined(AUTOSTART_MQTT_DEBUG)
     /// Publish one downlink chunk on `{prefix}/cfg` or `{prefix}/prg` (suffix = "cfg"|"prg").
     bool publishDebugChunk(const char* suffix, const char* payload, uint16_t len);
+    /// Final thin /reply after deferred cfg/prg flash commit.
+    void publishDebugFinalReply(const char* id, uint16_t code);
 #endif
 
 private:

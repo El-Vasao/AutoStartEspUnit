@@ -409,6 +409,7 @@ void MqttClient::loop() {
             drainInbound_();
 #if defined(AUTOSTART_MQTT_DEBUG)
             mqttDebugSession.tickDownlink(*this);
+            mqttDebugSession.tickFlashCommit(*this);
 #endif
         }
 
@@ -757,20 +758,57 @@ bool MqttClient::publishStatus(bool forceFull) {
     }
     snapshot.seq = seq;
 
-    PublishStatusCtx ctx{&snapshot, needFull ? nullptr : &_lastPublished, needFull};
-    size_t measured = 0;
     const uint32_t t0 = millis();
     const MqttFsmClient::TeleKind kind =
         needFull ? MqttFsmClient::TeleKind::Full : MqttFsmClient::TeleKind::Delta;
-    if (!_fsm.publishPrintedMeasured(_topicState, encodeMqttStatusForPublish, &ctx,
-                                     JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, needFull /*retain*/, false,
-                                     &measured, kind, 0)) {
-        if (measured > JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES) {
-            logger.log(LogModule::MqttClient, "publishStatus: JSON too large (max %u, got %u)\n",
-                       (unsigned)JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES, (unsigned)measured);
+    const uint16_t maxBytes = JsonBytes::Mqtt::STATUS_PAYLOAD_MAX_BYTES;
+
+    auto tryEncode = [&](StatusSnapshot& snap, size_t* measuredOut) -> bool {
+        PublishStatusCtx ctx{&snap, needFull ? nullptr : &_lastPublished, needFull};
+        return _fsm.publishPrintedMeasured(_topicState, encodeMqttStatusForPublish, &ctx, maxBytes,
+                                           needFull /*retain*/, false, measuredOut, kind, 0);
+    };
+
+    size_t measured = 0;
+    bool published = tryEncode(snapshot, &measured);
+    if (!published && measured > maxBytes) {
+        logger.log(LogModule::MqttClient, "publishStatus: JSON too large (max %u, got %u)\n",
+                   (unsigned)maxBytes, (unsigned)measured);
+
+        // Failsafe 1: only active err (drop inactive history that bloated the ring).
+        if (snapshot.lastErrCount > 0) {
+            uint8_t w = 0;
+            for (uint8_t i = 0; i < snapshot.lastErrCount; i++) {
+                if (!snapshot.lastErr[i].active) continue;
+                if (w != i) snapshot.lastErr[w] = snapshot.lastErr[i];
+                w++;
+            }
+            if (w < snapshot.lastErrCount) {
+                snapshot.lastErrCount = w;
+                logger.log(LogModule::MqttClient, "publishStatus: failsafe trim err→active (%u)\n",
+                           (unsigned)w);
+                measured = 0;
+                published = tryEncode(snapshot, &measured);
+            }
         }
+
+        // Failsafe 2: omit err entirely so birth/online can proceed.
+        if (!published && snapshot.lastErrCount > 0) {
+            snapshot.lastErrCount = 0;
+            logger.log(LogModule::MqttClient, "publishStatus: failsafe drop err\n");
+            measured = 0;
+            published = tryEncode(snapshot, &measured);
+        }
+
+        if (!published) {
+            logger.log(LogModule::MqttClient, "publishStatus: oversized after failsafe (max %u, got %u)\n",
+                       (unsigned)maxBytes, (unsigned)measured);
+            return false;
+        }
+    } else if (!published) {
         return false;
     }
+
     const uint32_t dt = millis() - t0;
     if (dt > kMqttPublishBudgetMs) {
         logger.log(LogModule::MqttClient, "status publish slow (%u ms)\n", (unsigned)dt);

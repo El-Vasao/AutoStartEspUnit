@@ -10,9 +10,9 @@
 // Обезличенный «из коробки» профиль: без телефона/MQTT/ROM стенда; триггеры и термо/АКБ
 // предпривязаны к заводским программам, но выключены до настройки установщиком.
 //
-// Входы: IN1 педаль тормоза (триггер → «Стоп»), IN2 нейтраль (блокировка ENGINE_START;
-// логически активен = запрет; active_state под полярность датчика — с завода true),
-// IN3 кнопка платы (active low).
+// Входы: IN1 Brake pedal SW (триггер → «Стоп»), IN2 Gear neutral SW (блокировка ENGINE_START;
+// логически активен = запрет; active_state под полярность датчика — по умолчанию true),
+// IN3 Button (active low).
 static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
   "setup_required": true,
   "wifi": {
@@ -54,9 +54,9 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
     "engine_input_id": "IN2"
   },
   "sensors": [
-    { "id": "T1", "rom": "", "coeff": 0, "name": "Салон" },
-    { "id": "T2", "rom": "", "coeff": 0, "name": "Двигатель" },
-    { "id": "T3", "rom": "", "coeff": 0, "name": "Улица" }
+    { "id": "T1", "rom": "", "coeff": 0, "name": "Cabin" },
+    { "id": "T2", "rom": "", "coeff": 0, "name": "Engine" },
+    { "id": "T3", "rom": "", "coeff": 0, "name": "Outside" }
   ],
   "inputs": [
     {
@@ -64,7 +64,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "Педаль тормоза",
+      "name": "Brake pedal SW",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -72,7 +72,7 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": true,
-      "name": "Нейтраль",
+      "name": "Gear neutral SW",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     },
     {
@@ -80,16 +80,16 @@ static const char DEFAULT_CONFIG_JSON[] PROGMEM = R"({
       "enabled": true,
       "type": 0,
       "active_state": false,
-      "name": "Кнопка",
+      "name": "Button",
       "pulse": { "pulses_per_rev": 1, "threshold_rpm": 0 }
     }
   ],
   "relays": [
     { "id": "K1", "name": "ACC" },
-    { "id": "K2", "name": "Зажигание" },
-    { "id": "K3", "name": "Стартер" },
-    { "id": "K4", "name": "Замок" },
-    { "id": "K5", "name": "Обход" }
+    { "id": "K2", "name": "IGN" },
+    { "id": "K3", "name": "START" },
+    { "id": "K4", "name": "LOCK" },
+    { "id": "K5", "name": "BYPASS" }
   ],
   "thermostat": {
     "enabled": false,

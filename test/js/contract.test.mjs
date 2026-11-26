@@ -38,10 +38,10 @@ test('factory DEFAULT_CONFIG_JSON is impersonalized product profile', () => {
   assert.equal(cfg.mqtt.pass, '');
   assert.equal(cfg.mqtt.topic_prefix, 'car');
   assert.equal(cfg.vehicle.start_block_input_id, 'IN2');
-  assert.deepEqual(cfg.inputs.map((i) => i.name), ['Педаль тормоза', 'Нейтраль', 'Кнопка']);
+  assert.deepEqual(cfg.inputs.map((i) => i.name), ['Brake pedal SW', 'Gear neutral SW', 'Button']);
   assert.equal(cfg.inputs[1].active_state, true);
-  assert.deepEqual(cfg.relays.map((r) => r.name), ['ACC', 'Зажигание', 'Стартер', 'Замок', 'Обход']);
-  assert.deepEqual(cfg.sensors.map((s) => s.name), ['Салон', 'Двигатель', 'Улица']);
+  assert.deepEqual(cfg.relays.map((r) => r.name), ['ACC', 'IGN', 'START', 'LOCK', 'BYPASS']);
+  assert.deepEqual(cfg.sensors.map((s) => s.name), ['Cabin', 'Engine', 'Outside']);
   assert.ok(cfg.sensors.every((s) => s.rom === ''));
   assert.equal(cfg.thermostat.enabled, false);
   assert.equal(cfg.thermostat.program_id_lower, 1);

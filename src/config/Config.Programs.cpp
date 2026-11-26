@@ -64,7 +64,7 @@ bool writeNamedAction(Program& prog, uint8_t id, const char* name, const char* a
 }
 
 bool writeAllRelays(Program& prog, uint8_t id, const char* name, const char* action) {
-    // K1 ACC, K2 IGN, K4 LOCK, K5 IMMO — без K3 (стартер).
+    // K1 ACC, K2 IGN, K4 LOCK, K5 BYPASS — без K3 (START).
     static const uint8_t kRelays[] = {1, 2, 4, 5};
     clearProgram(prog);
     prog.id = id;
@@ -108,7 +108,7 @@ bool Config::writeFactoryPrograms() {
 
     Program prog{};
 
-    // K5 bypass, K2 ignition, K1 ACC — номера шёлка 5/2/1. Без SMS.
+    // K5 BYPASS, K2 IGN, K1 ACC — номера шёлка 5/2/1. Без SMS.
     clearProgram(prog);
     prog.id = 1;
     strlcpy(prog.name, "Запуск", sizeof(prog.name));

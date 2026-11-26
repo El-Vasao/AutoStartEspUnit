@@ -94,6 +94,28 @@ void ErrorManager::set(ErrorCode err) {
         }
     }
 
+    // Inactive тот же код — реактивировать слот (не раздувать кольцо копиями после clear).
+    for (uint8_t i = 0; i < _count; i++) {
+        if (!_ring[i].active && _ring[i].code == err) {
+            _ring[i].active = true;
+            _ring[i].delivered = false;
+            _ring[i].uptimeSec = nowSec;
+            _ring[i].fromRtc = false;
+            _lastError = err;
+            _errorTime = nowSec;
+            if (i > 0) {
+                ErrorHistoryEntry e = _ring[i];
+                for (uint8_t j = i; j > 0; j--) {
+                    _ring[j] = _ring[j - 1];
+                }
+                _ring[0] = e;
+            }
+            logger.log(LogModule::ErrorManager, "ERROR: %s [%d]\n", errorCodeToString(err), (int)err);
+            persist_();
+            return;
+        }
+    }
+
     // Новый отдельный активный код — другие активные не снимать.
     ErrorHistoryEntry e{};
     e.code = err;
